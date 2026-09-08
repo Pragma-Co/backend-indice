@@ -99,6 +99,13 @@ MONGO_PASSWORD = os.environ.get("MONGO_PASSWORD", "")
 MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_PORT = os.environ.get("MONGO_PORT", "27018")
 
+MAX_UPLOAD_SIZE_BYTES = int(
+    os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 * 1024)
+)
+TEMP_UPLOAD_DIR = Path(
+    os.environ.get("TEMP_UPLOAD_DIR", BASE_DIR / "tmp_uploads")
+)
+
 # Password validation (also part of a healthy LGPD posture)
 
 AUTH_PASSWORD_VALIDATORS = [
