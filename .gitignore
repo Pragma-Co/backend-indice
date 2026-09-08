@@ -1,6 +1,7 @@
 # Secrets (LGPD: credentials must never reach version control)
 .env
 CREDENTIALS.txt
+tmp_uploads/
 
 # Python
 __pycache__/
