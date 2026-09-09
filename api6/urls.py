@@ -3,11 +3,13 @@
 from django.contrib import admin
 from django.urls import path
 
-from core.views import api_root, health_check, upload_document
+from core.views.api_root_view import api_root
+from core.views.health_view import health_check
+from core.views.upload_view import upload_document
 
 urlpatterns = [
     path("", api_root, name="api-root"),
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
-    path("documentos/upload", upload_document, name="documento-upload"),
+    path("documents/upload", upload_document, name="document-upload"),
 ]
