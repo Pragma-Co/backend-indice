@@ -126,11 +126,58 @@ To add more users later: `docker compose exec api python manage.py createsuperus
 |-----|-------------|
 | <http://localhost:8000/> | API root (welcome + endpoint list) |
 | <http://localhost:8000/health/> | Health check: PostgreSQL + MongoDB connectivity |
+| <http://localhost:8000/projects/> | Active projects (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| <http://localhost:8000/disciplines/> | Active disciplines (JSON, read-only) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/admin/> | Django admin panel |
 | `localhost:5433` | PostgreSQL (localhost only, e.g. for DBeaver/pgAdmin) |
 | `localhost:27018` | MongoDB (localhost only, e.g. for Compass) |
 
 > These are the default ports. If you changed `API_PORT`, `POSTGRES_PORT` or `MONGO_PORT` in your `.env`, use those instead.
+
+## API endpoints
+
+The Vue frontend calls the API through the Vite dev-server proxy: the browser requests `/api/projects/` and the proxy strips the `/api` prefix, so Django receives `/projects/`. That is why the routes live at the root, next to `/health/`.
+
+All endpoints below are **read-only** (`GET` only — any other method answers `405 Method Not Allowed`), return `application/json`, list **only active records** (`active=true`) and are **ordered by name**. On an unexpected failure they answer `500` with `{"error": "<ExceptionName>"}`; details go to the server log only (no hosts, credentials or stack traces in the response).
+
+### `GET /projects/`
+
+Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code (`PJT001-TUB-REV-REV01`).
+
+```json
+[
+  { "id": 1, "code": "PJT001", "name": "Projeto Alfa" },
+  { "id": 2, "code": "PJT002", "name": "Projeto Beta" }
+]
+```
+
+### `GET /disciplines/`
+
+Disciplines available in the **Disciplina** select. `acronym` is always the **first three letters of the name, upper-cased and without accents** (`Tubulação` → `TUB`, `Memória de Cálculo` → `MEM`); it is generated automatically when a discipline is saved without one and must match `^[A-Z]{3}$`.
+
+```json
+[
+  { "id": 5, "acronym": "TUB", "name": "Tubulação" },
+  { "id": 1, "acronym": "ENG", "name": "Engenharia" }
+]
+```
+
+### Seeding the catalogs (development data)
+
+Both catalogs start empty. Load the default development entries with the `seed_catalogs` command, run **inside the `api` container**:
+
+```bash
+docker compose exec api python manage.py seed_catalogs
+```
+
+It is idempotent: run it as many times as you like, it only creates what is missing (matched by project code / discipline name) and never overwrites edits made through the admin. It creates:
+
+| Catalog | Entries |
+|---------|---------|
+| Projetos | `PJT001 - Projeto Alfa`, `PJT002 - Projeto Beta`, `PJT003 - Projeto Gama` |
+| Disciplinas | Engenharia (`ENG`), Manufatura (`MAN`), Qualidade (`QUA`), Configuração (`CON`), Tubulação (`TUB`), Estrutura (`EST`), Elétrica (`ELE`) |
+
+Projects and disciplines can also be managed through the Django admin (<http://localhost:8000/admin/>).
 
 ## Useful commands
 
@@ -150,6 +197,7 @@ docker compose exec api python manage.py makemigrations    # create migrations
 docker compose exec api python manage.py createsuperuser   # create an EXTRA admin user (the default one is automatic)
 docker compose exec api python manage.py shell             # Django shell
 docker compose exec api python manage.py test              # run tests
+docker compose exec api python manage.py seed_catalogs     # load default projects/disciplines (idempotent)
 
 # Databases
 docker compose exec postgres psql -U api6_admin -d api6                                  # PostgreSQL shell
@@ -191,5 +239,15 @@ backend/
 ├── scripts/             # setup_env.py — generates .env + CREDENTIALS.txt
 ├── manage.py            # Django CLI
 ├── api6/                # Django project (settings, URLs, WSGI/ASGI)
-└── core/                # Main app (health check, MongoDB helper)
+└── core/                # Main app, organized by layer
+    ├── models/          # Relational entities (Project, Discipline)
+    ├── views/           # HTTP endpoints (health, catalogs)
+    ├── services/        # Business rules (acronym generation, catalog queries)
+    ├── serializers/     # Model -> JSON conversion
+    ├── tests/           # Test suite (Given/When/Then)
+    ├── migrations/      # Database history
+    ├── management/      # Commands: ensure_superuser, seed_catalogs
+    ├── admin.py         # Django admin registrations
+    ├── urls.py          # App routes (/projects/, /disciplines/)
+    └── mongo.py         # Shared MongoDB client
 ```
