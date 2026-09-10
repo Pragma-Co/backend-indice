@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     "corsheaders",
     "core",
 ]
@@ -98,6 +99,12 @@ MONGO_USER = os.environ.get("MONGO_USER", "api6_admin")
 MONGO_PASSWORD = os.environ.get("MONGO_PASSWORD", "")
 MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_PORT = os.environ.get("MONGO_PORT", "27018")
+
+# Authentication: the application's own user model (table `app_user`), which
+# logs in by email instead of username. Staff/superuser status is derived from
+# the user's role — see core/models/organization.py.
+
+AUTH_USER_MODEL = "core.User"
 
 # Password validation (also part of a healthy LGPD posture)
 

@@ -148,6 +148,7 @@ docker compose up -d --build      # rebuild after changing requirements.txt/Dock
 docker compose exec api python manage.py migrate           # apply migrations
 docker compose exec api python manage.py makemigrations    # create migrations
 docker compose exec api python manage.py createsuperuser   # create an EXTRA admin user (the default one is automatic)
+docker compose exec api python manage.py seed              # load the demo dataset (idempotent, see below)
 docker compose exec api python manage.py shell             # Django shell
 docker compose exec api python manage.py test              # run tests
 
@@ -155,6 +156,27 @@ docker compose exec api python manage.py test              # run tests
 docker compose exec postgres psql -U api6_admin -d api6                                  # PostgreSQL shell
 docker compose exec mongodb mongosh -u api6_admin -p --authenticationDatabase admin api6 # MongoDB shell
 ```
+
+## Demo data
+
+`manage.py seed` fills the database with a fictional aerostructures dataset —
+areas, engineers, aircraft programs, technical documents with revisions and
+files, access requests and an audit trail. It covers all three confidentiality
+levels and every revision status, so the search, permission and approval flows
+have something realistic to run against.
+
+```bash
+docker compose exec api python manage.py seed
+```
+
+It is idempotent: rows are matched by their natural key, so running it twice
+creates nothing new and changes no password. `audit_log` is the exception —
+being append-only, it is written only while the table is still empty.
+
+Every seeded user gets the same password: `SEED_PASSWORD` from your `.env` if
+set, `--password` if you pass it, otherwise a random one printed once at the
+end. Log in with an **email** (e.g. `marina.duarte@akaer.local`, role `ADMIN`).
+The command refuses to run when `DEBUG` is off unless you pass `--force`.
 
 ## LGPD & security notes
 
