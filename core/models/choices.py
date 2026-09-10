@@ -45,9 +45,7 @@ class AuditAction(models.TextChoices):
 
 class FileExtension(models.TextChoices):
     PDF = "pdf", "PDF"
-    DWG = "dwg", "AutoCAD drawing"
-    DXF = "dxf", "Drawing exchange format"
     DOC = "doc", "Word document (legacy)"
     DOCX = "docx", "Word document"
-    XLS = "xls", "Excel spreadsheet (legacy)"
-    XLSX = "xlsx", "Excel spreadsheet"
+    JPEG = "jpeg", "JPEG image"
+    PNG = "png", "PNG image"
