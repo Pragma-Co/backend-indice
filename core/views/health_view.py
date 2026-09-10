@@ -1,25 +1,11 @@
 import logging
-
+ 
 from django.db import connection
 from django.http import JsonResponse
-
+ 
 from core.mongo import get_mongo_client
-
+ 
 logger = logging.getLogger(__name__)
-
-
-def api_root(request):
-    """Simple welcome endpoint listing the available routes."""
-    return JsonResponse(
-        {
-            "project": "API-6",
-            "message": "Backend is running.",
-            "endpoints": {
-                "health": "/health/",
-                "admin": "/admin/",
-            },
-        }
-    )
 
 
 def health_check(request):
@@ -65,3 +51,4 @@ def health_check(request):
 
     status_code = 200 if report["status"] == "ok" else 503
     return JsonResponse(report, status=status_code)
+
