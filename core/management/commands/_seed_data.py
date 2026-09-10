@@ -377,31 +377,33 @@ REVISIONS = {
 # --- files -------------------------------------------------------------------
 # Attachments generated per revision, by document type: (filename suffix, extension)
 FILES_BY_TYPE = {
-    "DWG": [("", "dwg"), ("-plot", "pdf")],
+    # A drawing is delivered as the plotted PDF plus a raster preview; an
+    # inspection report carries the photos that back it up.
+    "DWG": [("", "pdf"), ("-preview", "png")],
     "MEM": [("", "pdf")],
     "ESP": [("", "pdf")],
     "NOR": [("", "pdf")],
-    "REV": [("", "pdf")],
+    "REV": [("", "pdf"), ("-inspecao", "jpeg")],
     "PRO": [("", "docx")],
-    "LDM": [("", "xlsx")],
+    "LDM": [("", "pdf")],
 }
 
 MIME_TYPES = {
     "pdf": "application/pdf",
-    "dwg": "image/vnd.dwg",
-    "dxf": "image/vnd.dxf",
     "doc": "application/msword",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
 }
+
 
 # Plausible byte ranges per extension, all within the 100 MB ceiling
 SIZE_RANGES = {
-    "dwg": (2_000_000, 38_000_000),
     "pdf": (180_000, 7_500_000),
+    "doc": (90_000, 1_800_000),
     "docx": (90_000, 1_800_000),
-    "xlsx": (40_000, 600_000),
+    "jpeg": (400_000, 5_500_000),
+    "png": (120_000, 3_200_000),
 }
 
 # --- document access ---------------------------------------------------------

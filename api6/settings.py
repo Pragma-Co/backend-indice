@@ -87,6 +87,17 @@ DATABASES = {
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
         "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
         "PORT": os.environ.get("POSTGRES_PORT", "5433"),
+        # Connection pool (psycopg 3). Connections are reused instead of being
+        # opened per request. CONN_MAX_AGE must stay at its default of 0:
+        # Django refuses to combine pooling with persistent connections.
+        "OPTIONS": {
+            "pool": {
+                "min_size": int(os.environ.get("POSTGRES_POOL_MIN_SIZE", "2")),
+                "max_size": int(os.environ.get("POSTGRES_POOL_MAX_SIZE", "10")),
+                # Seconds a query waits for a free connection before failing
+                "timeout": float(os.environ.get("POSTGRES_POOL_TIMEOUT", "10")),
+            }
+        },
     }
 }
 
@@ -124,7 +135,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "America/Sao_Paulo"
+TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
