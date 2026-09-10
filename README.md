@@ -126,11 +126,43 @@ To add more users later: `docker compose exec api python manage.py createsuperus
 |-----|-------------|
 | <http://localhost:8000/> | API root (welcome + endpoint list) |
 | <http://localhost:8000/health/> | Health check: PostgreSQL + MongoDB connectivity |
+| <http://localhost:8000/projects/> | Active projects (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| <http://localhost:8000/disciplines/> | Active disciplines (JSON, read-only) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/admin/> | Django admin panel |
 | `localhost:5433` | PostgreSQL (localhost only, e.g. for DBeaver/pgAdmin) |
 | `localhost:27018` | MongoDB (localhost only, e.g. for Compass) |
 
 > These are the default ports. If you changed `API_PORT`, `POSTGRES_PORT` or `MONGO_PORT` in your `.env`, use those instead.
+
+## API endpoints
+
+The Vue frontend calls the API through the Vite dev-server proxy: the browser requests `/api/projects/` and the proxy strips the `/api` prefix, so Django receives `/projects/`. That is why the routes live at the root, next to `/health/`.
+
+The catalog endpoints below are **read-only** (`GET` only — any other method answers `405 Method Not Allowed`), return `application/json`, list **only active records** (`active=true`) and are **ordered by name**. On an unexpected failure they answer `500` with `{"error": "<ExceptionName>"}`; details go to the server log only (no hosts, credentials or stack traces in the response).
+
+Both catalogs are maintained through the Django admin and populated by `manage.py seed` (see [Demo data](#demo-data)).
+
+### `GET /projects/`
+
+Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code.
+
+```json
+[
+  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central" },
+  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical" }
+]
+```
+
+### `GET /disciplines/`
+
+Disciplines available in the **Disciplina** select. `code` is the discipline acronym used as the second part of the document code.
+
+```json
+[
+  { "id": 1, "code": "EST", "name": "Estruturas" },
+  { "id": 2, "code": "MAT", "name": "Materiais e Processos" }
+]
+```
 
 ## Useful commands
 
