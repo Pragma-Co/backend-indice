@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     "corsheaders",
     "core",
 ]
@@ -86,6 +87,17 @@ DATABASES = {
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
         "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
         "PORT": os.environ.get("POSTGRES_PORT", "5433"),
+        # Connection pool (psycopg 3). Connections are reused instead of being
+        # opened per request. CONN_MAX_AGE must stay at its default of 0:
+        # Django refuses to combine pooling with persistent connections.
+        "OPTIONS": {
+            "pool": {
+                "min_size": int(os.environ.get("POSTGRES_POOL_MIN_SIZE", "2")),
+                "max_size": int(os.environ.get("POSTGRES_POOL_MAX_SIZE", "10")),
+                # Seconds a query waits for a free connection before failing
+                "timeout": float(os.environ.get("POSTGRES_POOL_TIMEOUT", "10")),
+            }
+        },
     }
 }
 
@@ -99,6 +111,11 @@ MONGO_PASSWORD = os.environ.get("MONGO_PASSWORD", "")
 MONGO_HOST = os.environ.get("MONGO_HOST", "localhost")
 MONGO_PORT = os.environ.get("MONGO_PORT", "27018")
 
+# Authentication: the application's own user model (table `app_user`), which
+# logs in by email instead of username. Staff/superuser status is derived from
+# the user's role — see core/models/organization.py.
+
+AUTH_USER_MODEL = "core.User"
 MAX_UPLOAD_SIZE_BYTES = int(
     os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 * 1024)
 )
@@ -118,7 +135,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "America/Sao_Paulo"
+TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
