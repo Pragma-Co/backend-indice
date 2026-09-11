@@ -8,6 +8,8 @@ def api_root(request):
             "message": "Backend is running.",
             "endpoints": {
                 "health": "/health/",
+                "projects": "/projects/",
+                "disciplines": "/disciplines/",
                 "admin": "/admin/",
             },
         }
