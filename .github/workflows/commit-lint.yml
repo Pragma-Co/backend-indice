@@ -1,0 +1,36 @@
+name: Commit Lint
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: commit-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commitlint:
+    name: Validar mensagens de commit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout da branch do PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validar commits do PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          npx --yes @commitlint/cli@19 \
+            --from "$BASE_SHA" \
+            --to "$HEAD_SHA" \
+            --verbose
