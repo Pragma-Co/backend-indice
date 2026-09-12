@@ -42,7 +42,7 @@ export default {
   },
 
   rules: {
-    'header-max-length': [2, 'always', 100],
+    'header-max-length': [2, 'always', 120],
     'subject-full-stop': [2, 'never', '.'],
     'convencao-commit': [2, 'always'],
   },
