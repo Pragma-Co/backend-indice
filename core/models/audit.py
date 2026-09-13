@@ -44,9 +44,7 @@ class AuditLog(models.Model):
         ]
         indexes = [
             # "what happened to this record"
-            models.Index(
-                fields=["entity", "entity_id", "-occurred_at"], name="ix_audit_entity"
-            ),
+            models.Index(fields=["entity", "entity_id", "-occurred_at"], name="ix_audit_entity"),
             # "what this person did" — the audit screen per collaborator
             models.Index(fields=["user", "-occurred_at"], name="ix_audit_user"),
         ]
