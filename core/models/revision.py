@@ -26,7 +26,7 @@ class Revision(models.Model):
         max_length=10, choices=RevisionStatus.choices, default=RevisionStatus.PENDING
     )
     issue_date = models.DateField(null=True, blank=True)
-    change_description = models.CharField(max_length=255, null=True, blank=True)
+    change_description = models.CharField(max_length=255, blank=True)
     # RESTRICT: the author and the auditor of a revision are part of the
     # record and cannot be deleted (users are deactivated instead)
     author = models.ForeignKey(
@@ -41,8 +41,8 @@ class Revision(models.Model):
         on_delete=models.PROTECT,
         related_name="audited_revisions",
     )
-    auditor_comment = models.TextField(null=True, blank=True)
-    audited_at = models.DateTimeField(null=True, blank=True)
+    auditor_comment = models.TextField(blank=True)
+    audited_at = models.DateTimeField(blank=True)
     created_at = models.DateTimeField(db_default=Now(), editable=False)
 
     class Meta:

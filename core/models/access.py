@@ -28,7 +28,7 @@ class DocumentAccess(models.Model):
     status = models.CharField(
         max_length=10, choices=AccessStatus.choices, default=AccessStatus.PENDING
     )
-    justification = models.TextField(null=True, blank=True)
+    justification = models.TextField(blank=True)
     requested_at = models.DateTimeField(null=True, blank=True)
     approver = models.ForeignKey(
         settings.AUTH_USER_MODEL,
