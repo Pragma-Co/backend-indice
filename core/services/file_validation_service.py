@@ -1,10 +1,12 @@
+import hashlib
+
 from django.conf import settings
 
 from core.models.upload_file_type import ALLOWED_FILE_TYPES
 from core.services.upload_exceptions import FileTooLargeError, InvalidFileTypeError
 
 _MAX_SIGNATURE_LENGTH = max(t.offset + len(t.signature) for t in ALLOWED_FILE_TYPES)
-
+_HASH_CHUNK_SIZE = 8192
 
 def validate_file_size(uploaded_file):
     if uploaded_file.size > settings.MAX_UPLOAD_SIZE_BYTES:
@@ -30,6 +32,13 @@ def validate_file_type(uploaded_file):
         raise InvalidFileTypeError()
     return file_type
 
+def calculate_file_hash(uploaded_file) -> str:
+    uploaded_file.seek(0)
+    sha256 = hashlib.sha256()
+    for chunk in uploaded_file.chunks(chunk_size=_HASH_CHUNK_SIZE):
+        sha256.update(chunk)
+    uploaded_file.seek(0)
+    return sha256.hexdigest()
 
 def format_file_size(size_in_bytes: int) -> str:
     size = float(size_in_bytes)
