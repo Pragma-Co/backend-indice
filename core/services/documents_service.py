@@ -25,14 +25,10 @@ DATE_RANGES = {
 def build_simple_filters():
     return {
         "areas": list(
-            Area.objects.filter(active=True)
-            .order_by("acronym")
-            .values("acronym", "name")
+            Area.objects.filter(active=True).order_by("acronym").values("acronym", "name")
         ),
         "tipos": list(
-            DocumentType.objects.filter(active=True)
-            .order_by("code")
-            .values("code", "name")
+            DocumentType.objects.filter(active=True).order_by("code").values("code", "name")
         ),
         "datas": DATE_FILTERS,
     }
@@ -92,9 +88,7 @@ def get_documents(params):
 
     document_type = params.get("tipo", "").strip()
     if document_type:
-        queryset = queryset.filter(
-            document_type__active=True, document_type__code=document_type
-        )
+        queryset = queryset.filter(document_type__active=True, document_type__code=document_type)
 
     queryset = _apply_date_filter(queryset, params.get("data", "").strip())
     queryset = _apply_date_range(
