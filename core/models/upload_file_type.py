@@ -21,4 +21,3 @@ ALLOWED_FILE_TYPES = [
         mime_type="image/png", extension="png", signature=b"\x89PNG\r\n\x1a\n"
     ),
 ]
-

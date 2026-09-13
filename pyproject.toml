@@ -1,0 +1,31 @@
+# Configuracao do Ruff — lint e formatacao do backend.
+#
+# Uso local (depois de "pip install -r requirements-dev.txt"):
+#   ruff check .          lista os problemas
+#   ruff check --fix .    corrige o que da para corrigir sozinho
+#   ruff format .         formata o codigo
+#
+# No CI as duas verificacoes rodam em modo somente-leitura.
+
+[tool.ruff]
+line-length = 120
+# Mesma versao do Python usada no Dockerfile.
+target-version = "py312"
+# Migrations sao geradas pelo Django, nao faz sentido cobrar estilo delas.
+extend-exclude = ["core/migrations"]
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle: erros
+    "W", # pycodestyle: avisos
+    "F", # pyflakes: imports e variaveis nao usados, nomes indefinidos
+    "I", # isort: ordem dos imports
+    "UP", # pyupgrade: sintaxe antiga que o Python 3.12 ja resolve melhor
+    "B", # flake8-bugbear: armadilhas comuns
+    "DJ", # flake8-django: praticas especificas de Django
+]
+
+[tool.ruff.lint.per-file-ignores]
+# O docstring traz comandos docker para copiar e colar; quebrar as linhas
+# atrapalharia quem for usar.
+"scripts/setup_env.py" = ["E501"]

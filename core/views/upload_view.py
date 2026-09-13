@@ -40,9 +40,6 @@ def upload_document(request):
             status=400,
         )
     except UploadStorageError:
-        return JsonResponse(
-            {"error": "Failed to save the file. Please try again."}, status=500
-        )
+        return JsonResponse({"error": "Failed to save the file. Please try again."}, status=500)
 
     return JsonResponse(serialize_upload_result(result), status=201)
-
