@@ -15,7 +15,7 @@ class Document(models.Model):
 
     code = models.CharField(max_length=60, unique=True)
     title = models.CharField(max_length=255)
-    description = models.CharField(max_length=500, null=True, blank=True)
+    description = models.CharField(max_length=500, blank=True)
     project = models.ForeignKey(
         Project, on_delete=models.PROTECT, related_name="documents"
     )

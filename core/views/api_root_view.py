@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 
+
 def api_root(request):
     """Simple welcome endpoint listing the available routes."""
     return JsonResponse(

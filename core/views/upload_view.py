@@ -11,6 +11,7 @@ from core.services.upload_exceptions import (
     UploadStorageError,
 )
 
+
 @csrf_exempt
 @require_POST
 def upload_document(request):
