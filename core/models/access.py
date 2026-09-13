@@ -28,7 +28,7 @@ class DocumentAccess(models.Model):
     status = models.CharField(
         max_length=10, choices=AccessStatus.choices, default=AccessStatus.PENDING
     )
-    justification = models.TextField(null=True, blank=True)
+    justification = models.TextField(blank=True)
     requested_at = models.DateTimeField(null=True, blank=True)
     approver = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -43,18 +43,13 @@ class DocumentAccess(models.Model):
         db_table = "document_access"
         verbose_name_plural = "document accesses"
         constraints = [
-            models.UniqueConstraint(
-                fields=["document", "user"], name="uq_document_access"
-            ),
+            models.UniqueConstraint(fields=["document", "user"], name="uq_document_access"),
             models.CheckConstraint(
                 condition=models.Q(status__in=AccessStatus.values),
                 name="ck_document_access_status",
             ),
             models.CheckConstraint(
-                condition=(
-                    models.Q(status=AccessStatus.PENDING)
-                    & models.Q(approver__isnull=True)
-                )
+                condition=(models.Q(status=AccessStatus.PENDING) & models.Q(approver__isnull=True))
                 | (
                     ~models.Q(status=AccessStatus.PENDING)
                     & models.Q(approver__isnull=False)

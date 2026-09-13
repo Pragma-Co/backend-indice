@@ -1,14 +1,26 @@
-from django.conf import settings
+from dataclasses import dataclass
 
-from core.models.upload_file_type import ALLOWED_FILE_TYPES
-from core.services.upload_exceptions import FileTooLargeError, InvalidFileTypeError
+
+@dataclass(frozen=True)
+class AllowedFileType:
+    mime_type: str
+    extension: str
+    signature: bytes
+    offset: int = 0
+
+
+ALLOWED_FILE_TYPES = [
+    AllowedFileType(mime_type="application/pdf", extension="pdf", signature=b"%PDF-"),
+    AllowedFileType(
+        mime_type="application/msword",
+        extension="doc",
+        signature=b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+    ),
+    AllowedFileType(mime_type="image/jpeg", extension="jpg", signature=b"\xff\xd8\xff"),
+    AllowedFileType(mime_type="image/png", extension="png", signature=b"\x89PNG\r\n\x1a\n"),
+]
 
 _MAX_SIGNATURE_LENGTH = max(t.offset + len(t.signature) for t in ALLOWED_FILE_TYPES)
-
-
-def validate_file_size(uploaded_file):
-    if uploaded_file.size > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise FileTooLargeError(settings.MAX_UPLOAD_SIZE_BYTES)
 
 
 def sniff_file_type(uploaded_file):
@@ -22,13 +34,6 @@ def sniff_file_type(uploaded_file):
         if header[start:end] == file_type.signature:
             return file_type
     return None
-
-
-def validate_file_type(uploaded_file):
-    file_type = sniff_file_type(uploaded_file)
-    if file_type is None:
-        raise InvalidFileTypeError()
-    return file_type
 
 
 def format_file_size(size_in_bytes: int) -> str:

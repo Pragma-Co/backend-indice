@@ -18,11 +18,10 @@ def get_mongo_client() -> MongoClient:
     if _client is None:
         # The URI is assembled here rather than stored in settings so the
         # password never shows up in Django's debug-page settings dump.
-        uri = "mongodb://{user}:{password}@{host}:{port}/".format(
-            user=quote_plus(settings.MONGO_USER),
-            password=quote_plus(settings.MONGO_PASSWORD),
-            host=settings.MONGO_HOST,
-            port=settings.MONGO_PORT,
+        uri = (
+            f"mongodb://{quote_plus(settings.MONGO_USER)}"
+            f":{quote_plus(settings.MONGO_PASSWORD)}"
+            f"@{settings.MONGO_HOST}:{settings.MONGO_PORT}/"
         )
         _client = MongoClient(uri, serverSelectionTimeoutMS=3000)
     return _client
