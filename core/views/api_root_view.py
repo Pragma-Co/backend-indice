@@ -12,4 +12,3 @@ def api_root(request):
             },
         }
     )
-
