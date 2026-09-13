@@ -1,8 +1,11 @@
 name: Commit Lint
 
+# Apenas em PRs para develop. Todo commit ja e validado ao entrar nela, entao
+# revalidar no merge de release (develop -> main) so faria o CI reprovar o
+# historico antigo, anterior a esta convencao.
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [develop]
 
 concurrency:
   group: commit-lint-${{ github.event.pull_request.number }}
