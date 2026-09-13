@@ -43,18 +43,13 @@ class DocumentAccess(models.Model):
         db_table = "document_access"
         verbose_name_plural = "document accesses"
         constraints = [
-            models.UniqueConstraint(
-                fields=["document", "user"], name="uq_document_access"
-            ),
+            models.UniqueConstraint(fields=["document", "user"], name="uq_document_access"),
             models.CheckConstraint(
                 condition=models.Q(status__in=AccessStatus.values),
                 name="ck_document_access_status",
             ),
             models.CheckConstraint(
-                condition=(
-                    models.Q(status=AccessStatus.PENDING)
-                    & models.Q(approver__isnull=True)
-                )
+                condition=(models.Q(status=AccessStatus.PENDING) & models.Q(approver__isnull=True))
                 | (
                     ~models.Q(status=AccessStatus.PENDING)
                     & models.Q(approver__isnull=False)

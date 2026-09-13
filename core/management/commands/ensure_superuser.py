@@ -47,7 +47,5 @@ class Command(BaseCommand):
         if created:
             self.stdout.write(f"Area '{area.acronym}' created for the admin user.")
 
-        User.objects.create_superuser(
-            email=email, password=password, name=name, area=area
-        )
+        User.objects.create_superuser(email=email, password=password, name=name, area=area)
         self.stdout.write(self.style.SUCCESS(f"Superuser '{email}' created."))

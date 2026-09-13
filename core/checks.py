@@ -27,8 +27,7 @@ def upload_extensions_are_storable(app_configs, **kwargs):
         return []
     return [
         CheckWarning(
-            "Upload accepts extensions the file table cannot store: "
-            f"{orphans}.",
+            f"Upload accepts extensions the file table cannot store: {orphans}.",
             hint=(
                 "Add them to core.models.choices.FileExtension and run "
                 "makemigrations (ck_file_extension is built from it), or drop "

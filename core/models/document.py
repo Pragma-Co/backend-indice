@@ -16,12 +16,8 @@ class Document(models.Model):
     code = models.CharField(max_length=60, unique=True)
     title = models.CharField(max_length=255)
     description = models.CharField(max_length=500, blank=True)
-    project = models.ForeignKey(
-        Project, on_delete=models.PROTECT, related_name="documents"
-    )
-    discipline = models.ForeignKey(
-        Discipline, on_delete=models.PROTECT, related_name="documents"
-    )
+    project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="documents")
+    discipline = models.ForeignKey(Discipline, on_delete=models.PROTECT, related_name="documents")
     confidentiality_level = models.CharField(
         max_length=12,
         choices=ConfidentialityLevel.choices,
@@ -38,12 +34,8 @@ class Document(models.Model):
     created_at = models.DateTimeField(db_default=Now(), editable=False)
     updated_at = models.DateTimeField(db_default=Now(), editable=False)
 
-    areas = models.ManyToManyField(
-        Area, through="core.DocumentArea", related_name="documents"
-    )
-    tags = models.ManyToManyField(
-        "core.Tag", through="core.DocumentTag", related_name="documents"
-    )
+    areas = models.ManyToManyField(Area, through="core.DocumentArea", related_name="documents")
+    tags = models.ManyToManyField("core.Tag", through="core.DocumentTag", related_name="documents")
 
     class Meta:
         db_table = "document"
@@ -53,9 +45,7 @@ class Document(models.Model):
                 name="ck_document_title_not_blank",
             ),
             models.CheckConstraint(
-                condition=models.Q(
-                    confidentiality_level__in=ConfidentialityLevel.values
-                ),
+                condition=models.Q(confidentiality_level__in=ConfidentialityLevel.values),
                 name="ck_document_confidentiality_level",
             ),
         ]
@@ -94,9 +84,7 @@ class DocumentArea(models.Model):
         related_name="document_areas",
         db_index=False,
     )
-    area = models.ForeignKey(
-        Area, on_delete=models.PROTECT, related_name="document_areas"
-    )
+    area = models.ForeignKey(Area, on_delete=models.PROTECT, related_name="document_areas")
 
     class Meta:
         db_table = "document_area"
@@ -115,9 +103,7 @@ class DocumentTag(models.Model):
         related_name="document_tags",
         db_index=False,
     )
-    tag = models.ForeignKey(
-        "core.Tag", on_delete=models.CASCADE, related_name="document_tags"
-    )
+    tag = models.ForeignKey("core.Tag", on_delete=models.CASCADE, related_name="document_tags")
 
     class Meta:
         db_table = "document_tag"
