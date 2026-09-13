@@ -4,6 +4,7 @@ def serialize_upload_result(result):
         "original_name": result["original_name"],
         "file_size": result["file_size"],
         "inferred_type": result["inferred_type"],
+        "sha256": result["sha256"],
     }
 
 def serialize_duplicate_result(exc):
