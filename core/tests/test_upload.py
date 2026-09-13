@@ -2,8 +2,11 @@ import shutil
 import tempfile
 from unittest import mock
 
+from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
+from core.services.file_validation_service import calculate_file_hash
+from core.services.upload_exceptions import DuplicateFileError
 
 from core.services.file_validation_service import (
     format_file_size,
@@ -18,11 +21,23 @@ from core.services.upload_exceptions import (
     MissingFileError,
 )
 
+from core.models import (
+    Area,
+    Discipline,
+    Document,
+    DocumentType,
+    File,
+    Project,
+    Revision,
+    User,
+)
+
 PDF_HEADER = b"%PDF-1.4 fake pdf body"
 PNG_HEADER = b"\x89PNG\r\n\x1a\n fake png body"
 JPEG_HEADER = b"\xff\xd8\xff fake jpeg body"
 DOC_HEADER = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 fake doc body"
 INVALID_HEADER = b"this is a plain text file, not a real document"
+DOCX_HEADER = b"PK\x03\x04 fake docx body"
 
 
 class FormatFileSizeTests(TestCase):
@@ -70,6 +85,10 @@ class SniffFileTypeTests(TestCase):
         uploaded = SimpleUploadedFile("file.pdf", INVALID_HEADER)
         with self.assertRaises(InvalidFileTypeError):
             validate_file_type(uploaded)
+    def test_given_docx_header_when_sniffed_then_returns_docx_type(self):
+        uploaded = SimpleUploadedFile("file.docx", DOCX_HEADER)
+        file_type = sniff_file_type(uploaded)
+        self.assertEqual(file_type.mime_type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 class ValidateFileSizeTests(TestCase):
@@ -164,3 +183,125 @@ class UploadDocumentViewTests(TestCase):
     def test_given_get_request_when_called_then_returns_405(self):
         response = self.client.get("/documents/upload")
         self.assertEqual(response.status_code, 405)
+
+class CalculateFileHashTests(TestCase):
+    def test_given_file_content_when_hashed_then_returns_expected_sha256(self):
+        import hashlib
+
+        uploaded = SimpleUploadedFile("file.pdf", PDF_HEADER)
+        result = calculate_file_hash(uploaded)
+        self.assertEqual(result, hashlib.sha256(PDF_HEADER).hexdigest())
+
+    def test_given_file_hashed_when_finished_then_cursor_is_reset_to_start(self):
+        uploaded = SimpleUploadedFile("file.pdf", PDF_HEADER)
+        calculate_file_hash(uploaded)
+        self.assertEqual(uploaded.read(), PDF_HEADER)
+
+
+class StoreUploadedFileDeduplicationTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
+
+        area = Area.objects.create(acronym="AR1", name="Area Teste")
+        user = User.objects.create(email="autor@example.com", name="Autor Teste", area=area)
+        project = Project.objects.create(code="PRJ-1", name="Projeto Teste")
+        discipline = Discipline.objects.create(code="DISC1", name="Disciplina Teste")
+        document_type = DocumentType.objects.create(code="DT1", name="Tipo Teste")
+
+        self.document = Document.objects.create(
+            code="RA-0001",
+            title="Documento Original",
+            project=project,
+            discipline=discipline,
+            document_type=document_type,
+            responsible=user,
+        )
+        revision = Revision.objects.create(
+            document=self.document,
+            version=1,
+            status="APPROVED",
+            author=user,
+            auditor=user,
+            audited_at=timezone.now(),
+        )
+        self.existing_sha256 = __import__("hashlib").sha256(PDF_HEADER).hexdigest()
+        self.existing_file = File.objects.create(
+            revision=revision,
+            original_name="original.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(PDF_HEADER),
+            sha256=self.existing_sha256,
+            storage_path="/fake/path/original.pdf",
+        )
+
+    @mock.patch("core.services.temp_upload_service.get_mongo_db")
+    def test_given_file_with_existing_hash_when_stored_then_raises_duplicate_file_error(self, mock_mongo):
+        with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
+            uploaded = SimpleUploadedFile("copia.pdf", PDF_HEADER)
+            with self.assertRaises(DuplicateFileError) as ctx:
+                store_uploaded_file(uploaded)
+
+        self.assertEqual(ctx.exception.codigo_ra, "RA-0001")
+        self.assertEqual(ctx.exception.titulo, "Documento Original")
+        self.assertEqual(ctx.exception.status, "APPROVED")
+        mock_mongo.assert_not_called()
+
+    @mock.patch("core.services.temp_upload_service.get_mongo_db")
+    def test_given_file_with_new_hash_when_stored_then_no_error_is_raised(self, mock_mongo):
+        with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
+            uploaded = SimpleUploadedFile("novo.pdf", PDF_HEADER + b"extra bytes")
+            result = store_uploaded_file(uploaded)  # should not raise
+
+        self.assertIn("sha256", result)
+        self.assertNotEqual(result["sha256"], self.existing_sha256)
+
+
+class UploadDocumentViewDeduplicationTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
+
+        area = Area.objects.create(acronym="AR2", name="Area Teste 2")
+        user = User.objects.create(email="autor2@example.com", name="Autor Teste 2", area=area)
+        project = Project.objects.create(code="PRJ-2", name="Projeto Teste 2")
+        discipline = Discipline.objects.create(code="DISC2", name="Disciplina Teste 2")
+        document_type = DocumentType.objects.create(code="DT2", name="Tipo Teste 2")
+
+        document = Document.objects.create(
+            code="RA-0099",
+            title="Documento Duplicado",
+            project=project,
+            discipline=discipline,
+            document_type=document_type,
+            responsible=user,
+        )
+        revision = Revision.objects.create(
+            document=document,
+            version=1,
+            status="PENDING",
+            author=user,
+        )
+        File.objects.create(
+            revision=revision,
+            original_name="original.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(PDF_HEADER),
+            sha256=__import__("hashlib").sha256(PDF_HEADER).hexdigest(),
+            storage_path="/fake/path/original.pdf",
+        )
+
+    def test_given_duplicate_file_when_posted_then_returns_409_with_document_payload(self):
+        uploaded = SimpleUploadedFile("copia.pdf", PDF_HEADER)
+        with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
+            response = self.client.post("/documents/upload", {"file": uploaded})
+
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertTrue(body["duplicate"])
+        self.assertEqual(body["document"]["codigo_ra"], "RA-0099")
+        self.assertEqual(body["document"]["titulo"], "Documento Duplicado")
+        self.assertEqual(body["document"]["status"], "PENDING")
