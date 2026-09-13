@@ -42,7 +42,7 @@ class Revision(models.Model):
         related_name="audited_revisions",
     )
     auditor_comment = models.TextField(blank=True)
-    audited_at = models.DateTimeField(blank=True)
+    audited_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(db_default=Now(), editable=False)
 
     class Meta:
@@ -61,10 +61,7 @@ class Revision(models.Model):
             models.CheckConstraint(
                 # A decision only exists together with who took it and when
                 condition=models.Q(status=RevisionStatus.PENDING)
-                | (
-                    models.Q(auditor__isnull=False)
-                    & models.Q(audited_at__isnull=False)
-                ),
+                | (models.Q(auditor__isnull=False) & models.Q(audited_at__isnull=False)),
                 name="ck_revision_decision_has_auditor",
             ),
             # One current revision per document. Doubles as the read index
@@ -121,9 +118,7 @@ class File(models.Model):
                 name="ck_file_sha256_hex",
             ),
             # The same file cannot be attached twice to one revision
-            models.UniqueConstraint(
-                fields=["revision", "sha256"], name="uq_file_revision_sha256"
-            ),
+            models.UniqueConstraint(fields=["revision", "sha256"], name="uq_file_revision_sha256"),
         ]
         indexes = [
             # Integrity checks and duplicate detection across revisions

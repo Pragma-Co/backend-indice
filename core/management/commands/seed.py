@@ -80,9 +80,7 @@ class Command(BaseCommand):
         document_types = self._seed_document_types()
         projects = self._seed_projects(disciplines)
         tags = self._seed_tags()
-        documents = self._seed_documents(
-            projects, disciplines, document_types, users, areas, tags
-        )
+        documents = self._seed_documents(projects, disciplines, document_types, users, areas, tags)
         revisions = self._seed_revisions(documents, users)
         self._seed_files(documents, revisions)
         accesses = self._seed_document_access(documents, users)
@@ -140,8 +138,7 @@ class Command(BaseCommand):
             area, manager = areas[acronym], users[manager_key]
             if manager.area_id != area.pk:
                 raise CommandError(
-                    f"{manager.email} cannot manage {acronym}: they belong to "
-                    f"another area."
+                    f"{manager.email} cannot manage {acronym}: they belong to another area."
                 )
             if area.manager_id != manager.pk:
                 area.manager = manager
@@ -214,8 +211,7 @@ class Command(BaseCommand):
             # Rule 2 of section 8: the discipline must be one of the project's
             if not project.project_disciplines.filter(discipline=discipline).exists():
                 raise CommandError(
-                    f"{code}: discipline {discipline_code} is not part of "
-                    f"project {project_code}."
+                    f"{code}: discipline {discipline_code} is not part of project {project_code}."
                 )
             # Rule 4: a document needs at least one area
             if not area_acronyms:
@@ -261,13 +257,10 @@ class Command(BaseCommand):
                 # Rule 3 of section 8: the auditor is never the author
                 if auditor is not None and auditor.pk == author.pk:
                     raise CommandError(
-                        f"{code} v{version}: {author.email} cannot audit their "
-                        f"own revision."
+                        f"{code} v{version}: {author.email} cannot audit their own revision."
                     )
 
-                audited_at = (
-                    self._ago(audited_days_ago) if audited_days_ago is not None else None
-                )
+                audited_at = self._ago(audited_days_ago) if audited_days_ago is not None else None
                 # A revision is issued when it leaves the pending state
                 issue_date = (
                     audited_at.date()
@@ -332,9 +325,7 @@ class Command(BaseCommand):
             # the document's areas decides a request
             if approver is not None:
                 deciders = {document.responsible_id} | set(
-                    document.areas.exclude(manager=None).values_list(
-                        "manager_id", flat=True
-                    )
+                    document.areas.exclude(manager=None).values_list("manager_id", flat=True)
                 )
                 if approver.pk not in deciders:
                     raise CommandError(
@@ -349,15 +340,11 @@ class Command(BaseCommand):
                     "status": status,
                     "justification": justification,
                     "requested_at": (
-                        self._ago(requested_days_ago)
-                        if requested_days_ago is not None
-                        else None
+                        self._ago(requested_days_ago) if requested_days_ago is not None else None
                     ),
                     "approver": approver,
                     "decided_at": (
-                        self._ago(decided_days_ago)
-                        if decided_days_ago is not None
-                        else None
+                        self._ago(decided_days_ago) if decided_days_ago is not None else None
                     ),
                 },
             )
@@ -495,8 +482,7 @@ class Command(BaseCommand):
 
         approved = Revision.objects.filter(status=RevisionStatus.APPROVED).count()
         self.stdout.write(
-            f"{Document.objects.count()} documents, "
-            f"{approved} of them with a current revision."
+            f"{Document.objects.count()} documents, {approved} of them with a current revision."
         )
 
         example = f"marina.duarte@{data.EMAIL_DOMAIN}"
