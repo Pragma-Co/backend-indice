@@ -1,36 +1,45 @@
 /**
- * Convencao de commit do projeto:
+ * Convencao de commit do projeto.
  *
- *   tipo(#issue): descricao em minusculo, sem ponto final
+ * Fonte da verdade: documentation/process/Commit Standards.md, no repositorio
+ * pai. Mudou aqui, atualize la tambem — e vice-versa.
+ *
+ *   tipo(escopo): descricao em ingles, sem ponto final
+ *
+ * O escopo e o numero do card (#12) ou, quando nao existe card, o
+ * identificador do requisito (FR1, NFR2). Quando a mudanca tem card e
+ * requisito, use sempre o card.
  *
  * Exemplos validos:
- *   feat(#50): adiciona endpoint de upload de documentos
- *   fix(#9): corrige texto do botao de cancelar
- *   chore: atualiza porta padrao do banco
- *
- * O numero da issue e obrigatorio, exceto para os tipos de manutencao
- * listados em TIPOS_SEM_ISSUE.
+ *   feat(#12): implement document search filters
+ *   fix(#18): prevent unauthorized document access
+ *   devops(#30): update CI/CD workflow
+ *   docs(FR2): update document processing documentation
+ *   chore: bump dependency versions
  */
 
 const TIPOS = [
-  'build',
   'chore',
-  'ci',
+  'devops',
   'docs',
   'feat',
   'fix',
-  'perf',
   'refactor',
-  'revert',
   'style',
   'test',
 ];
 
-const TIPOS_SEM_ISSUE = new Set(['build', 'chore', 'ci', 'docs', 'revert']);
+// Tipos de manutencao que podem vir sem escopo, como ja acontece no historico
+// do projeto. Para todos os outros o escopo e obrigatorio.
+const TIPOS_SEM_ESCOPO = new Set(['chore', 'docs']);
 
-const HEADER = /^(?<tipo>[A-Za-z]+)(?:\((?<escopo>[^()]*)\))?(?<breaking>!)?: (?<descricao>.+)$/;
+// Numero do card (#12) ou identificador de requisito (FR1, NFR2).
+const ESCOPO = /^(#\d+|N?FR\d+)$/;
 
-const EXEMPLO = 'feat(#50): adiciona endpoint de upload';
+const HEADER =
+  /^(?<tipo>[A-Za-z]+)(?:\((?<escopo>[^()]*)\))?(?<breaking>!)?: (?<descricao>.+)$/;
+
+const EXEMPLO = 'feat(#12): implement document search filters';
 
 export default {
   // O parser padrao do commitlint nao aceita "#" no escopo, entao usamos o nosso.
@@ -56,7 +65,7 @@ export default {
           if (!match) {
             return [
               false,
-              `formato invalido. Use "tipo(#issue): descricao" — ex.: ${EXEMPLO}`,
+              `formato invalido. Use "tipo(escopo): descricao" — ex.: ${EXEMPLO}`,
             ];
           }
 
@@ -69,17 +78,17 @@ export default {
             ];
           }
 
-          if (escopo !== undefined && !/^#\d+$/.test(escopo)) {
+          if (escopo !== undefined && !ESCOPO.test(escopo)) {
             return [
               false,
-              `escopo "(${escopo})" invalido. O escopo deve ser o numero da issue — ex.: ${EXEMPLO}`,
+              `escopo "(${escopo})" invalido. Use o numero do card (#12) ou o requisito (FR1, NFR2) — ex.: ${EXEMPLO}`,
             ];
           }
 
-          if (escopo === undefined && !TIPOS_SEM_ISSUE.has(tipo)) {
+          if (escopo === undefined && !TIPOS_SEM_ESCOPO.has(tipo)) {
             return [
               false,
-              `o tipo "${tipo}" exige o numero da issue — ex.: ${tipo}(#123): descricao`,
+              `o tipo "${tipo}" exige escopo — ex.: ${tipo}(#123): descricao`,
             ];
           }
 
