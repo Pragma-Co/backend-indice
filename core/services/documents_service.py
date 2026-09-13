@@ -6,7 +6,6 @@ from django.utils import timezone
 
 from core.models import Area, Document, DocumentType
 
-
 SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
 DATE_FILTERS = [
