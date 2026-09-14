@@ -1,6 +1,7 @@
 class MissingFileError(Exception):
     pass
 
+
 class FileTooLargeError(Exception):
     def __init__(self, max_size_bytes):
         self.max_size_bytes = max_size_bytes
@@ -14,6 +15,7 @@ class InvalidFileTypeError(Exception):
 class UploadStorageError(Exception):
     pass
 
+
 class DuplicateFileError(Exception):
     def __init__(self, existing_file):
         revision = existing_file.revision
@@ -26,7 +28,4 @@ class DuplicateFileError(Exception):
         self.status = revision.status
         self.data_upload = existing_file.uploaded_at
 
-        super().__init__(
-            f"Arquivo duplicado detectado: já existe no documento {document.code}"
-        )
-    
+        super().__init__(f"Arquivo duplicado detectado: já existe no documento {document.code}")

@@ -85,10 +85,14 @@ class SniffFileTypeTests(TestCase):
         uploaded = SimpleUploadedFile("file.pdf", INVALID_HEADER)
         with self.assertRaises(InvalidFileTypeError):
             validate_file_type(uploaded)
+
     def test_given_docx_header_when_sniffed_then_returns_docx_type(self):
         uploaded = SimpleUploadedFile("file.docx", DOCX_HEADER)
         file_type = sniff_file_type(uploaded)
-        self.assertEqual(file_type.mime_type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        self.assertEqual(
+            file_type.mime_type,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
 
 
 class ValidateFileSizeTests(TestCase):
@@ -184,6 +188,7 @@ class UploadDocumentViewTests(TestCase):
         response = self.client.get("/documents/upload")
         self.assertEqual(response.status_code, 405)
 
+
 class CalculateFileHashTests(TestCase):
     def test_given_file_content_when_hashed_then_returns_expected_sha256(self):
         import hashlib
@@ -237,7 +242,9 @@ class StoreUploadedFileDeduplicationTests(TestCase):
         )
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_given_file_with_existing_hash_when_stored_then_raises_duplicate_file_error(self, mock_mongo):
+    def test_given_file_with_existing_hash_when_stored_then_raises_duplicate_file_error(
+        self, mock_mongo
+    ):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", PDF_HEADER)
             with self.assertRaises(DuplicateFileError) as ctx:

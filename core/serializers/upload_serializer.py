@@ -7,6 +7,7 @@ def serialize_upload_result(result):
         "sha256": result["sha256"],
     }
 
+
 def serialize_duplicate_result(exc):
     return {
         "duplicate": True,
@@ -19,4 +20,3 @@ def serialize_duplicate_result(exc):
             "data_upload": exc.data_upload.isoformat() if exc.data_upload else None,
         },
     }
-
