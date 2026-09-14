@@ -2,14 +2,14 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from core.serializers.upload_serializer import serialize_upload_result, serialize_duplicate_result
+from core.serializers.upload_serializer import serialize_duplicate_result, serialize_upload_result
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import (
+    DuplicateFileError,
     FileTooLargeError,
     InvalidFileTypeError,
     MissingFileError,
     UploadStorageError,
-    DuplicateFileError,
 )
 
 

@@ -2,24 +2,9 @@ import shutil
 import tempfile
 from unittest import mock
 
-from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
-from core.services.file_validation_service import calculate_file_hash
-from core.services.upload_exceptions import DuplicateFileError
-
-from core.services.file_validation_service import (
-    format_file_size,
-    sniff_file_type,
-    validate_file_size,
-    validate_file_type,
-)
-from core.services.temp_upload_service import store_uploaded_file
-from core.services.upload_exceptions import (
-    FileTooLargeError,
-    InvalidFileTypeError,
-    MissingFileError,
-)
+from django.utils import timezone
 
 from core.models import (
     Area,
@@ -30,6 +15,20 @@ from core.models import (
     Project,
     Revision,
     User,
+)
+from core.services.file_validation_service import (
+    calculate_file_hash,
+    format_file_size,
+    sniff_file_type,
+    validate_file_size,
+    validate_file_type,
+)
+from core.services.temp_upload_service import store_uploaded_file
+from core.services.upload_exceptions import (
+    DuplicateFileError,
+    FileTooLargeError,
+    InvalidFileTypeError,
+    MissingFileError,
 )
 
 PDF_HEADER = b"%PDF-1.4 fake pdf body"
