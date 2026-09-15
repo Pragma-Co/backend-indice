@@ -61,11 +61,7 @@ def _apply_date_range(queryset, date_from, date_to):
 
 def get_documents(params):
     queryset = (
-        Document.objects.filter(
-            project__active=True,
-            discipline__active=True,
-            document_type__active=True,
-        )
+        Document.objects.filter(document_type__active=True)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
         .select_related("document_type", "discipline", "project")
         .prefetch_related("areas", "tags")
