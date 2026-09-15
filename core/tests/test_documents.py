@@ -68,20 +68,20 @@ class SimpleFiltersViewTests(TestCase):
         response = self.client.get("/documents/simple-filters")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(set(response.json()), {"areas", "tipos", "datas"})
+        self.assertEqual(set(response.json()), {"areas", "types", "dates"})
         self.assertEqual(response.json()["areas"], [{"acronym": "ENG", "name": "Engenharia"}])
-        self.assertEqual(response.json()["tipos"], [{"code": "PDF", "name": "Relatório"}])
-        self.assertTrue(response.json()["datas"])
+        self.assertEqual(response.json()["types"], [{"code": "PDF", "name": "Relatório"}])
+        self.assertTrue(response.json()["dates"])
 
     @mock.patch("core.services.documents_service.cache")
     def test_uses_cached_filter_groups(self, mocked_cache):
-        mocked_cache.get.return_value = {"areas": [], "tipos": [], "datas": []}
+        mocked_cache.get.return_value = {"areas": [], "types": [], "dates": []}
 
         response = self.client.get("/documents/simple-filters")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"areas": [], "tipos": [], "datas": []})
+        self.assertEqual(response.json(), {"areas": [], "types": [], "dates": []})
         mocked_cache.set.assert_not_called()
 
     def test_builds_filter_groups_with_expected_shape(self):
-        self.assertEqual(set(build_simple_filters()), {"areas", "tipos", "datas"})
+        self.assertEqual(set(build_simple_filters()), {"areas", "types", "dates"})

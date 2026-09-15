@@ -27,10 +27,10 @@ def build_simple_filters():
         "areas": list(
             Area.objects.filter(active=True).order_by("acronym").values("acronym", "name")
         ),
-        "tipos": list(
+        "types": list(
             DocumentType.objects.filter(active=True).order_by("code").values("code", "name")
         ),
-        "datas": DATE_FILTERS,
+        "dates": DATE_FILTERS,
     }
 
 
