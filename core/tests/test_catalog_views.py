@@ -24,7 +24,11 @@ class ListProjectsViewTests(TestCase):
         self.assertEqual(
             response.json(),
             [
-                {"id": fuselagem.id, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central"},
+                {
+                    "id": fuselagem.id,
+                    "code": "AK-2100",
+                    "name": "Aeroestrutura de Fuselagem Central",
+                },
                 {"id": empenagem.id, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical"},
                 {"id": pilone.id, "code": "AK-3100", "name": "Pilone de Motor"},
             ],
@@ -79,10 +83,13 @@ class ListProjectsViewTests(TestCase):
     def test_should_hide_internal_details_on_error(self):
         # Given
         internal_detail = 'connection to server at "postgres" (10.0.0.5) failed'
-        with patch(
-            "core.views.catalog_view.list_active_projects",
-            side_effect=RuntimeError(internal_detail),
-        ), self.assertLogs("core.views.catalog_view", level="ERROR") as logs:
+        with (
+            patch(
+                "core.views.catalog_view.list_active_projects",
+                side_effect=RuntimeError(internal_detail),
+            ),
+            self.assertLogs("core.views.catalog_view", level="ERROR") as logs,
+        ):
             # When
             response = self.client.get(reverse("project-list"))
 
@@ -164,10 +171,13 @@ class ListDisciplinesViewTests(TestCase):
     def test_should_hide_internal_details_on_error(self):
         # Given
         internal_detail = "FATAL: password authentication failed for user api6_admin"
-        with patch(
-            "core.views.catalog_view.list_active_disciplines",
-            side_effect=RuntimeError(internal_detail),
-        ), self.assertLogs("core.views.catalog_view", level="ERROR") as logs:
+        with (
+            patch(
+                "core.views.catalog_view.list_active_disciplines",
+                side_effect=RuntimeError(internal_detail),
+            ),
+            self.assertLogs("core.views.catalog_view", level="ERROR") as logs,
+        ):
             # When
             response = self.client.get(reverse("discipline-list"))
 
