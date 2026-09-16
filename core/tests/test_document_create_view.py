@@ -1,0 +1,220 @@
+import json
+import shutil
+import tempfile
+from pathlib import Path
+from unittest import mock
+
+from django.test import Client, TestCase, override_settings
+from django.urls import reverse
+
+from core.models import Area, Discipline, Document, DocumentType, Project, User
+from core.services.document_exceptions import (
+    DocumentCodeCollisionError,
+    DocumentStorageError,
+)
+
+PDF_BYTES = b"%PDF-1.4 view test body"
+TEMP_FILE_ID = "aaaaaaaa-2222-4333-8444-555555555555"
+
+
+@mock.patch("core.services.document_creation_service.get_mongo_db")
+class CreateDocumentViewTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.storage_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.storage_dir, ignore_errors=True)
+        override = override_settings(
+            TEMP_UPLOAD_DIR=self.temp_dir, DOCUMENT_STORAGE_DIR=self.storage_dir
+        )
+        override.enable()
+        self.addCleanup(override.disable)
+
+        self.area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.user = User.objects.create_user(
+            email="ana@example.com", password="secret", name="Ana", area=self.area
+        )
+        self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
+        self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
+        self.project.disciplines.add(self.discipline)
+        DocumentType.objects.create(code="DWG", name="Desenho")
+        self.url = reverse("document-list")
+
+    def _temp_file(self):
+        path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.pdf"
+        path.write_bytes(PDF_BYTES)
+        return path
+
+    def _payload(self, **overrides):
+        payload = {
+            "temp_file_id": TEMP_FILE_ID,
+            "title": "Desenho da caverna 14",
+            "description": "Conjunto soldado",
+            "project_id": self.project.id,
+            "discipline_id": self.discipline.id,
+            "document_type": "DWG",
+            "confidentiality": "PUBLIC",
+            "responsible_id": self.user.id,
+            "areas": ["EST"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _post(self, payload, client=None):
+        return (client or self.client).post(
+            self.url, data=json.dumps(payload), content_type="application/json"
+        )
+
+    def test_should_create_the_document_and_answer_201_with_the_consolidated_data(self, mongo):
+        # Given
+        self._temp_file()
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "caverna-14.pdf",
+            "inferred_type": "application/pdf",
+        }
+
+        # When
+        response = self._post(self._payload())
+
+        # Then
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["code"], "AK-2100-EST-DWG-0001")
+        self.assertEqual(body["title"], "Desenho da caverna 14")
+        self.assertEqual(body["project"]["code"], "AK-2100")
+        self.assertEqual(body["discipline"]["code"], "EST")
+        self.assertEqual(body["document_type"]["code"], "DWG")
+        self.assertEqual(body["confidentiality"], "PUBLIC")
+        self.assertEqual(body["responsible"]["email"], "ana@example.com")
+        self.assertEqual(body["areas"], [{"acronym": "EST", "name": "Engenharia Estrutural"}])
+        self.assertEqual(body["revision"]["label"], "REV01")
+        self.assertEqual(body["revision"]["status"], "PENDING")
+        self.assertIsNotNone(body["revision"]["issue_date"])
+        self.assertEqual(body["file"]["original_name"], "caverna-14.pdf")
+        self.assertIn("created_at", body)
+        self.assertEqual(Document.objects.count(), 1)
+
+    def test_should_answer_400_with_one_message_per_missing_field(self, mongo):
+        # Given
+        payload = {}
+
+        # When
+        response = self._post(payload)
+
+        # Then
+        self.assertEqual(response.status_code, 400)
+        errors = response.json()["errors"]
+        self.assertEqual(errors["title"], "Title is required.")
+        self.assertEqual(errors["areas"], "Areas must be a list of area acronyms.")
+        self.assertEqual(errors["temp_file_id"], "Temporary file id is required.")
+        self.assertEqual(Document.objects.count(), 0)
+
+    def test_should_answer_400_for_invalid_json(self, mongo):
+        # Given
+        body = "{not json"
+
+        # When
+        response = self.client.post(self.url, data=body, content_type="application/json")
+
+        # Then
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "Request body must be valid JSON."})
+
+    def test_should_answer_404_when_the_uploaded_file_is_gone(self, mongo):
+        # Given: no file in temp storage
+
+        # When
+        response = self._post(self._payload())
+
+        # Then
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("temp_file_id", response.json()["errors"])
+        self.assertEqual(Document.objects.count(), 0)
+
+    def test_should_answer_409_when_the_file_is_already_registered(self, mongo):
+        # Given
+        self._temp_file()
+        self._post(self._payload())
+        self._temp_file()
+
+        # When
+        response = self._post(self._payload())
+
+        # Then
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["document"]["code"], "AK-2100-EST-DWG-0001")
+        self.assertEqual(Document.objects.count(), 1)
+
+    def test_should_answer_500_without_internal_details_when_storage_fails(self, mongo):
+        # Given
+        self._temp_file()
+
+        # When
+        with mock.patch(
+            "core.views.document_create_view.create_document",
+            side_effect=DocumentStorageError(),
+        ):
+            response = self._post(self._payload())
+
+        # Then
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"error": "Failed to store the file. Please try again."})
+
+    def test_should_answer_503_when_no_unique_code_could_be_generated(self, mongo):
+        # Given
+        self._temp_file()
+
+        # When
+        with mock.patch(
+            "core.views.document_create_view.create_document",
+            side_effect=DocumentCodeCollisionError("AK-2100-EST-DWG"),
+        ):
+            response = self._post(self._payload())
+
+        # Then
+        self.assertEqual(response.status_code, 503)
+
+    def test_should_hide_internal_details_on_unexpected_errors(self, mongo):
+        # Given
+        internal_detail = 'connection to server at "postgres" (10.0.0.5) failed'
+
+        # When
+        with (
+            mock.patch(
+                "core.views.document_create_view.create_document",
+                side_effect=RuntimeError(internal_detail),
+            ),
+            self.assertLogs("core.views.document_create_view", level="ERROR") as logs,
+        ):
+            response = self._post(self._payload())
+
+        # Then
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"error": "RuntimeError"})
+        self.assertNotIn("postgres", response.content.decode())
+        self.assertIn(internal_detail, "\n".join(logs.output))
+
+    def test_should_keep_get_working_and_reject_other_methods(self, mongo):
+        # Given
+        client = Client(enforce_csrf_checks=True)
+
+        # When
+        get_response = client.get(self.url)
+        put_response = client.put(self.url)
+
+        # Then
+        self.assertEqual(get_response.status_code, 200)
+        self.assertIn("documents", get_response.json())
+        self.assertEqual(put_response.status_code, 405)
+        self.assertEqual(put_response["Allow"], "GET, POST")
+
+    def test_should_accept_post_with_csrf_checks_enforced(self, mongo):
+        # Given: the SPA has no session cookie, so CSRF must not block the call
+        self._temp_file()
+        client = Client(enforce_csrf_checks=True)
+
+        # When
+        response = self._post(self._payload(), client=client)
+
+        # Then
+        self.assertEqual(response.status_code, 201)
