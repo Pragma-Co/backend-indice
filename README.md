@@ -145,12 +145,12 @@ Both catalogs are maintained through the Django admin and populated by `manage.p
 
 ### `GET /projects/`
 
-Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code.
+Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code. `discipline_ids` lists the active disciplines linked to the project, ordered by id, so the form can offer only those in the Disciplina select (`POST /documents` rejects a discipline outside the project with `not_in_project`).
 
 ```json
 [
-  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central" },
-  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical" }
+  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central", "discipline_ids": [1, 2, 7, 8] },
+  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical", "discipline_ids": [1, 2, 3, 8] }
 ]
 ```
 
