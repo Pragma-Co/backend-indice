@@ -118,6 +118,9 @@ MONGO_PORT = os.environ.get("MONGO_PORT", "27018")
 AUTH_USER_MODEL = "core.User"
 MAX_UPLOAD_SIZE_BYTES = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 * 1024))
 TEMP_UPLOAD_DIR = Path(os.environ.get("TEMP_UPLOAD_DIR", BASE_DIR / "tmp_uploads"))
+# Definitive storage of registered documents (files are moved here on confirmation).
+# Rows in `file` keep paths relative to this directory, e.g. documents/<code>/v1/<name>.
+DOCUMENT_STORAGE_DIR = Path(os.environ.get("DOCUMENT_STORAGE_DIR", BASE_DIR / "media"))
 
 # Password validation (also part of a healthy LGPD posture)
 
