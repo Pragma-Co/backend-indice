@@ -200,8 +200,8 @@ Request (`application/json`):
 Responses:
 
 - `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
-- `400` with `{"errors": {"<field>": "<message>"}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON.
-- `404` when the temporary file no longer exists (upload it again).
+- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project) and `invalid_choice` (`confidentiality`).
+- `404` with `{"errors": {"temp_file_id": {"code": "not_found", ...}}}` when the temporary file no longer exists (upload it again).
 - `409` when the same file (by SHA-256) is already attached to a registered document.
 - `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
 
