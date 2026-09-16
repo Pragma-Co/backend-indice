@@ -40,9 +40,9 @@ class CreateDocumentViewTests(TestCase):
         DocumentType.objects.create(code="DWG", name="Desenho")
         self.url = reverse("document-list")
 
-    def _temp_file(self):
-        path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.pdf"
-        path.write_bytes(PDF_BYTES)
+    def _temp_file(self, extension="pdf", content=PDF_BYTES):
+        path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.{extension}"
+        path.write_bytes(content)
         return path
 
     def _payload(self, **overrides):
@@ -93,6 +93,22 @@ class CreateDocumentViewTests(TestCase):
         self.assertEqual(body["file"]["original_name"], "caverna-14.pdf")
         self.assertIn("created_at", body)
         self.assertEqual(Document.objects.count(), 1)
+
+    def test_should_register_images_accepted_by_the_upload(self, mongo):
+        # Given: the upload endpoint accepts JPEG and PNG, so the file table must store them
+        images = {"jpeg": b"\xff\xd8\xff fake jpeg body", "png": b"\x89PNG\r\n\x1a\n fake png body"}
+
+        for extension, content in images.items():
+            with self.subTest(extension=extension):
+                self._temp_file(extension=extension, content=content)
+
+                # When
+                response = self._post(self._payload(title=f"Imagem {extension}"))
+
+                # Then
+                self.assertEqual(response.status_code, 201, response.content)
+                self.assertEqual(response.json()["file"]["extension"], extension)
+                self.assertTrue(response.json()["file"]["storage_path"].endswith(f".{extension}"))
 
     def test_should_answer_400_with_a_code_and_message_per_invalid_field(self, mongo):
         # Given
