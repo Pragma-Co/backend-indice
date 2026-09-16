@@ -94,7 +94,7 @@ class CreateDocumentViewTests(TestCase):
         self.assertIn("created_at", body)
         self.assertEqual(Document.objects.count(), 1)
 
-    def test_should_answer_400_with_one_message_per_missing_field(self, mongo):
+    def test_should_answer_400_with_a_code_and_message_per_invalid_field(self, mongo):
         # Given
         payload = {}
 
@@ -104,9 +104,11 @@ class CreateDocumentViewTests(TestCase):
         # Then
         self.assertEqual(response.status_code, 400)
         errors = response.json()["errors"]
-        self.assertEqual(errors["title"], "Title is required.")
-        self.assertEqual(errors["areas"], "Areas must be a list of area acronyms.")
-        self.assertEqual(errors["temp_file_id"], "Temporary file id is required.")
+        self.assertEqual(errors["title"], {"code": "required", "message": "Title is required."})
+        self.assertEqual(errors["areas"]["code"], "invalid")
+        self.assertEqual(errors["temp_file_id"]["code"], "required")
+        for error in errors.values():
+            self.assertEqual(set(error), {"code", "message"})
         self.assertEqual(Document.objects.count(), 0)
 
     def test_should_answer_400_for_invalid_json(self, mongo):
@@ -128,7 +130,9 @@ class CreateDocumentViewTests(TestCase):
 
         # Then
         self.assertEqual(response.status_code, 404)
-        self.assertIn("temp_file_id", response.json()["errors"])
+        error = response.json()["errors"]["temp_file_id"]
+        self.assertEqual(error["code"], "not_found")
+        self.assertTrue(error["message"])
         self.assertEqual(Document.objects.count(), 0)
 
     def test_should_answer_409_when_the_file_is_already_registered(self, mongo):

@@ -62,6 +62,19 @@ HASH_CHUNK_SIZE = 64 * 1024
 # Validation
 # ---------------------------------------------------------------------------
 
+# Stable identifiers the frontend maps to user-facing messages. The `message`
+# next to each one is for developers and may change freely; the code may not.
+REQUIRED = "required"
+INVALID = "invalid"
+TOO_LONG = "too_long"
+NOT_FOUND = "not_found"
+NOT_IN_PROJECT = "not_in_project"
+INVALID_CHOICE = "invalid_choice"
+
+
+def _error(code: str, message: str) -> dict:
+    return {"code": code, "message": message}
+
 
 def _clean_text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
@@ -93,100 +106,105 @@ def validate_payload(payload) -> dict:
     """Check every field of the confirmation payload and resolve the related rows.
 
     Returns the cleaned values ready for persistence. Raises
-    DocumentValidationError with one message per invalid field.
+    DocumentValidationError with one ``{"code", "message"}`` entry per invalid field.
     """
     if not isinstance(payload, dict):
-        raise DocumentValidationError({"payload": "A JSON object is required."})
+        raise DocumentValidationError({"payload": _error(INVALID, "A JSON object is required.")})
 
     errors = {}
     cleaned = {}
 
     title = _clean_text(payload.get("title"))
     if not title:
-        errors["title"] = "Title is required."
+        errors["title"] = _error(REQUIRED, "Title is required.")
     elif len(title) > TITLE_MAX_LENGTH:
-        errors["title"] = f"Title must have at most {TITLE_MAX_LENGTH} characters."
+        errors["title"] = _error(
+            TOO_LONG, f"Title must have at most {TITLE_MAX_LENGTH} characters."
+        )
     cleaned["title"] = title
 
     description = _clean_text(payload.get("description"))
     if len(description) > DESCRIPTION_MAX_LENGTH:
-        errors["description"] = (
-            f"Description must have at most {DESCRIPTION_MAX_LENGTH} characters."
+        errors["description"] = _error(
+            TOO_LONG, f"Description must have at most {DESCRIPTION_MAX_LENGTH} characters."
         )
     cleaned["description"] = description
 
     project = None
     project_id = _clean_id(payload.get("project_id"))
     if project_id is None:
-        errors["project_id"] = "Project is required."
+        errors["project_id"] = _error(REQUIRED, "Project is required.")
     else:
         project = Project.objects.filter(pk=project_id, active=True).first()
         if project is None:
-            errors["project_id"] = "Project not found or inactive."
+            errors["project_id"] = _error(NOT_FOUND, "Project not found or inactive.")
     cleaned["project"] = project
 
     discipline = None
     discipline_id = _clean_id(payload.get("discipline_id"))
     if discipline_id is None:
-        errors["discipline_id"] = "Discipline is required."
+        errors["discipline_id"] = _error(REQUIRED, "Discipline is required.")
     else:
         discipline = Discipline.objects.filter(pk=discipline_id, active=True).first()
         if discipline is None:
-            errors["discipline_id"] = "Discipline not found or inactive."
+            errors["discipline_id"] = _error(NOT_FOUND, "Discipline not found or inactive.")
         elif project is not None and not project.disciplines.filter(pk=discipline.pk).exists():
-            errors["discipline_id"] = "Discipline is not part of the selected project."
+            errors["discipline_id"] = _error(
+                NOT_IN_PROJECT, "Discipline is not part of the selected project."
+            )
     cleaned["discipline"] = discipline
 
     document_type = None
     type_code = _clean_text(payload.get("document_type")).upper()
     if not type_code:
-        errors["document_type"] = "Document type is required."
+        errors["document_type"] = _error(REQUIRED, "Document type is required.")
     else:
         document_type = DocumentType.objects.filter(code=type_code, active=True).first()
         if document_type is None:
-            errors["document_type"] = "Document type not found or inactive."
+            errors["document_type"] = _error(NOT_FOUND, "Document type not found or inactive.")
     cleaned["document_type"] = document_type
 
     confidentiality = _clean_text(payload.get("confidentiality")).upper()
     if not confidentiality:
-        errors["confidentiality"] = "Confidentiality level is required."
+        errors["confidentiality"] = _error(REQUIRED, "Confidentiality level is required.")
     elif confidentiality not in ConfidentialityLevel.values:
-        errors["confidentiality"] = (
-            f"Confidentiality level must be one of {ConfidentialityLevel.values}."
+        errors["confidentiality"] = _error(
+            INVALID_CHOICE,
+            f"Confidentiality level must be one of {ConfidentialityLevel.values}.",
         )
     cleaned["confidentiality"] = confidentiality
 
     responsible = None
     responsible_id = _clean_id(payload.get("responsible_id"))
     if responsible_id is None:
-        errors["responsible_id"] = "Responsible is required."
+        errors["responsible_id"] = _error(REQUIRED, "Responsible is required.")
     else:
         responsible = User.objects.filter(pk=responsible_id, is_active=True).first()
         if responsible is None:
-            errors["responsible_id"] = "Responsible user not found or inactive."
+            errors["responsible_id"] = _error(NOT_FOUND, "Responsible user not found or inactive.")
     cleaned["responsible"] = responsible
 
     areas = []
     area_codes = _clean_code_list(payload.get("areas"))
     if area_codes is None:
-        errors["areas"] = "Areas must be a list of area acronyms."
+        errors["areas"] = _error(INVALID, "Areas must be a list of area acronyms.")
     elif not area_codes:
-        errors["areas"] = "At least one area is required."
+        errors["areas"] = _error(REQUIRED, "At least one area is required.")
     else:
         areas = list(Area.objects.filter(acronym__in=area_codes, active=True))
         missing = sorted(set(area_codes) - {area.acronym for area in areas})
         if missing:
-            errors["areas"] = f"Unknown or inactive areas: {missing}."
+            errors["areas"] = _error(NOT_FOUND, f"Unknown or inactive areas: {missing}.")
     cleaned["areas"] = areas
 
     temp_file_id = _clean_text(payload.get("temp_file_id"))
     if not temp_file_id:
-        errors["temp_file_id"] = "Temporary file id is required."
+        errors["temp_file_id"] = _error(REQUIRED, "Temporary file id is required.")
     else:
         try:
             uuid.UUID(temp_file_id)
         except ValueError:
-            errors["temp_file_id"] = "Temporary file id must be a UUID."
+            errors["temp_file_id"] = _error(INVALID, "Temporary file id must be a UUID.")
     cleaned["temp_file_id"] = temp_file_id
 
     if errors:

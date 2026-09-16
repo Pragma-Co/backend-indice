@@ -33,7 +33,14 @@ def create_document_view(request):
         return JsonResponse({"errors": exc.errors}, status=400)
     except TempFileNotFoundError:
         return JsonResponse(
-            {"errors": {"temp_file_id": "Uploaded file not found or expired. Upload it again."}},
+            {
+                "errors": {
+                    "temp_file_id": {
+                        "code": "not_found",
+                        "message": "Uploaded file not found or expired. Upload it again.",
+                    }
+                }
+            },
             status=404,
         )
     except DuplicateDocumentFileError as exc:

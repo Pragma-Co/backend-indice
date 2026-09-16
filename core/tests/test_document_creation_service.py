@@ -87,8 +87,9 @@ class DocumentCreationServiceTests(TestCase):
             service.validate_payload(payload)
 
         # Then
+        errors = context.exception.errors
         self.assertEqual(
-            set(context.exception.errors),
+            set(errors),
             {
                 "title",
                 "project_id",
@@ -100,6 +101,11 @@ class DocumentCreationServiceTests(TestCase):
                 "temp_file_id",
             },
         )
+        for field, error in errors.items():
+            with self.subTest(field=field):
+                self.assertEqual(set(error), {"code", "message"})
+                self.assertEqual(error["code"], "invalid" if field == "areas" else "required")
+                self.assertTrue(error["message"])
 
     def test_should_reject_non_object_payload(self, mongo):
         # Given
@@ -108,7 +114,7 @@ class DocumentCreationServiceTests(TestCase):
         # When / Then
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
-        self.assertIn("payload", context.exception.errors)
+        self.assertEqual(context.exception.errors["payload"]["code"], "invalid")
 
     def test_should_reject_title_and_description_over_the_limits(self, mongo):
         # Given
@@ -119,8 +125,11 @@ class DocumentCreationServiceTests(TestCase):
             service.validate_payload(payload)
 
         # Then
-        self.assertIn("at most 255", context.exception.errors["title"])
-        self.assertIn("at most 500", context.exception.errors["description"])
+        errors = context.exception.errors
+        self.assertEqual(errors["title"]["code"], "too_long")
+        self.assertIn("at most 255", errors["title"]["message"])
+        self.assertEqual(errors["description"]["code"], "too_long")
+        self.assertIn("at most 500", errors["description"]["message"])
 
     def test_should_reject_unknown_or_inactive_catalog_entries(self, mongo):
         # Given
@@ -140,11 +149,11 @@ class DocumentCreationServiceTests(TestCase):
 
         # Then
         errors = context.exception.errors
-        self.assertEqual(errors["project_id"], "Project not found or inactive.")
-        self.assertEqual(errors["discipline_id"], "Discipline not found or inactive.")
-        self.assertEqual(errors["document_type"], "Document type not found or inactive.")
-        self.assertEqual(errors["responsible_id"], "Responsible user not found or inactive.")
-        self.assertIn("['NOPE', 'OLD']", errors["areas"])
+        for field in ("project_id", "discipline_id", "document_type", "responsible_id", "areas"):
+            with self.subTest(field=field):
+                self.assertEqual(errors[field]["code"], "not_found")
+        self.assertEqual(errors["project_id"]["message"], "Project not found or inactive.")
+        self.assertIn("['NOPE', 'OLD']", errors["areas"]["message"])
 
     def test_should_reject_discipline_outside_the_project(self, mongo):
         # Given
@@ -157,7 +166,10 @@ class DocumentCreationServiceTests(TestCase):
         # Then
         self.assertEqual(
             context.exception.errors["discipline_id"],
-            "Discipline is not part of the selected project.",
+            {
+                "code": "not_in_project",
+                "message": "Discipline is not part of the selected project.",
+            },
         )
 
     def test_should_reject_invalid_confidentiality_areas_and_temp_file_id(self, mongo):
@@ -170,9 +182,10 @@ class DocumentCreationServiceTests(TestCase):
 
         # Then
         errors = context.exception.errors
-        self.assertIn("must be one of", errors["confidentiality"])
-        self.assertEqual(errors["areas"], "Areas must be a list of area acronyms.")
-        self.assertEqual(errors["temp_file_id"], "Temporary file id must be a UUID.")
+        self.assertEqual(errors["confidentiality"]["code"], "invalid_choice")
+        self.assertIn("must be one of", errors["confidentiality"]["message"])
+        self.assertEqual(errors["areas"]["code"], "invalid")
+        self.assertEqual(errors["temp_file_id"]["code"], "invalid")
 
     def test_should_require_at_least_one_area(self, mongo):
         # Given
@@ -181,7 +194,10 @@ class DocumentCreationServiceTests(TestCase):
         # When / Then
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
-        self.assertEqual(context.exception.errors["areas"], "At least one area is required.")
+        self.assertEqual(
+            context.exception.errors["areas"],
+            {"code": "required", "message": "At least one area is required."},
+        )
 
     def test_should_accept_numeric_strings_and_normalize_codes(self, mongo):
         # Given

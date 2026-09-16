@@ -2,7 +2,11 @@
 
 
 class DocumentValidationError(Exception):
-    """The payload is incomplete or inconsistent. ``errors`` maps field -> message."""
+    """The payload is incomplete or inconsistent.
+
+    ``errors`` maps field -> ``{"code": <stable identifier>, "message": <developer text>}``.
+    The frontend keys its user-facing messages on ``field + code``, so codes are contract.
+    """
 
     def __init__(self, errors: dict):
         self.errors = errors
