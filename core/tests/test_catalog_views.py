@@ -28,11 +28,53 @@ class ListProjectsViewTests(TestCase):
                     "id": fuselagem.id,
                     "code": "AK-2100",
                     "name": "Aeroestrutura de Fuselagem Central",
+                    "discipline_ids": [],
                 },
-                {"id": empenagem.id, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical"},
-                {"id": pilone.id, "code": "AK-3100", "name": "Pilone de Motor"},
+                {
+                    "id": empenagem.id,
+                    "code": "AK-2200",
+                    "name": "Conjunto de Empenagem Vertical",
+                    "discipline_ids": [],
+                },
+                {
+                    "id": pilone.id,
+                    "code": "AK-3100",
+                    "name": "Pilone de Motor",
+                    "discipline_ids": [],
+                },
             ],
         )
+
+    def test_should_list_only_active_disciplines_linked_to_each_project_ordered_by_id(self):
+        # Given
+        project = Project.objects.create(code="AK-2100", name="Aeroestrutura de Fuselagem Central")
+        other = Project.objects.create(code="AK-2200", name="Conjunto de Empenagem Vertical")
+        materials = Discipline.objects.create(code="MAT", name="Materiais e Processos")
+        structures = Discipline.objects.create(code="EST", name="Estruturas")
+        retired = Discipline.objects.create(code="PNE", name="Sistemas Pneumáticos", active=False)
+        unlinked = Discipline.objects.create(code="HID", name="Sistemas Hidráulicos")
+        project.disciplines.add(structures, materials, retired)
+        other.disciplines.add(unlinked)
+
+        # When
+        response = self.client.get(reverse("project-list"))
+
+        # Then
+        self.assertEqual(response.status_code, 200)
+        by_code = {item["code"]: item["discipline_ids"] for item in response.json()}
+        self.assertEqual(by_code["AK-2100"], sorted([materials.id, structures.id]))
+        self.assertEqual(by_code["AK-2200"], [unlinked.id])
+
+    def test_should_not_query_the_database_once_per_project(self):
+        # Given
+        for index in range(5):
+            project = Project.objects.create(code=f"AK-{index}", name=f"Projeto {index}")
+            project.disciplines.add(Discipline.objects.create(code=f"D{index}", name=f"D {index}"))
+
+        # When / Then: one query for the projects, one for their disciplines
+        with self.assertNumQueries(2):
+            response = self.client.get(reverse("project-list"))
+        self.assertEqual(len(response.json()), 5)
 
     def test_should_return_only_active_projects(self):
         # Given
