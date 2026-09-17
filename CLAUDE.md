@@ -21,6 +21,13 @@ comments, log and validation messages, admin labels, URL paths, JSON keys and te
 Only client-defined domain data (seed values such as `Estruturas`, `Memorial de Cálculo`) and
 user-facing texts agreed with the client stay in Portuguese.
 
+## Comments
+
+Do not write comments or docstrings: no module, class or function docstrings, no inline or
+section comments, no `# Given / # When / # Then` markers in tests (team decision, September
+2026). Names must carry the meaning; the reasoning behind a non-obvious choice goes in the
+commit message and the PR description. Tool directives such as `# noqa` are the only exception.
+
 ## Repository structure
 
 The `core` app is organized by layer (`PROJECT_STRUCTURE.md` standard):
@@ -39,6 +46,8 @@ core/
 ```
 
 - Routes are registered in `api6/urls.py`, importing views directly from their modules.
+- Views are grouped by context, one module per resource (`documents_view.py`, `catalog_view.py`),
+  not one module per endpoint.
 - Models hold data and database constraints, not business rules.
 - Views never run complex logic; they call services and return responses.
 - Services concentrate application logic. Serializers only convert.
@@ -83,16 +92,17 @@ Commits and pull requests are authored solely by the developer's git identity. D
 
 - Plain Django `TestCase`/`SimpleTestCase`, run inside the container:
   `docker compose exec api python manage.py test`.
-- Behavior-driven structure with explicit comments in every test:
+- Behavior-driven structure: every test is three blocks separated by a blank line, in the order
+  given, when, then, without marker comments:
 
 ```python
 def test_should_return_disciplines_ordered_by_name(self):
-    # Given
-    ...
-    # When
-    ...
-    # Then
-    ...
+    Discipline.objects.create(code="MAT", name="Materiais")
+    Discipline.objects.create(code="EST", name="Estruturas")
+
+    response = self.client.get(reverse("discipline-list"))
+
+    self.assertEqual([item["code"] for item in response.json()], ["EST", "MAT"])
 ```
 
 - Mandatory coverage: business rules (services), model methods and validations, API endpoints
