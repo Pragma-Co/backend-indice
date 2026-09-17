@@ -313,6 +313,7 @@ class UploadDocumentViewDeduplicationTests(TestCase):
         self.assertEqual(body["document"]["titulo"], "Documento Duplicado")
         self.assertEqual(body["document"]["status"], "PENDING")
 
+
 class ForceNewRevisionTests(TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
@@ -325,22 +326,36 @@ class ForceNewRevisionTests(TestCase):
         document_type = DocumentType.objects.create(code="DT3", name="Tipo Teste 3")
 
         self.document = Document.objects.create(
-            code="RA-0500", title="Documento Force", project=project,
-            discipline=discipline, document_type=document_type, responsible=user,
+            code="RA-0500",
+            title="Documento Force",
+            project=project,
+            discipline=discipline,
+            document_type=document_type,
+            responsible=user,
         )
         self.original_revision = Revision.objects.create(
-            document=self.document, version=1, status="APPROVED", author=user,
-            auditor=user, audited_at=timezone.now(),
+            document=self.document,
+            version=1,
+            status="APPROVED",
+            author=user,
+            auditor=user,
+            audited_at=timezone.now(),
         )
         self.content = PDF_HEADER
         File.objects.create(
-            revision=self.original_revision, original_name="original.pdf", extension="pdf",
-            mime_type="application/pdf", size_bytes=len(self.content),
-            sha256=hashlib.sha256(self.content).hexdigest(), storage_path="/fake/original.pdf",
+            revision=self.original_revision,
+            original_name="original.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(self.content),
+            sha256=hashlib.sha256(self.content).hexdigest(),
+            storage_path="/fake/original.pdf",
         )
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_given_force_new_revision_when_stored_then_creates_new_revision_and_file(self, mock_mongo):
+    def test_given_force_new_revision_when_stored_then_creates_new_revision_and_file(
+        self, mock_mongo
+    ):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", self.content)
             result = store_uploaded_file(uploaded, force_new_revision=True)

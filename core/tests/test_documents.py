@@ -86,6 +86,7 @@ class SimpleFiltersViewTests(TestCase):
     def test_builds_filter_groups_with_expected_shape(self):
         self.assertEqual(set(build_simple_filters()), {"areas", "types", "dates"})
 
+
 from core.models import Discipline, Document, DocumentAccess, Project, Revision, User
 from core.models.choices import AccessStatus, RevisionStatus
 from core.services.documents_service import get_document_detail, request_document_access
@@ -103,22 +104,32 @@ class DocumentDetailServiceTests(TestCase):
         self.project = Project.objects.create(code="PRJ", name="Projeto")
         self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
         self.responsible = User.objects.create_user(
-            email="responsible@example.com", password="test-password",
-            name="Responsible", area=self.area,
+            email="responsible@example.com",
+            password="test-password",
+            name="Responsible",
+            area=self.area,
         )
         self.other_user = User.objects.create_user(
-            email="other@example.com", password="test-password",
-            name="Other", area=self.area,
+            email="other@example.com",
+            password="test-password",
+            name="Other",
+            area=self.area,
         )
         self.document = Document.objects.create(
-            code="DOC-100", title="Relatório de engenharia",
-            project=self.project, discipline=self.discipline,
-            document_type=self.document_type, responsible=self.responsible,
+            code="DOC-100",
+            title="Relatório de engenharia",
+            project=self.project,
+            discipline=self.discipline,
+            document_type=self.document_type,
+            responsible=self.responsible,
         )
         self.document.areas.add(self.area)
         Revision.objects.create(
-            document=self.document, version=1, status=RevisionStatus.APPROVED,
-            author=self.responsible, auditor=self.responsible,
+            document=self.document,
+            version=1,
+            status=RevisionStatus.APPROVED,
+            author=self.responsible,
+            auditor=self.responsible,
             audited_at=timezone.now(),
         )
 
@@ -145,8 +156,10 @@ class DocumentDetailServiceTests(TestCase):
 
     def test_should_return_approved_access_when_user_has_a_grant(self):
         DocumentAccess.objects.create(
-            document=self.document, user=self.other_user,
-            status=AccessStatus.APPROVED, approver=self.responsible,
+            document=self.document,
+            user=self.other_user,
+            status=AccessStatus.APPROVED,
+            approver=self.responsible,
             decided_at=timezone.now(),
         )
 
@@ -163,7 +176,9 @@ class DocumentDetailServiceTests(TestCase):
 
         self.document.revisions.all().delete()
         Revision.objects.create(
-            document=self.document, version=1, status=RevisionStatus.PENDING,
+            document=self.document,
+            version=1,
+            status=RevisionStatus.PENDING,
             author=self.responsible,
         )
 
@@ -191,17 +206,24 @@ class DocumentAccessRequestServiceTests(TestCase):
         self.project = Project.objects.create(code="PRJ", name="Projeto")
         self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
         self.responsible = User.objects.create_user(
-            email="responsible2@example.com", password="test-password",
-            name="Responsible", area=self.area,
+            email="responsible2@example.com",
+            password="test-password",
+            name="Responsible",
+            area=self.area,
         )
         self.requester = User.objects.create_user(
-            email="requester@example.com", password="test-password",
-            name="Requester", area=self.area,
+            email="requester@example.com",
+            password="test-password",
+            name="Requester",
+            area=self.area,
         )
         self.document = Document.objects.create(
-            code="DOC-200", title="Documento restrito",
-            project=self.project, discipline=self.discipline,
-            document_type=self.document_type, responsible=self.responsible,
+            code="DOC-200",
+            title="Documento restrito",
+            project=self.project,
+            discipline=self.discipline,
+            document_type=self.document_type,
+            responsible=self.responsible,
         )
 
     def test_should_raise_document_not_found_for_missing_document(self):
@@ -229,8 +251,10 @@ class DocumentAccessRequestServiceTests(TestCase):
 
     def test_should_not_duplicate_an_existing_access_request(self):
         DocumentAccess.objects.create(
-            document=self.document, user=self.requester,
-            status=AccessStatus.PENDING, requested_at=timezone.now(),
+            document=self.document,
+            user=self.requester,
+            status=AccessStatus.PENDING,
+            requested_at=timezone.now(),
         )
 
         result = request_document_access(self.document.id, self.requester.id)
@@ -248,17 +272,25 @@ class DocumentDetailViewTests(TestCase):
         self.project = Project.objects.create(code="PRJ", name="Projeto")
         self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
         self.responsible = User.objects.create_user(
-            email="responsible3@example.com", password="test-password",
-            name="Responsible", area=self.area,
+            email="responsible3@example.com",
+            password="test-password",
+            name="Responsible",
+            area=self.area,
         )
         self.document = Document.objects.create(
-            code="DOC-300", title="Documento view",
-            project=self.project, discipline=self.discipline,
-            document_type=self.document_type, responsible=self.responsible,
+            code="DOC-300",
+            title="Documento view",
+            project=self.project,
+            discipline=self.discipline,
+            document_type=self.document_type,
+            responsible=self.responsible,
         )
         Revision.objects.create(
-            document=self.document, version=1, status=RevisionStatus.APPROVED,
-            author=self.responsible, auditor=self.responsible,
+            document=self.document,
+            version=1,
+            status=RevisionStatus.APPROVED,
+            author=self.responsible,
+            auditor=self.responsible,
             audited_at=timezone.now(),
         )
         self.client = Client()
@@ -288,17 +320,24 @@ class RequestAccessViewTests(TestCase):
         self.project = Project.objects.create(code="PRJ", name="Projeto")
         self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
         self.responsible = User.objects.create_user(
-            email="responsible4@example.com", password="test-password",
-            name="Responsible", area=self.area,
+            email="responsible4@example.com",
+            password="test-password",
+            name="Responsible",
+            area=self.area,
         )
         self.requester = User.objects.create_user(
-            email="requester2@example.com", password="test-password",
-            name="Requester", area=self.area,
+            email="requester2@example.com",
+            password="test-password",
+            name="Requester",
+            area=self.area,
         )
         self.document = Document.objects.create(
-            code="DOC-400", title="Documento acesso",
-            project=self.project, discipline=self.discipline,
-            document_type=self.document_type, responsible=self.responsible,
+            code="DOC-400",
+            title="Documento acesso",
+            project=self.project,
+            discipline=self.discipline,
+            document_type=self.document_type,
+            responsible=self.responsible,
         )
         self.client = Client()
 

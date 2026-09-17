@@ -20,6 +20,7 @@ from core.services.upload_exceptions import (
 
 logger = logging.getLogger(__name__)
 
+
 def create_new_revision(existing_file, uploaded_file, file_hash, file_type):
 
     document = existing_file.revision.document
@@ -82,9 +83,7 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
         if not force_new_revision:
             raise DuplicateFileError(existing_file)
 
-        document, revision = create_new_revision(
-            existing_file, uploaded_file, file_hash, file_type
-        )
+        document, revision = create_new_revision(existing_file, uploaded_file, file_hash, file_type)
         return {
             "revision_created": True,
             "document": {

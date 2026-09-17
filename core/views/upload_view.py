@@ -3,7 +3,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from core.serializers.upload_serializer import (
-    serialize_duplicate_result, 
+    serialize_duplicate_result,
     serialize_revision_result,
     serialize_upload_result,
 )
@@ -14,7 +14,6 @@ from core.services.upload_exceptions import (
     InvalidFileTypeError,
     MissingFileError,
     UploadStorageError,
-    
 )
 
 
@@ -54,5 +53,5 @@ def upload_document(request):
 
     if result.get("revision_created"):
         return JsonResponse(serialize_revision_result(result), status=201)
-    
+
     return JsonResponse(serialize_upload_result(result), status=201)

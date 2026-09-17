@@ -6,10 +6,10 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
 
 from core.services.documents_service import (
-    get_documents, 
+    get_documents,
     get_simple_filters,
     get_document_detail,
-    request_document_access
+    request_document_access,
 )
 
 from core.services.documents_exceptions import (
@@ -38,6 +38,7 @@ def simple_filters(request):
         logger.exception("Failed to retrieve simple filters")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
+
 @require_GET
 def document_detail(request, document_id):
     user_id = request.GET.get("user_id")
@@ -48,6 +49,7 @@ def document_detail(request, document_id):
     except Exception as exc:
         logger.exception("Failed to retrieve document detail")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+
 
 @csrf_exempt
 @require_POST

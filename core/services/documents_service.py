@@ -122,9 +122,11 @@ def _serialize_document(document):
         "updated_at": document.updated_at.isoformat(),
     }
 
+
 ACCESS_APPROVED = "APPROVED"
 ACCESS_IN_REVIEW = "IN_REVIEW"
 ACCESS_PENDING = "PENDING"
+
 
 def _get_document_or_none(document_id):
     return (
