@@ -15,13 +15,6 @@ from core.models import (
 
 
 class FileExtensionConstraintTests(TestCase):
-    """The CHECK constraint on file.extension must accept exactly the FileExtension enum.
-
-    0001_initial was edited in place after being applied, which left older
-    databases with a stale constraint; 0003 realigns them. Running against a
-    fresh test database, this guards the migrations themselves.
-    """
-
     def setUp(self):
         area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
         user = User.objects.create_user(
@@ -49,24 +42,19 @@ class FileExtensionConstraintTests(TestCase):
         )
 
     def test_should_accept_every_extension_of_the_enum(self):
-        # Given
         extensions = list(FileExtension.values)
 
         for index, extension in enumerate(extensions, start=1):
             with self.subTest(extension=extension):
-                # When
                 stored = self._file(extension, index)
                 stored.save()
 
-                # Then
                 self.assertIsNotNone(stored.pk)
 
     def test_should_reject_extensions_removed_from_the_enum(self):
-        # Given
         removed = ["dwg", "dxf", "xls", "xlsx"]
 
         for index, extension in enumerate(removed, start=100):
             with self.subTest(extension=extension):
-                # When / Then
                 with self.assertRaises(IntegrityError), transaction.atomic():
                     self._file(extension, index).save()

@@ -1,5 +1,3 @@
-"""JSON shape of a freshly registered document (response of POST /documents)."""
-
 from core.models import Document
 
 

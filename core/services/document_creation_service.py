@@ -1,12 +1,3 @@
-"""Step 3 of the registration flow: validate the metadata, generate the code and persist.
-
-Everything runs in one transaction: the ``document``, its first ``revision``
-(version 1, PENDING) and the ``file`` row are written together with the areas,
-then the uploaded file is moved from temporary storage to the definitive
-location. If the move fails the transaction rolls back and nothing is left
-behind in the database.
-"""
-
 import hashlib
 import logging
 import shutil
@@ -58,12 +49,7 @@ MIME_TYPE_BY_EXTENSION = {
 DEFAULT_MIME_TYPE = "application/octet-stream"
 HASH_CHUNK_SIZE = 64 * 1024
 
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
 
-# Stable identifiers the frontend maps to user-facing messages. The `message`
-# next to each one is for developers and may change freely; the code may not.
 REQUIRED = "required"
 INVALID = "invalid"
 TOO_LONG = "too_long"
@@ -81,7 +67,6 @@ def _clean_text(value) -> str:
 
 
 def _clean_id(value):
-    """Accept an int or a numeric string; anything else is invalid."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -103,11 +88,6 @@ def _clean_code_list(value) -> list[str] | None:
 
 
 def validate_payload(payload) -> dict:
-    """Check every field of the confirmation payload and resolve the related rows.
-
-    Returns the cleaned values ready for persistence. Raises
-    DocumentValidationError with one ``{"code", "message"}`` entry per invalid field.
-    """
     if not isinstance(payload, dict):
         raise DocumentValidationError({"payload": _error(INVALID, "A JSON object is required.")})
 
@@ -212,11 +192,6 @@ def validate_payload(payload) -> dict:
     return cleaned
 
 
-# ---------------------------------------------------------------------------
-# Temporary file
-# ---------------------------------------------------------------------------
-
-
 def _sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -226,7 +201,6 @@ def _sha256_of(path: Path) -> str:
 
 
 def _temp_upload_record(temp_file_id: str) -> dict:
-    """Metadata written by the upload endpoint; empty when MongoDB has nothing usable."""
     try:
         record = get_mongo_db()["temp_uploads"].find_one({"temp_file_id": temp_file_id})
     except Exception:
@@ -236,7 +210,6 @@ def _temp_upload_record(temp_file_id: str) -> dict:
 
 
 def resolve_temp_file(temp_file_id: str) -> dict:
-    """Locate the uploaded file and describe it. Raises TempFileNotFoundError."""
     temp_dir = Path(settings.TEMP_UPLOAD_DIR)
     matches = sorted(temp_dir.glob(f"{temp_file_id}.*")) if temp_dir.is_dir() else []
     if not matches:
@@ -271,13 +244,7 @@ def _discard_temp_record(temp_file_id: str) -> None:
         logger.exception("Could not remove temp upload metadata from MongoDB")
 
 
-# ---------------------------------------------------------------------------
-# Persistence
-# ---------------------------------------------------------------------------
-
-
 def _create_document_with_unique_code(cleaned: dict) -> Document:
-    """Insert the document, retrying with the next sequence if the code collides."""
     prefix = build_code_prefix(cleaned["project"], cleaned["discipline"], cleaned["document_type"])
     for _attempt in range(CODE_GENERATION_ATTEMPTS):
         code = build_document_code(prefix, next_sequence(prefix))
@@ -301,7 +268,6 @@ def _create_document_with_unique_code(cleaned: dict) -> Document:
 
 
 def storage_path_for(code: str, version: int, extension: str) -> str:
-    """Relative path inside DOCUMENT_STORAGE_DIR, same layout as the demo seed."""
     return f"documents/{code}/v{version}/{code.lower()}.{extension}"
 
 
@@ -316,7 +282,6 @@ def _move_to_storage(temp_path: Path, storage_path: str) -> None:
 
 
 def create_document(payload) -> Document:
-    """Validate, generate the code, persist and store the file. Returns the document."""
     cleaned = validate_payload(payload)
     temp_file = resolve_temp_file(cleaned["temp_file_id"])
 

@@ -1,10 +1,7 @@
-"""JSON shapes of the catalog endpoints consumed by the metadata form."""
-
 from core.models import Discipline, Project
 
 
 def serialize_project(project: Project) -> dict:
-    """``discipline_ids`` lets the form offer only the disciplines linked to the project."""
     return {
         "id": project.id,
         "code": project.code,

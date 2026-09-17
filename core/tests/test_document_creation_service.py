@@ -76,17 +76,12 @@ class DocumentCreationServiceTests(TestCase):
         payload.update(overrides)
         return payload
 
-    # -- validation ----------------------------------------------------------
-
     def test_should_reject_empty_payload_with_one_message_per_required_field(self, mongo):
-        # Given
         payload = {}
 
-        # When
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
 
-        # Then
         errors = context.exception.errors
         self.assertEqual(
             set(errors),
@@ -108,23 +103,18 @@ class DocumentCreationServiceTests(TestCase):
                 self.assertTrue(error["message"])
 
     def test_should_reject_non_object_payload(self, mongo):
-        # Given
         payload = ["not", "a", "dict"]
 
-        # When / Then
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
         self.assertEqual(context.exception.errors["payload"]["code"], "invalid")
 
     def test_should_reject_title_and_description_over_the_limits(self, mongo):
-        # Given
         payload = self._payload(title="x" * 256, description="y" * 501)
 
-        # When
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
 
-        # Then
         errors = context.exception.errors
         self.assertEqual(errors["title"]["code"], "too_long")
         self.assertIn("at most 255", errors["title"]["message"])
@@ -132,7 +122,6 @@ class DocumentCreationServiceTests(TestCase):
         self.assertIn("at most 500", errors["description"]["message"])
 
     def test_should_reject_unknown_or_inactive_catalog_entries(self, mongo):
-        # Given
         Project.objects.create(code="OLD", name="Encerrado", active=False)
         inactive_project = Project.objects.get(code="OLD")
         payload = self._payload(
@@ -143,11 +132,9 @@ class DocumentCreationServiceTests(TestCase):
             areas=["EST", "OLD", "NOPE"],
         )
 
-        # When
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
 
-        # Then
         errors = context.exception.errors
         for field in ("project_id", "discipline_id", "document_type", "responsible_id", "areas"):
             with self.subTest(field=field):
@@ -156,14 +143,11 @@ class DocumentCreationServiceTests(TestCase):
         self.assertIn("['NOPE', 'OLD']", errors["areas"]["message"])
 
     def test_should_reject_discipline_outside_the_project(self, mongo):
-        # Given
         payload = self._payload(discipline_id=self.unlinked_discipline.id)
 
-        # When
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
 
-        # Then
         self.assertEqual(
             context.exception.errors["discipline_id"],
             {
@@ -173,14 +157,11 @@ class DocumentCreationServiceTests(TestCase):
         )
 
     def test_should_reject_invalid_confidentiality_areas_and_temp_file_id(self, mongo):
-        # Given
         payload = self._payload(confidentiality="INTERNAL", areas="EST", temp_file_id="abc")
 
-        # When
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
 
-        # Then
         errors = context.exception.errors
         self.assertEqual(errors["confidentiality"]["code"], "invalid_choice")
         self.assertIn("must be one of", errors["confidentiality"]["message"])
@@ -188,10 +169,8 @@ class DocumentCreationServiceTests(TestCase):
         self.assertEqual(errors["temp_file_id"]["code"], "invalid")
 
     def test_should_require_at_least_one_area(self, mongo):
-        # Given
         payload = self._payload(areas=[])
 
-        # When / Then
         with self.assertRaises(DocumentValidationError) as context:
             service.validate_payload(payload)
         self.assertEqual(
@@ -200,7 +179,6 @@ class DocumentCreationServiceTests(TestCase):
         )
 
     def test_should_accept_numeric_strings_and_normalize_codes(self, mongo):
-        # Given
         payload = self._payload(
             project_id=str(self.project.id),
             discipline_id=str(self.discipline.id),
@@ -211,30 +189,23 @@ class DocumentCreationServiceTests(TestCase):
             title="  Título  ",
         )
 
-        # When
         cleaned = service.validate_payload(payload)
 
-        # Then
         self.assertEqual(cleaned["project"], self.project)
         self.assertEqual(cleaned["document_type"], self.document_type)
         self.assertEqual(cleaned["confidentiality"], ConfidentialityLevel.PUBLIC)
         self.assertEqual({area.acronym for area in cleaned["areas"]}, {"EST", "QUA"})
         self.assertEqual(cleaned["title"], "Título")
 
-    # -- temporary file --------------------------------------------------------
-
     def test_should_describe_the_temp_file_using_mongo_metadata(self, mongo):
-        # Given
         self._temp_file()
         mongo.return_value.__getitem__.return_value.find_one.return_value = {
             "original_name": "caverna-14.pdf",
             "inferred_type": "application/pdf",
         }
 
-        # When
         info = service.resolve_temp_file(TEMP_FILE_ID)
 
-        # Then
         self.assertEqual(info["original_name"], "caverna-14.pdf")
         self.assertEqual(info["extension"], "pdf")
         self.assertEqual(info["mime_type"], "application/pdf")
@@ -242,46 +213,34 @@ class DocumentCreationServiceTests(TestCase):
         self.assertEqual(len(info["sha256"]), 64)
 
     def test_should_fall_back_to_file_name_when_mongo_has_no_record(self, mongo):
-        # Given
         self._temp_file()
         mongo.return_value.__getitem__.return_value.find_one.return_value = None
 
-        # When
         info = service.resolve_temp_file(TEMP_FILE_ID)
 
-        # Then
         self.assertEqual(info["original_name"], f"{TEMP_FILE_ID}.pdf")
         self.assertEqual(info["mime_type"], "application/pdf")
 
     def test_should_raise_when_temp_file_is_missing(self, mongo):
-        # Given: nothing in temp storage
 
-        # When / Then
         with self.assertRaises(TempFileNotFoundError):
             service.resolve_temp_file(TEMP_FILE_ID)
 
     def test_should_raise_when_temp_file_has_an_unsupported_extension(self, mongo):
-        # Given
         self._temp_file(extension="exe")
 
-        # When / Then
         with self.assertRaises(TempFileNotFoundError):
             service.resolve_temp_file(TEMP_FILE_ID)
 
-    # -- creation ----------------------------------------------------------------
-
     def test_should_create_document_revision_file_and_areas_and_move_the_file(self, mongo):
-        # Given
         temp_path = self._temp_file()
         mongo.return_value.__getitem__.return_value.find_one.return_value = {
             "original_name": "caverna-14.pdf",
             "inferred_type": "application/pdf",
         }
 
-        # When
         document = service.create_document(self._payload())
 
-        # Then
         self.assertEqual(document.code, "AK-2100-EST-DWG-0001")
         self.assertEqual(document.confidentiality_level, ConfidentialityLevel.CONFIDENTIAL)
         self.assertEqual(document.responsible, self.user)
@@ -307,20 +266,16 @@ class DocumentCreationServiceTests(TestCase):
         )
 
     def test_should_increment_the_sequence_for_the_same_prefix(self, mongo):
-        # Given
         self._temp_file()
         service.create_document(self._payload())
         second_id = "22222222-2222-4333-8444-555555555555"
         self._temp_file(temp_file_id=second_id, content=b"%PDF-1.4 another body")
 
-        # When
         document = service.create_document(self._payload(temp_file_id=second_id))
 
-        # Then
         self.assertEqual(document.code, "AK-2100-EST-DWG-0002")
 
     def test_should_retry_with_the_next_sequence_when_the_code_collides(self, mongo):
-        # Given: another request grabbed 0001 between our read and our insert
         self._temp_file()
         original_create = Document.objects.create
         calls = []
@@ -333,21 +288,17 @@ class DocumentCreationServiceTests(TestCase):
                 )
             return original_create(**kwargs)
 
-        # When
         with mock.patch.object(Document.objects, "create", side_effect=create_with_collision):
             document = service.create_document(self._payload())
 
-        # Then
         self.assertEqual(calls, ["AK-2100-EST-DWG-0001", "AK-2100-EST-DWG-0001"])
         self.assertEqual(document.code, "AK-2100-EST-DWG-0001")
         self.assertEqual(Document.objects.count(), 1)
 
     def test_should_give_up_after_repeated_collisions(self, mongo):
-        # Given
         self._temp_file()
         always_collide = IntegrityError('unique constraint "document_code_key"')
 
-        # When / Then
         with (
             mock.patch.object(Document.objects, "create", side_effect=always_collide),
             self.assertRaises(DocumentCodeCollisionError),
@@ -356,30 +307,25 @@ class DocumentCreationServiceTests(TestCase):
         self.assertEqual(Document.objects.count(), 0)
 
     def test_should_reject_a_file_already_attached_to_a_document(self, mongo):
-        # Given
         self._temp_file()
         service.create_document(self._payload())
         duplicate_id = "33333333-2222-4333-8444-555555555555"
         self._temp_file(temp_file_id=duplicate_id, content=PDF_BYTES)
 
-        # When / Then
         with self.assertRaises(DuplicateDocumentFileError) as context:
             service.create_document(self._payload(temp_file_id=duplicate_id))
         self.assertEqual(context.exception.document.code, "AK-2100-EST-DWG-0001")
         self.assertEqual(Document.objects.count(), 1)
 
     def test_should_roll_back_everything_when_the_file_cannot_be_moved(self, mongo):
-        # Given
         temp_path = self._temp_file()
 
-        # When
         with (
             mock.patch("core.services.document_creation_service.shutil.move", side_effect=OSError),
             self.assertRaises(DocumentStorageError),
         ):
             service.create_document(self._payload())
 
-        # Then
         self.assertEqual(Document.objects.count(), 0)
         self.assertEqual(Revision.objects.count(), 0)
         self.assertEqual(File.objects.count(), 0)
@@ -387,10 +333,8 @@ class DocumentCreationServiceTests(TestCase):
         mongo.return_value.__getitem__.return_value.delete_one.assert_not_called()
 
     def test_should_not_touch_the_file_when_validation_fails(self, mongo):
-        # Given
         temp_path = self._temp_file()
 
-        # When / Then
         with self.assertRaises(DocumentValidationError):
             service.create_document(self._payload(title=""))
         self.assertTrue(temp_path.exists())

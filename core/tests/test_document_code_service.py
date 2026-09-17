@@ -11,33 +11,26 @@ from core.services.document_code_service import (
 
 class BuildDocumentCodeTests(TestCase):
     def test_should_join_catalog_codes_and_zero_padded_sequence(self):
-        # Given
         project = Project(code="AK-2100")
         discipline = Discipline(code="EST")
         document_type = DocumentType(code="DWG")
 
-        # When
         prefix = build_code_prefix(project, discipline, document_type)
         code = build_document_code(prefix, 7)
 
-        # Then
         self.assertEqual(prefix, "AK-2100-EST-DWG")
         self.assertEqual(code, "AK-2100-EST-DWG-0007")
 
     def test_should_upper_case_the_prefix(self):
-        # Given
         prefix = build_code_prefix(
             Project(code="ak-1"), Discipline(code="est"), DocumentType(code="dwg")
         )
 
-        # When / Then
         self.assertEqual(prefix, "AK-1-EST-DWG")
 
     def test_should_widen_the_sequence_beyond_four_digits(self):
-        # Given / When
         code = build_document_code("AK-2100-EST-DWG", 12345)
 
-        # Then
         self.assertEqual(code, "AK-2100-EST-DWG-12345")
 
 
@@ -63,34 +56,25 @@ class NextSequenceTests(TestCase):
         )
 
     def test_should_start_at_one_when_no_document_shares_the_prefix(self):
-        # Given: no documents
 
-        # When
         sequence = next_sequence(self.prefix)
 
-        # Then
         self.assertEqual(sequence, 1)
 
     def test_should_return_highest_sequence_plus_one(self):
-        # Given
         self._document("AK-2100-EST-DWG-0001")
         self._document("AK-2100-EST-DWG-0007")
         self._document("AK-2100-EST-DWG-0003")
 
-        # When
         sequence = next_sequence(self.prefix)
 
-        # Then
         self.assertEqual(sequence, 8)
 
     def test_should_ignore_documents_with_a_different_prefix(self):
-        # Given
         self._document("AK-2100-EST-DWG-0004")
         self._document("AK-2100-EST-MEM-0009")
         self._document("AK-2100-EST-DWGX-0009")
 
-        # When
         sequence = next_sequence(self.prefix)
 
-        # Then
         self.assertEqual(sequence, 5)
