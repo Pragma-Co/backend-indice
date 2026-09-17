@@ -1,21 +1,20 @@
-import logging
 import json
+import logging
 
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
-
-from core.services.documents_service import (
-    get_documents,
-    get_simple_filters,
-    get_document_detail,
-    request_document_access,
-)
+from django.views.decorators.http import require_GET, require_POST
 
 from core.services.documents_exceptions import (
     DocumentNotFoundError,
     MissingUserError,
     UserNotFoundError,
+)
+from core.services.documents_service import (
+    get_document_detail,
+    get_documents,
+    get_simple_filters,
+    request_document_access,
 )
 
 logger = logging.getLogger(__name__)

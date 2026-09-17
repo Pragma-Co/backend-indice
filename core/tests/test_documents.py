@@ -5,8 +5,27 @@ from django.core.cache import cache
 from django.test import Client, TestCase
 from django.utils import timezone
 
-from core.models import Area, Discipline, Document, DocumentType, Project, User
-from core.services.documents_service import build_simple_filters
+from core.models import (
+    Area,
+    Discipline,
+    Document,
+    DocumentAccess,
+    DocumentType,
+    Project,
+    Revision,
+    User,
+)
+from core.models.choices import AccessStatus, RevisionStatus
+from core.services.documents_exceptions import (
+    DocumentNotFoundError,
+    MissingUserError,
+    UserNotFoundError,
+)
+from core.services.documents_service import (
+    build_simple_filters,
+    get_document_detail,
+    request_document_access,
+)
 
 
 class DocumentsViewTests(TestCase):
@@ -85,16 +104,6 @@ class SimpleFiltersViewTests(TestCase):
 
     def test_builds_filter_groups_with_expected_shape(self):
         self.assertEqual(set(build_simple_filters()), {"areas", "types", "dates"})
-
-
-from core.models import Discipline, Document, DocumentAccess, Project, Revision, User
-from core.models.choices import AccessStatus, RevisionStatus
-from core.services.documents_service import get_document_detail, request_document_access
-from core.services.documents_exceptions import (
-    DocumentNotFoundError,
-    MissingUserError,
-    UserNotFoundError,
-)
 
 
 class DocumentDetailServiceTests(TestCase):

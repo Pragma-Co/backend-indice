@@ -1,12 +1,10 @@
 from datetime import date, timedelta
-from django.db.models import Prefetch
 
 from django.core.cache import cache
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 
-from core.models import Area, Document, DocumentType
-from core.models import DocumentAccess, Revision, User
+from core.models import Area, Document, DocumentAccess, DocumentType, Revision, User
 from core.models.choices import AccessStatus, RevisionStatus
 from core.services.documents_exceptions import (
     DocumentNotFoundError,
@@ -247,8 +245,8 @@ def request_document_access(document_id, user_id, justification=""):
 
     try:
         user = User.objects.get(pk=user_id)
-    except User.DoesNotExist:
-        raise UserNotFoundError()
+    except User.DoesNotExist as exc:
+        raise UserNotFoundError() from exc
 
     access, created = DocumentAccess.objects.get_or_create(
         document=document,

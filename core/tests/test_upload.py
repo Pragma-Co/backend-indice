@@ -1,6 +1,6 @@
+import hashlib
 import shutil
 import tempfile
-import hashlib
 from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile

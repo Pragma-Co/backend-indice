@@ -6,12 +6,11 @@ from django.urls import path
 from core.views.api_root_view import api_root
 from core.views.catalog_view import list_disciplines, list_projects
 from core.views.documents_view import (
-    documents,
-    simple_filters,
     document_detail,
+    documents,
     request_access,
+    simple_filters,
 )
-
 from core.views.health_view import health_check
 from core.views.upload_view import upload_document
 
