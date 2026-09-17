@@ -2,7 +2,11 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from core.serializers.upload_serializer import serialize_duplicate_result, serialize_upload_result
+from core.serializers.upload_serializer import (
+    serialize_duplicate_result,
+    serialize_revision_result,
+    serialize_upload_result,
+)
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import (
     DuplicateFileError,
@@ -17,9 +21,10 @@ from core.services.upload_exceptions import (
 @require_POST
 def upload_document(request):
     uploaded_file = request.FILES.get("file")
+    force_new_revision = request.POST.get("force_new_revision") == "true"
 
     try:
-        result = store_uploaded_file(uploaded_file)
+        result = store_uploaded_file(uploaded_file, force_new_revision=force_new_revision)
     except MissingFileError:
         return JsonResponse(
             {"error": "No file was sent. Send the file in the 'file' field."},
@@ -45,5 +50,8 @@ def upload_document(request):
         return JsonResponse(serialize_duplicate_result(exc), status=409)
     except UploadStorageError:
         return JsonResponse({"error": "Failed to save the file. Please try again."}, status=500)
+
+    if result.get("revision_created"):
+        return JsonResponse(serialize_revision_result(result), status=201)
 
     return JsonResponse(serialize_upload_result(result), status=201)
