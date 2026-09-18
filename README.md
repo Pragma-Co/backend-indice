@@ -205,6 +205,8 @@ Responses:
 - `409` when the same file (by SHA-256) is already attached to a registered document.
 - `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
 
+**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the responsible, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
+
 **Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
 
 ## Useful commands
