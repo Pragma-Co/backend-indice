@@ -128,6 +128,7 @@ To add more users later: `docker compose exec api python manage.py createsuperus
 | <http://localhost:8000/health/> | Health check: PostgreSQL + MongoDB connectivity |
 | <http://localhost:8000/projects/> | Active projects (JSON, read-only) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/disciplines/> | Active disciplines (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| <http://localhost:8000/documents> | Paginated document listing and search — see [API endpoints](#api-endpoints) |
 | `POST http://localhost:8000/documents` | Register a document (confirmation step) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/admin/> | Django admin panel |
 | `localhost:5433` | PostgreSQL (localhost only, e.g. for DBeaver/pgAdmin) |
@@ -164,6 +165,45 @@ Disciplines available in the **Disciplina** select. `code` is the discipline acr
   { "id": 2, "code": "MAT", "name": "Materiais e Processos" }
 ]
 ```
+
+### `GET /documents`
+
+Main listing of the document library: serves both the direct navigation ("Ver todos os documentos") and the searches fired from the home screen. All parameters are optional and combined with AND; without any of them the endpoint returns the whole collection.
+
+| Parameter | Meaning |
+|-----------|---------|
+| `q` | free text, case-insensitive, matched against title and code (also description and tags) |
+| `tipo` | document type code, e.g. `DWG` |
+| `area` | area acronym, e.g. `EST` |
+| `data` | creation date preset: `last_7_days`, `last_month` or `last_year` |
+| `date_from`, `date_to` | explicit creation date range, `YYYY-MM-DD`, inclusive |
+| `page` | page number, starting at 1 (default 1) |
+| `page_size` | items per page (default 20, capped at 100) |
+
+Response `200`, ordered by most recent first:
+
+```json
+{
+  "count": 30,
+  "total_pages": 2,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 33,
+      "code": "AK-2100-MAT-ESP-0004",
+      "title": "Card 31 live",
+      "description": "",
+      "type": { "code": "ESP", "name": "Especificação Técnica" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "status": "PENDING",
+      "updated_at": "2026-09-18T21:30:04.000000+00:00"
+    }
+  ]
+}
+```
+
+`count` is the total found with the current filters, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`/`page_size` or a malformed date, `invalid_choice` for an unknown `data` preset.
 
 ### `POST /documents`
 
