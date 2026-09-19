@@ -6,6 +6,7 @@ from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 
 from core.models import Area, Document, DocumentType, Revision
+from core.serializers.document_serializer import revision_label
 from core.services.document_exceptions import DocumentQueryError
 
 SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
@@ -99,13 +100,14 @@ def parse_document_query(params):
 
 
 def filter_documents(query):
-    latest_revision_status = (
-        Revision.objects.filter(document=OuterRef("pk")).order_by("-version").values("status")[:1]
-    )
+    latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
     queryset = (
         Document.objects.filter(document_type__active=True)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
-        .annotate(status=Subquery(latest_revision_status))
+        .annotate(
+            status=Subquery(latest_revision.values("status")[:1]),
+            latest_version=Subquery(latest_revision.values("version")[:1]),
+        )
         .select_related("document_type", "discipline", "project")
         .prefetch_related("areas", "tags")
         .order_by("-updated_at", "-id")
@@ -162,11 +164,21 @@ def _serialize_document(document):
             "code": document.document_type.code,
             "name": document.document_type.name,
         },
+        "discipline": {
+            "code": document.discipline.code,
+            "name": document.discipline.name,
+        },
         "areas": [
             {"acronym": area.acronym, "name": area.name}
             for area in document.areas.all()
             if area.active
         ],
+        "revision": None
+        if document.latest_version is None
+        else {
+            "version": document.latest_version,
+            "label": revision_label(document.latest_version),
+        },
         "status": document.status,
         "updated_at": document.updated_at.isoformat(),
     }

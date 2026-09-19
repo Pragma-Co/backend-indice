@@ -178,6 +178,29 @@ class DocumentsSearchAndPaginationTests(TestCase):
         self.assertEqual(body["page_size"], 20)
         self.assertEqual(len(body["results"]), 3)
 
+    def test_should_return_the_columns_the_results_table_needs(self):
+        document = self._document("AK-2100-EST-DWG-0001", "Desenho da caverna 14")
+        Revision.objects.create(document=document, version=1, author=self.user)
+        Revision.objects.create(document=document, version=2, author=self.user)
+
+        response = self.client.get("/documents")
+
+        item = response.json()["results"][0]
+        self.assertEqual(item["code"], "AK-2100-EST-DWG-0001")
+        self.assertEqual(item["title"], "Desenho da caverna 14")
+        self.assertEqual(item["type"], {"code": "DWG", "name": "Desenho Técnico"})
+        self.assertEqual(item["discipline"], {"code": "EST", "name": "Estruturas"})
+        self.assertEqual(item["revision"], {"version": 2, "label": "REV02"})
+        self.assertEqual(item["status"], "PENDING")
+        self.assertIn("updated_at", item)
+
+    def test_should_return_null_revision_for_a_document_without_revisions(self):
+        self._document("AK-2100-EST-DWG-0001", "Desenho da caverna 14")
+
+        response = self.client.get("/documents")
+
+        self.assertIsNone(response.json()["results"][0]["revision"])
+
     def test_should_order_the_most_recent_documents_first(self):
         self._document("OLD", "Antigo", days_ago=30)
         self._document("NEW", "Novo", days_ago=0)
