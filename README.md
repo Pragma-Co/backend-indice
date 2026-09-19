@@ -195,7 +195,9 @@ Response `200`, ordered by most recent first:
       "title": "Card 31 live",
       "description": "",
       "type": { "code": "ESP", "name": "Especificação Técnica" },
+      "discipline": { "code": "MAT", "name": "Materiais e Processos" },
       "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
       "status": "PENDING",
       "updated_at": "2026-09-18T21:30:04.000000+00:00"
     }
@@ -203,7 +205,7 @@ Response `200`, ordered by most recent first:
 }
 ```
 
-`count` is the total found with the current filters, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`/`page_size` or a malformed date, `invalid_choice` for an unknown `data` preset.
+`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count` is the total found with the current filters, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`/`page_size` or a malformed date, `invalid_choice` for an unknown `data` preset.
 
 ### `POST /documents`
 
