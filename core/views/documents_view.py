@@ -9,6 +9,7 @@ from core.serializers.document_serializer import serialize_created_document
 from core.services.document_creation_service import create_document
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
+    DocumentQueryError,
     DocumentStorageError,
     DocumentValidationError,
     DuplicateDocumentFileError,
@@ -22,7 +23,9 @@ logger = logging.getLogger(__name__)
 @require_GET
 def documents(request):
     try:
-        return JsonResponse({"documents": get_documents(request.GET)})
+        return JsonResponse(get_documents(request.GET))
+    except DocumentQueryError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
         logger.exception("Failed to list documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)

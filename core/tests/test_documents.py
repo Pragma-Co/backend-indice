@@ -49,19 +49,22 @@ class DocumentsViewTests(TestCase):
         response = self.client.get("/documents")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["documents"][0]["code"], "DOC-001")
+        self.assertEqual(response.json()["results"][0]["code"], "DOC-001")
 
     def test_filters_documents_by_query_and_area(self):
         response = self.client.get("/documents", {"q": "memorial", "area": "ENG"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([item["code"] for item in response.json()["documents"]], ["DOC-001"])
+        self.assertEqual([item["code"] for item in response.json()["results"]], ["DOC-001"])
 
     def test_returns_empty_list_when_filter_does_not_match(self):
         response = self.client.get("/documents", {"tipo": "DWG"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"documents": []})
+        self.assertEqual(
+            response.json(),
+            {"count": 0, "total_pages": 1, "current_page": 1, "page_size": 20, "results": []},
+        )
 
     def _other_document(self, code):
         document = Document.objects.create(
@@ -79,14 +82,14 @@ class DocumentsViewTests(TestCase):
         response = self.client.get("/documents")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.json()["documents"][0]["status"])
+        self.assertIsNone(response.json()["results"][0]["status"])
 
     def test_should_return_the_status_of_the_only_revision(self):
         Revision.objects.create(document=self.document, version=1, author=self.user)
 
         response = self.client.get("/documents")
 
-        self.assertEqual(response.json()["documents"][0]["status"], "PENDING")
+        self.assertEqual(response.json()["results"][0]["status"], "PENDING")
 
     def test_should_return_the_status_of_the_most_recent_revision(self):
         auditor = User.objects.create_user(
@@ -106,7 +109,7 @@ class DocumentsViewTests(TestCase):
 
         response = self.client.get("/documents")
 
-        self.assertEqual(response.json()["documents"][0]["status"], "PENDING")
+        self.assertEqual(response.json()["results"][0]["status"], "PENDING")
 
     def test_should_keep_the_status_when_filters_are_applied(self):
         Revision.objects.create(document=self.document, version=1, author=self.user)
@@ -114,7 +117,7 @@ class DocumentsViewTests(TestCase):
         response = self.client.get("/documents", {"q": "memorial", "area": "ENG"})
 
         self.assertEqual(
-            [(item["code"], item["status"]) for item in response.json()["documents"]],
+            [(item["code"], item["status"]) for item in response.json()["results"]],
             [("DOC-001", "PENDING")],
         )
 
@@ -123,10 +126,10 @@ class DocumentsViewTests(TestCase):
             document = self._other_document(f"DOC-10{index}")
             Revision.objects.create(document=document, version=1, author=self.user)
 
-        with self.assertNumQueries(3):
+        with self.assertNumQueries(4):
             response = self.client.get("/documents")
 
-        self.assertEqual(len(response.json()["documents"]), 5)
+        self.assertEqual(len(response.json()["results"]), 5)
 
 
 class SimpleFiltersViewTests(TestCase):

@@ -1,13 +1,17 @@
 from datetime import date, timedelta
 
 from django.core.cache import cache
+from django.core.paginator import Paginator
 from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 
 from core.models import Area, Document, DocumentType, Revision
+from core.services.document_exceptions import DocumentQueryError
 
 SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
 DATE_FILTERS = [
     {"value": "last_7_days", "label": "Últimos 7 dias"},
     {"value": "last_month", "label": "Último mês"},
@@ -42,24 +46,59 @@ def get_simple_filters():
     return payload
 
 
-def _apply_date_filter(queryset, date_filter):
-    if date_filter not in DATE_RANGES:
-        return queryset
-    return queryset.filter(created_at__gte=timezone.now() - DATE_RANGES[date_filter])
+def _error(code, message):
+    return {"code": code, "message": message}
 
 
-def _apply_date_range(queryset, date_from, date_to):
+def _positive_int(params, name, default, errors):
+    raw = params.get(name, "").strip()
+    if not raw:
+        return default
+    if not raw.isdigit() or int(raw) < 1:
+        errors[name] = _error("invalid", f"{name} must be a positive integer.")
+        return default
+    return int(raw)
+
+
+def _iso_date(params, name, errors):
+    raw = params.get(name, "").strip()
+    if not raw:
+        return None
     try:
-        if date_from:
-            queryset = queryset.filter(created_at__date__gte=date.fromisoformat(date_from))
-        if date_to:
-            queryset = queryset.filter(created_at__date__lte=date.fromisoformat(date_to))
+        return date.fromisoformat(raw)
     except ValueError:
-        return queryset.none()
-    return queryset
+        errors[name] = _error("invalid", f"{name} must be a date in the YYYY-MM-DD format.")
+        return None
 
 
-def get_documents(params):
+def _date_preset(params, errors):
+    raw = params.get("data", "").strip()
+    if raw and raw not in DATE_RANGES:
+        errors["data"] = _error("invalid_choice", f"data must be one of {sorted(DATE_RANGES)}.")
+        return ""
+    return raw
+
+
+def parse_document_query(params):
+    errors = {}
+    query = {
+        "search_term": params.get("q", "").strip(),
+        "area": params.get("area", "").strip(),
+        "document_type": params.get("tipo", "").strip(),
+        "date_preset": _date_preset(params, errors),
+        "date_from": _iso_date(params, "date_from", errors),
+        "date_to": _iso_date(params, "date_to", errors),
+        "page": _positive_int(params, "page", 1, errors),
+        "page_size": min(
+            _positive_int(params, "page_size", DEFAULT_PAGE_SIZE, errors), MAX_PAGE_SIZE
+        ),
+    }
+    if errors:
+        raise DocumentQueryError(errors)
+    return query
+
+
+def filter_documents(query):
     latest_revision_status = (
         Revision.objects.filter(document=OuterRef("pk")).order_by("-version").values("status")[:1]
     )
@@ -73,31 +112,44 @@ def get_documents(params):
         .distinct()
     )
 
-    search_term = params.get("q", "").strip()
-    if search_term:
-        queryset = queryset.filter(
-            Q(title__icontains=search_term)
-            | Q(code__icontains=search_term)
-            | Q(description__icontains=search_term)
-            | Q(tags__name__icontains=search_term)
-        ).distinct()
+    criteria = Q()
+    if query["search_term"]:
+        term = query["search_term"]
+        criteria &= (
+            Q(title__icontains=term)
+            | Q(code__icontains=term)
+            | Q(description__icontains=term)
+            | Q(tags__name__icontains=term)
+        )
+    if query["document_type"]:
+        criteria &= Q(document_type__code=query["document_type"])
+    if query["date_preset"]:
+        criteria &= Q(created_at__gte=timezone.now() - DATE_RANGES[query["date_preset"]])
+    if query["date_from"]:
+        criteria &= Q(created_at__date__gte=query["date_from"])
+    if query["date_to"]:
+        criteria &= Q(created_at__date__lte=query["date_to"])
+    queryset = queryset.filter(criteria)
 
-    area = params.get("area", "").strip()
-    if area:
-        queryset = queryset.filter(areas__active=True, areas__acronym=area).distinct()
+    if query["area"]:
+        queryset = queryset.filter(areas__active=True, areas__acronym=query["area"])
 
-    document_type = params.get("tipo", "").strip()
-    if document_type:
-        queryset = queryset.filter(document_type__active=True, document_type__code=document_type)
+    return queryset
 
-    queryset = _apply_date_filter(queryset, params.get("data", "").strip())
-    queryset = _apply_date_range(
-        queryset,
-        params.get("date_from", "").strip(),
-        params.get("date_to", "").strip(),
-    )
 
-    return [_serialize_document(document) for document in queryset]
+def get_documents(params):
+    query = parse_document_query(params)
+    paginator = Paginator(filter_documents(query), query["page_size"])
+    page_number = query["page"]
+    page_items = paginator.page(page_number) if page_number <= paginator.num_pages else []
+
+    return {
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_number,
+        "page_size": query["page_size"],
+        "results": [_serialize_document(document) for document in page_items],
+    }
 
 
 def _serialize_document(document):

@@ -194,7 +194,7 @@ class CreateDocumentViewTests(TestCase):
         put_response = client.put(self.url)
 
         self.assertEqual(get_response.status_code, 200)
-        self.assertIn("documents", get_response.json())
+        self.assertIn("results", get_response.json())
         self.assertEqual(put_response.status_code, 405)
         self.assertEqual(put_response["Allow"], "GET, POST")
 
