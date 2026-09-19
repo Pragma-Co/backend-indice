@@ -132,6 +132,197 @@ class DocumentsViewTests(TestCase):
         self.assertEqual(len(response.json()["results"]), 5)
 
 
+class DocumentsSearchAndPaginationTests(TestCase):
+    def setUp(self):
+        self.structures = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.quality = Area.objects.create(acronym="QUA", name="Qualidade")
+        self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
+        self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
+        self.drawing = DocumentType.objects.create(code="DWG", name="Desenho Técnico")
+        self.report = DocumentType.objects.create(code="MEM", name="Memorial de Cálculo")
+        self.user = User.objects.create_user(
+            email="ana@example.com", password="test-password", name="Ana", area=self.structures
+        )
+        self.client = Client()
+
+    def _document(self, code, title, document_type=None, area=None, days_ago=0):
+        moment = timezone.now() - timedelta(days=days_ago)
+        document = Document.objects.create(
+            code=code,
+            title=title,
+            project=self.project,
+            discipline=self.discipline,
+            document_type=document_type or self.drawing,
+            responsible=self.user,
+            created_at=moment,
+            updated_at=moment,
+        )
+        document.areas.add(area or self.structures)
+        return document
+
+    def _codes(self, response):
+        return [item["code"] for item in response.json()["results"]]
+
+    def test_should_return_every_document_with_pagination_metadata_without_parameters(self):
+        self._document("AK-2100-EST-DWG-0001", "Desenho da caverna 14", days_ago=3)
+        self._document("AK-2100-EST-MEM-0001", "Memorial da longarina", self.report, days_ago=2)
+        self._document("AK-2100-EST-DWG-0002", "Desenho do revestimento", days_ago=1)
+
+        response = self.client.get("/documents")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["count"], 3)
+        self.assertEqual(body["total_pages"], 1)
+        self.assertEqual(body["current_page"], 1)
+        self.assertEqual(body["page_size"], 20)
+        self.assertEqual(len(body["results"]), 3)
+
+    def test_should_order_the_most_recent_documents_first(self):
+        self._document("OLD", "Antigo", days_ago=30)
+        self._document("NEW", "Novo", days_ago=0)
+        self._document("MID", "Intermediário", days_ago=10)
+
+        response = self.client.get("/documents")
+
+        self.assertEqual(self._codes(response), ["NEW", "MID", "OLD"])
+
+    def test_should_search_the_code_ignoring_case(self):
+        self._document("AK-2100-EST-DWG-0001", "Desenho da caverna 14")
+        self._document("AK-2100-EST-MEM-0001", "Memorial da longarina", self.report)
+
+        response = self.client.get("/documents", {"q": "est-mem"})
+
+        self.assertEqual(self._codes(response), ["AK-2100-EST-MEM-0001"])
+        self.assertEqual(response.json()["count"], 1)
+
+    def test_should_search_the_title_ignoring_case(self):
+        self._document("AK-2100-EST-DWG-0001", "Desenho da Caverna 14")
+        self._document("AK-2100-EST-MEM-0001", "Memorial da longarina", self.report)
+
+        response = self.client.get("/documents", {"q": "CAVERNA"})
+
+        self.assertEqual(self._codes(response), ["AK-2100-EST-DWG-0001"])
+
+    def test_should_combine_search_type_area_and_date_filters(self):
+        self._document("MATCH", "Desenho da caverna 14", self.drawing, self.structures, days_ago=2)
+        self._document("OTHER-TYPE", "Desenho da caverna 15", self.report, self.structures, 2)
+        self._document("OTHER-AREA", "Desenho da caverna 16", self.drawing, self.quality, 2)
+        self._document("TOO-OLD", "Desenho da caverna 17", self.drawing, self.structures, 20)
+        self._document("OTHER-TITLE", "Revestimento", self.drawing, self.structures, 2)
+
+        response = self.client.get(
+            "/documents", {"q": "caverna", "tipo": "DWG", "area": "EST", "data": "last_7_days"}
+        )
+
+        self.assertEqual(self._codes(response), ["MATCH"])
+        self.assertEqual(response.json()["count"], 1)
+
+    def test_should_filter_by_an_explicit_date_range(self):
+        self._document("INSIDE", "Dentro", days_ago=5)
+        self._document("BEFORE", "Antes", days_ago=15)
+        self._document("AFTER", "Depois", days_ago=0)
+        date_from = (timezone.now() - timedelta(days=7)).date().isoformat()
+        date_to = (timezone.now() - timedelta(days=3)).date().isoformat()
+
+        response = self.client.get("/documents", {"date_from": date_from, "date_to": date_to})
+
+        self.assertEqual(self._codes(response), ["INSIDE"])
+
+    def test_should_not_repeat_a_document_matched_through_several_tags(self):
+        document = self._document("AK-2100-EST-DWG-0001", "Desenho")
+        document.tags.create(name="caverna 14")
+        document.tags.create(name="caverna dianteira")
+
+        response = self.client.get("/documents", {"q": "caverna"})
+
+        self.assertEqual(self._codes(response), ["AK-2100-EST-DWG-0001"])
+        self.assertEqual(response.json()["count"], 1)
+
+    def test_should_navigate_through_the_pages_without_overlap(self):
+        for index in range(5):
+            self._document(f"DOC-{index}", f"Documento {index}", days_ago=index)
+
+        first = self.client.get("/documents", {"page_size": 2})
+        second = self.client.get("/documents", {"page_size": 2, "page": 2})
+        third = self.client.get("/documents", {"page_size": 2, "page": 3})
+
+        self.assertEqual(self._codes(first), ["DOC-0", "DOC-1"])
+        self.assertEqual(self._codes(second), ["DOC-2", "DOC-3"])
+        self.assertEqual(self._codes(third), ["DOC-4"])
+        for page_number, response in enumerate((first, second, third), start=1):
+            self.assertEqual(response.json()["count"], 5)
+            self.assertEqual(response.json()["total_pages"], 3)
+            self.assertEqual(response.json()["current_page"], page_number)
+
+    def test_should_keep_the_filters_while_paginating(self):
+        for index in range(3):
+            self._document(f"DWG-{index}", f"Desenho {index}", self.drawing, days_ago=index)
+        self._document("MEM-0", "Memorial", self.report)
+
+        response = self.client.get("/documents", {"tipo": "DWG", "page_size": 2, "page": 2})
+
+        self.assertEqual(self._codes(response), ["DWG-2"])
+        self.assertEqual(response.json()["count"], 3)
+        self.assertEqual(response.json()["total_pages"], 2)
+
+    def test_should_return_an_empty_page_beyond_the_last_one(self):
+        self._document("AK-2100-EST-DWG-0001", "Desenho")
+
+        response = self.client.get("/documents", {"page": 9})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"], [])
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["total_pages"], 1)
+        self.assertEqual(response.json()["current_page"], 9)
+
+    def test_should_use_twenty_items_per_page_by_default(self):
+        for index in range(25):
+            self._document(f"DOC-{index:02d}", f"Documento {index}", days_ago=index)
+
+        response = self.client.get("/documents")
+
+        self.assertEqual(len(response.json()["results"]), 20)
+        self.assertEqual(response.json()["total_pages"], 2)
+
+    def test_should_cap_the_page_size(self):
+        self._document("AK-2100-EST-DWG-0001", "Desenho")
+
+        response = self.client.get("/documents", {"page_size": 5000})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["page_size"], 100)
+
+    def test_should_answer_400_with_a_code_per_invalid_pagination_parameter(self):
+        response = self.client.get("/documents", {"page": "abc", "page_size": "0"})
+
+        self.assertEqual(response.status_code, 400)
+        errors = response.json()["errors"]
+        self.assertEqual(errors["page"]["code"], "invalid")
+        self.assertEqual(errors["page_size"]["code"], "invalid")
+
+    def test_should_answer_400_for_invalid_date_filters(self):
+        response = self.client.get(
+            "/documents", {"data": "yesterday", "date_from": "2026-13-45", "date_to": "soon"}
+        )
+
+        self.assertEqual(response.status_code, 400)
+        errors = response.json()["errors"]
+        self.assertEqual(errors["data"]["code"], "invalid_choice")
+        self.assertEqual(errors["date_from"]["code"], "invalid")
+        self.assertEqual(errors["date_to"]["code"], "invalid")
+
+    def test_should_run_a_fixed_number_of_queries_per_page(self):
+        for index in range(12):
+            self._document(f"DOC-{index:02d}", f"Documento {index}", days_ago=index)
+
+        with self.assertNumQueries(4):
+            response = self.client.get("/documents", {"page_size": 10})
+
+        self.assertEqual(len(response.json()["results"]), 10)
+
+
 class SimpleFiltersViewTests(TestCase):
     def setUp(self):
         cache.clear()
