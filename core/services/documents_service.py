@@ -182,11 +182,19 @@ def _compute_access_status(document, user):
 
 def _serialize_revision(revision):
     return {
+        "id": revision.id,
         "version": revision.version,
         "status": revision.status,
         "issue_date": revision.issue_date.isoformat() if revision.issue_date else None,
         "change_description": revision.change_description,
         "author": {"id": revision.author_id, "name": revision.author.name},
+        "auditor": (
+            {"id": revision.auditor_id, "name": revision.auditor.name}
+            if revision.auditor_id
+            else None
+        ),
+        "auditor_comment": revision.auditor_comment or "",
+        "audited_at": revision.audited_at.isoformat() if revision.audited_at else None,
         "created_at": revision.created_at.isoformat(),
     }
 
@@ -224,6 +232,10 @@ def _serialize_document_detail(document, access_status):
             "email": document.responsible.email,
         },
         "revision": _serialize_revision(current_revision) if current_revision else None,
+        # 👇 NOVO: histórico completo de versões
+        "versions": [
+            _serialize_revision(revision) for revision in document.revisions.all()
+        ],
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "access_status": access_status,
