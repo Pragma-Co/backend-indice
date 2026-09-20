@@ -167,9 +167,7 @@ class StoreUploadedFileTests(TestCase):
         self.assertEqual(inserted_metadata["extracted_text"], "texto extraido")
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_given_pdf_extraction_fails_when_stored_then_response_is_not_blocked(
-        self, mock_mongo
-    ):
+    def test_given_pdf_extraction_fails_when_stored_then_response_is_not_blocked(self, mock_mongo):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("relatorio.pdf", PDF_HEADER)
             result = store_uploaded_file(uploaded)  # should not raise, PDF_HEADER is not real PDF

@@ -83,8 +83,7 @@ def _ask_groq(system_prompt: str, user_prompt: str) -> str:
 
 def _suggest_title_and_description(llm_text: str) -> tuple[str, str]:
     answer = _ask_groq(
-        "Você é um assistente que nomeia e resume documentos técnicos de engenharia em "
-        "português.",
+        "Você é um assistente que nomeia e resume documentos técnicos de engenharia em português.",
         f"Analise o texto a seguir:\n\n{llm_text}\n\nResponda em exatamente duas linhas, "
         "neste formato, sem texto adicional:\nTÍTULO: <um título curto e objetivo para o "
         "documento>\nDESCRIÇÃO: <uma breve descrição, em português, do conteúdo do "
