@@ -16,7 +16,7 @@ from core.models import (
     RevisionStatus,
     User,
 )
-from core.models.choices import AccessStatus, RevisionStatus
+from core.models.choices import AccessStatus
 from core.services.documents_exceptions import (
     DocumentNotFoundError,
     MissingUserError,
