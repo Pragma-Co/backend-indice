@@ -6,6 +6,7 @@ from django.conf import settings
 
 from core.models import File, Revision
 from core.mongo import get_mongo_db
+from core.services.document_text_service import extract_text_for_ai
 from core.services.file_validation_service import (
     calculate_file_hash,
     format_file_size,
@@ -109,6 +110,8 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
         logger.exception("Failed to persist uploaded file to temp storage")
         raise UploadStorageError() from exc
 
+    extracted_text = extract_text_for_ai(stored_path, file_type.extension)
+
     metadata = {
         "temp_file_id": temp_file_id,
         "original_name": uploaded_file.name,
@@ -117,6 +120,7 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
         "inferred_type": file_type.mime_type,
         "extension": file_type.extension,
         "sha256": file_hash,
+        "extracted_text": extracted_text,
     }
 
     try:
@@ -132,3 +136,12 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
         "inferred_type": file_type.mime_type,
         "sha256": file_hash,
     }
+
+
+def get_temp_upload_record(temp_file_id: str) -> dict:
+    try:
+        record = get_mongo_db()["temp_uploads"].find_one({"temp_file_id": temp_file_id})
+    except Exception:
+        logger.exception("Could not read temp upload metadata from MongoDB")
+        return {}
+    return record if isinstance(record, dict) else {}

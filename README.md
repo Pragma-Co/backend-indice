@@ -128,6 +128,7 @@ To add more users later: `docker compose exec api python manage.py createsuperus
 | <http://localhost:8000/health/> | Health check: PostgreSQL + MongoDB connectivity |
 | <http://localhost:8000/projects/> | Active projects (JSON, read-only) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/disciplines/> | Active disciplines (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| `POST http://localhost:8000/documents` | Register a document (confirmation step) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/admin/> | Django admin panel |
 | `localhost:5433` | PostgreSQL (localhost only, e.g. for DBeaver/pgAdmin) |
 | `localhost:27018` | MongoDB (localhost only, e.g. for Compass) |
@@ -144,12 +145,12 @@ Both catalogs are maintained through the Django admin and populated by `manage.p
 
 ### `GET /projects/`
 
-Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code.
+Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code. `discipline_ids` lists the active disciplines linked to the project, ordered by id, so the form can offer only those in the Disciplina select (`POST /documents` rejects a discipline outside the project with `not_in_project`).
 
 ```json
 [
-  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central" },
-  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical" }
+  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central", "discipline_ids": [1, 2, 7, 8] },
+  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical", "discipline_ids": [1, 2, 3, 8] }
 ]
 ```
 
@@ -163,6 +164,48 @@ Disciplines available in the **Disciplina** select. `code` is the discipline acr
   { "id": 2, "code": "MAT", "name": "Materiais e Processos" }
 ]
 ```
+
+### `POST /documents`
+
+Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
+
+Request (`application/json`):
+
+```json
+{
+  "temp_file_id": "53cf33ae-5588-4c2e-994a-132f31cf2a9e",
+  "title": "Desenho de conjunto da caverna 14",
+  "description": "Conjunto soldado da caverna 14",
+  "project_id": 1,
+  "discipline_id": 1,
+  "document_type": "DWG",
+  "confidentiality": "CONFIDENTIAL",
+  "responsible_id": 12,
+  "areas": ["EST", "QUA"]
+}
+```
+
+| Field | Required | Rule |
+|-------|----------|------|
+| `temp_file_id` | yes | UUID returned by the upload; the file must still be in temporary storage |
+| `title` | yes | up to 255 characters |
+| `description` | no | up to 500 characters |
+| `project_id` | yes | id of an active project (`GET /projects/`) |
+| `discipline_id` | yes | id of an active discipline that belongs to the project (`GET /disciplines/`) |
+| `document_type` | yes | code of an active document type (`DWG`, `MEM`, ...) |
+| `confidentiality` | yes | `PUBLIC`, `CONFIDENTIAL` or `SECRET` |
+| `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
+| `areas` | yes | at least one active area acronym; the "tags" of the form are the areas |
+
+Responses:
+
+- `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
+- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project) and `invalid_choice` (`confidentiality`).
+- `404` with `{"errors": {"temp_file_id": {"code": "not_found", ...}}}` when the temporary file no longer exists (upload it again).
+- `409` when the same file (by SHA-256) is already attached to a registered document.
+- `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
+
+**Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
 
 ## Useful commands
 

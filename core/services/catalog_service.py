@@ -1,18 +1,24 @@
-"""Queries behind the catalog endpoints: only active entries, sorted by name.
+from django.db.models import Prefetch, QuerySet
 
-The catalogs themselves (`Project`, `Discipline`) are defined in
-core/models/catalog.py; this module only decides what the metadata form
-sees: active rows, in the order the selects display them.
-"""
-
-from django.db.models import QuerySet
-
-from core.models import Discipline, Project
+from core.models import Area, Discipline, DocumentType, Project
 
 
 def list_active_projects() -> QuerySet[Project]:
-    return Project.objects.filter(active=True).order_by("name", "id")
+    active_disciplines = Discipline.objects.filter(active=True).order_by("id")
+    return (
+        Project.objects.filter(active=True)
+        .prefetch_related(Prefetch("disciplines", queryset=active_disciplines))
+        .order_by("name", "id")
+    )
 
 
 def list_active_disciplines() -> QuerySet[Discipline]:
     return Discipline.objects.filter(active=True).order_by("name", "id")
+
+
+def list_active_document_types() -> QuerySet[DocumentType]:
+    return DocumentType.objects.filter(active=True).order_by("name", "id")
+
+
+def list_active_areas() -> QuerySet[Area]:
+    return Area.objects.filter(active=True).order_by("name", "id")
