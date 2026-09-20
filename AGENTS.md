@@ -30,7 +30,7 @@ backend-api-6/
 ├── manage.py
 ├── README.md
 ├── requirements.txt
-├── PROJECT_STRUCTURE.md
+├── AGENTS.md
 ├── scripts/
 │   └── setup_env.py
 ├── api6/
@@ -133,7 +133,7 @@ Este projeto deve ser organizado de forma que uma IA ou um novo desenvolvedor co
 
 Para isso, recomenda-se:
 
-- manter documentação clara em `README.md` e `PROJECT_STRUCTURE.md`
+- manter documentação clara em `README.md` e `AGENTS.md`
 - usar nomes que expressem a função do arquivo
 - preservar uma hierarquia lógica entre infraestrutura, domínio e testes
 - manter o app principal organizado por camada e não misturar responsabilidades
