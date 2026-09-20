@@ -120,6 +120,9 @@ MAX_UPLOAD_SIZE_BYTES = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 *
 TEMP_UPLOAD_DIR = Path(os.environ.get("TEMP_UPLOAD_DIR", BASE_DIR / "tmp_uploads"))
 DOCUMENT_STORAGE_DIR = Path(os.environ.get("DOCUMENT_STORAGE_DIR", BASE_DIR / "media"))
 
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
 # Password validation (also part of a healthy LGPD posture)
 
 AUTH_PASSWORD_VALIDATORS = [
