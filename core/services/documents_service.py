@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from django.core.cache import cache
-from django.db.models import Prefetch, Q
+from django.db.models import OuterRef, Prefetch, Q, Subquery
 from django.utils import timezone
 
 from core.models import Area, Document, DocumentAccess, DocumentType, Revision, User
@@ -11,9 +11,6 @@ from core.services.documents_exceptions import (
     MissingUserError,
     UserNotFoundError,
 )
-from django.db.models import OuterRef, Q, Subquery
-from django.utils import timezone
-
 
 SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
@@ -232,10 +229,7 @@ def _serialize_document_detail(document, access_status):
             "email": document.responsible.email,
         },
         "revision": _serialize_revision(current_revision) if current_revision else None,
-        # 👇 NOVO: histórico completo de versões
-        "versions": [
-            _serialize_revision(revision) for revision in document.revisions.all()
-        ],
+        "versions": [_serialize_revision(revision) for revision in document.revisions.all()],
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "access_status": access_status,

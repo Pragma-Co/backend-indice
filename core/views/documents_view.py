@@ -3,8 +3,17 @@ import logging
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from core.serializers.document_serializer import serialize_created_document
+from core.services.document_creation_service import create_document
+from core.services.document_exceptions import (
+    DocumentCodeCollisionError,
+    DocumentStorageError,
+    DocumentValidationError,
+    DuplicateDocumentFileError,
+    TempFileNotFoundError,
+)
 from core.services.documents_exceptions import (
     DocumentNotFoundError,
     MissingUserError,
@@ -15,16 +24,6 @@ from core.services.documents_service import (
     get_documents,
     get_simple_filters,
     request_document_access,
-)
-
-from core.serializers.document_serializer import serialize_created_document
-from core.services.document_creation_service import create_document
-from core.services.document_exceptions import (
-    DocumentCodeCollisionError,
-    DocumentStorageError,
-    DocumentValidationError,
-    DuplicateDocumentFileError,
-    TempFileNotFoundError,
 )
 
 logger = logging.getLogger(__name__)

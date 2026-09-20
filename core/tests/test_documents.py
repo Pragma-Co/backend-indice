@@ -13,8 +13,8 @@ from core.models import (
     DocumentType,
     Project,
     Revision,
-    User,
     RevisionStatus,
+    User,
 )
 from core.models.choices import AccessStatus, RevisionStatus
 from core.services.documents_exceptions import (

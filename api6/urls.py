@@ -5,13 +5,13 @@ from django.urls import path
 
 from core.views.api_root_view import api_root
 from core.views.catalog_view import list_disciplines, list_projects
+from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.documents_view import (
     document_detail,
+    documents_collection,
     request_access,
     simple_filters,
-    documents_collection
 )
-from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.health_view import health_check
 from core.views.upload_view import upload_document
 
