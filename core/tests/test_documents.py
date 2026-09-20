@@ -5,7 +5,16 @@ from django.core.cache import cache
 from django.test import Client, TestCase
 from django.utils import timezone
 
-from core.models import Area, Discipline, Document, DocumentType, Project, User
+from core.models import (
+    Area,
+    Discipline,
+    Document,
+    DocumentType,
+    Project,
+    Revision,
+    RevisionStatus,
+    User,
+)
 from core.services.documents_service import build_simple_filters
 
 
@@ -53,6 +62,71 @@ class DocumentsViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"documents": []})
+
+    def _other_document(self, code):
+        document = Document.objects.create(
+            code=code,
+            title=code,
+            project=self.project,
+            discipline=self.discipline,
+            document_type=self.document_type,
+            responsible=self.user,
+        )
+        document.areas.add(self.area)
+        return document
+
+    def test_should_return_null_status_for_a_document_without_revisions(self):
+        response = self.client.get("/documents")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["documents"][0]["status"])
+
+    def test_should_return_the_status_of_the_only_revision(self):
+        Revision.objects.create(document=self.document, version=1, author=self.user)
+
+        response = self.client.get("/documents")
+
+        self.assertEqual(response.json()["documents"][0]["status"], "PENDING")
+
+    def test_should_return_the_status_of_the_most_recent_revision(self):
+        auditor = User.objects.create_user(
+            email="auditor@example.com", password="test-password", name="Auditor", area=self.area
+        )
+        Revision.objects.create(
+            document=self.document,
+            version=1,
+            status=RevisionStatus.APPROVED,
+            author=self.user,
+            auditor=auditor,
+            audited_at=timezone.now(),
+        )
+        Revision.objects.create(
+            document=self.document, version=2, status=RevisionStatus.PENDING, author=self.user
+        )
+
+        response = self.client.get("/documents")
+
+        self.assertEqual(response.json()["documents"][0]["status"], "PENDING")
+
+    def test_should_keep_the_status_when_filters_are_applied(self):
+        Revision.objects.create(document=self.document, version=1, author=self.user)
+
+        response = self.client.get("/documents", {"q": "memorial", "area": "ENG"})
+
+        self.assertEqual(
+            [(item["code"], item["status"]) for item in response.json()["documents"]],
+            [("DOC-001", "PENDING")],
+        )
+
+    def test_should_not_run_one_status_query_per_document(self):
+        for index in range(4):
+            document = self._other_document(f"DOC-10{index}")
+            Revision.objects.create(document=document, version=1, author=self.user)
+
+        with self.assertNumQueries(3):
+            response = self.client.get("/documents")
+
+        self.assertEqual(len(response.json()["documents"]), 5)
 
 
 class SimpleFiltersViewTests(TestCase):

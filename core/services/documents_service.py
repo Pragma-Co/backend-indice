@@ -1,10 +1,10 @@
 from datetime import date, timedelta
 
 from django.core.cache import cache
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 
-from core.models import Area, Document, DocumentType
+from core.models import Area, Document, DocumentType, Revision
 
 SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
@@ -60,9 +60,13 @@ def _apply_date_range(queryset, date_from, date_to):
 
 
 def get_documents(params):
+    latest_revision_status = (
+        Revision.objects.filter(document=OuterRef("pk")).order_by("-version").values("status")[:1]
+    )
     queryset = (
         Document.objects.filter(document_type__active=True)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
+        .annotate(status=Subquery(latest_revision_status))
         .select_related("document_type", "discipline", "project")
         .prefetch_related("areas", "tags")
         .order_by("-updated_at", "-id")
@@ -111,5 +115,6 @@ def _serialize_document(document):
             for area in document.areas.all()
             if area.active
         ],
+        "status": document.status,
         "updated_at": document.updated_at.isoformat(),
     }
