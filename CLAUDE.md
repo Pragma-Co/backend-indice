@@ -30,7 +30,7 @@ commit message and the PR description. Tool directives such as `# noqa` are the 
 
 ## Repository structure
 
-The `core` app is organized by layer (`PROJECT_STRUCTURE.md` standard):
+The `core` app is organized by layer (`AGENTS.md` standard):
 
 ```
 core/
