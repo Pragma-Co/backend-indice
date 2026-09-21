@@ -197,6 +197,15 @@ Request (`application/json`):
 | `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
 | `areas` | yes | at least one active area acronym; the "tags" of the form are the areas |
 
+**Ids are not stable across databases.** `manage.py seed` assigns whatever ids the sequences are at, so the numbers in the example above will differ on your machine. Get valid ones before calling the endpoint:
+
+```bash
+curl http://localhost:8000/projects/    # project id and the discipline_ids linked to it
+docker compose exec api python manage.py shell -c "from core.models import User; print(User.objects.get(email='beatriz.canuto@akaer.local').id)"
+```
+
+Document type codes (`DWG`, `MEM`, ...) and area acronyms (`EST`, `QUA`, ...) are stable; `GET /documents/simple-filters` lists them.
+
 Responses:
 
 - `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
