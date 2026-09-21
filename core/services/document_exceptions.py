@@ -21,3 +21,9 @@ class DocumentStorageError(Exception):
 
 class DocumentCodeCollisionError(Exception):
     pass
+
+
+class DocumentQueryError(Exception):
+    def __init__(self, errors: dict):
+        self.errors = errors
+        super().__init__(f"Invalid document query: {sorted(errors)}")
