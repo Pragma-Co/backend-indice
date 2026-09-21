@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 import tempfile
 from unittest import mock
@@ -340,3 +341,71 @@ class UploadDocumentViewDeduplicationTests(TestCase):
         self.assertEqual(body["document"]["codigo_ra"], "RA-0099")
         self.assertEqual(body["document"]["titulo"], "Documento Duplicado")
         self.assertEqual(body["document"]["status"], "PENDING")
+
+
+class ForceNewRevisionTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
+
+        area = Area.objects.create(acronym="AR3", name="Area Teste 3")
+        user = User.objects.create(email="autor3@example.com", name="Autor Teste 3", area=area)
+        project = Project.objects.create(code="PRJ-3", name="Projeto Teste 3")
+        discipline = Discipline.objects.create(code="DISC3", name="Disciplina Teste 3")
+        document_type = DocumentType.objects.create(code="DT3", name="Tipo Teste 3")
+
+        self.document = Document.objects.create(
+            code="RA-0500",
+            title="Documento Force",
+            project=project,
+            discipline=discipline,
+            document_type=document_type,
+            responsible=user,
+        )
+        self.original_revision = Revision.objects.create(
+            document=self.document,
+            version=1,
+            status="APPROVED",
+            author=user,
+            auditor=user,
+            audited_at=timezone.now(),
+        )
+        self.content = PDF_HEADER
+        File.objects.create(
+            revision=self.original_revision,
+            original_name="original.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(self.content),
+            sha256=hashlib.sha256(self.content).hexdigest(),
+            storage_path="/fake/original.pdf",
+        )
+
+    @mock.patch("core.services.temp_upload_service.get_mongo_db")
+    def test_given_force_new_revision_when_stored_then_creates_new_revision_and_file(
+        self, mock_mongo
+    ):
+        with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
+            uploaded = SimpleUploadedFile("copia.pdf", self.content)
+            result = store_uploaded_file(uploaded, force_new_revision=True)
+
+        self.assertTrue(result["revision_created"])
+        self.assertEqual(result["document"]["codigo_ra"], "RA-0500")
+        self.assertEqual(result["document"]["version"], 2)
+        self.assertEqual(Revision.objects.filter(document=self.document).count(), 2)
+        self.assertEqual(File.objects.filter(revision__document=self.document).count(), 2)
+        mock_mongo.assert_not_called()
+
+    def test_given_force_new_revision_via_view_when_posted_then_returns_201(self):
+        with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
+            uploaded = SimpleUploadedFile("copia.pdf", self.content)
+            response = self.client.post(
+                "/documents/upload",
+                {"file": uploaded, "force_new_revision": "true"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertFalse(body["duplicate"])
+        self.assertTrue(body["revision_created"])
+        self.assertEqual(body["document"]["version"], 2)

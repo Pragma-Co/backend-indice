@@ -321,6 +321,8 @@ This project handles personal data topics this semester, so the environment was 
 
 ## Project structure
 
+See [AGENTS.md](AGENTS.md) for the full layout and conventions. Summary:
+
 ```
 backend/
 ├── docker-compose.yml   # Service orchestration (api + postgres + mongodb)

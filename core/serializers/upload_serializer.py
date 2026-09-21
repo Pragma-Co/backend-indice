@@ -8,6 +8,15 @@ def serialize_upload_result(result):
     }
 
 
+def serialize_revision_result(result):
+    return {
+        "duplicate": False,
+        "revision_created": True,
+        "document": result["document"],
+        "sha256": result["sha256"],
+    }
+
+
 def serialize_duplicate_result(exc):
     return {
         "duplicate": True,
