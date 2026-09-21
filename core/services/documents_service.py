@@ -1,11 +1,19 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import OuterRef, Prefetch, Q, Subquery
 from django.utils import timezone
 
-from core.models import Area, Document, DocumentAccess, DocumentType, Revision, User
+from core.models import (
+    Area,
+    Discipline,
+    Document,
+    DocumentAccess,
+    DocumentType,
+    Revision,
+    User,
+)
 from core.models.choices import AccessStatus, RevisionStatus
 from core.serializers.document_serializer import revision_label
 from core.services.document_exceptions import DocumentQueryError
@@ -15,7 +23,7 @@ from core.services.documents_exceptions import (
     UserNotFoundError,
 )
 
-SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
+SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters:v2"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -23,6 +31,14 @@ DATE_FILTERS = [
     {"value": "last_7_days", "label": "Últimos 7 dias"},
     {"value": "last_month", "label": "Último mês"},
     {"value": "last_year", "label": "Último ano"},
+]
+
+
+STATUS_FILTERS = [
+    {"value": RevisionStatus.PENDING.value, "label": "Em revisão"},
+    {"value": RevisionStatus.APPROVED.value, "label": "Vigente"},
+    {"value": RevisionStatus.REJECTED.value, "label": "Rejeitado"},
+    {"value": RevisionStatus.OBSOLETE.value, "label": "Obsoleto"},
 ]
 
 
@@ -41,6 +57,10 @@ def build_simple_filters():
         "types": list(
             DocumentType.objects.filter(active=True).order_by("code").values("code", "name")
         ),
+        "disciplines": list(
+            Discipline.objects.filter(active=True).order_by("code").values("code", "name")
+        ),
+        "statuses": STATUS_FILTERS,
         "dates": DATE_FILTERS,
     }
 
@@ -67,7 +87,15 @@ def _positive_int(params, name, default, errors):
     return int(raw)
 
 
-def _iso_date(params, name, errors):
+def _first_present(params, names):
+    for name in names:
+        if params.get(name, "").strip():
+            return name
+    return names[0]
+
+
+def _iso_date(params, names, errors):
+    name = _first_present(params, names)
     raw = params.get(name, "").strip()
     if not raw:
         return None
@@ -86,23 +114,73 @@ def _date_preset(params, errors):
     return raw
 
 
+def _raw_values(params, name):
+    getlist = getattr(params, "getlist", None)
+    if getlist is None:
+        raw = params.get(name, "")
+        return raw if isinstance(raw, list) else [raw]
+    return getlist(name) + getlist(f"{name}[]")
+
+
+def _multiple(params, name, normalize=str.upper):
+    values = []
+    for raw in _raw_values(params, name):
+        for piece in str(raw).split(","):
+            value = normalize(piece.strip())
+            if value and value not in values:
+                values.append(value)
+    return values
+
+
+def _statuses(params, errors):
+    statuses = _multiple(params, "status")
+    unknown = sorted(set(statuses) - set(RevisionStatus.values))
+    if unknown:
+        errors["status"] = _error(
+            "invalid_choice", f"status must be among {sorted(RevisionStatus.values)}."
+        )
+        return []
+    return statuses
+
+
+def _responsible_id(params, errors):
+    raw = params.get("responsible_id", "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        errors["responsible_id"] = _error("invalid", "responsible_id must be a positive integer.")
+        return None
+    return int(raw)
+
+
 def parse_document_query(params):
     errors = {}
     query = {
         "search_term": params.get("q", "").strip(),
-        "area": params.get("area", "").strip(),
-        "document_type": params.get("tipo", "").strip(),
+        "areas": _multiple(params, "area"),
+        "document_types": _multiple(params, "tipo"),
+        "disciplines": _multiple(params, "discipline"),
+        "statuses": _statuses(params, errors),
+        "tags": _multiple(params, "tags", normalize=str),
+        "responsible_id": _responsible_id(params, errors),
         "date_preset": _date_preset(params, errors),
-        "date_from": _iso_date(params, "date_from", errors),
-        "date_to": _iso_date(params, "date_to", errors),
+        "date_from": _iso_date(params, ("date_from", "data_inicio"), errors),
+        "date_to": _iso_date(params, ("date_to", "data_fim"), errors),
         "page": _positive_int(params, "page", 1, errors),
         "page_size": min(
             _positive_int(params, "page_size", DEFAULT_PAGE_SIZE, errors), MAX_PAGE_SIZE
         ),
     }
+    if query["date_from"] and query["date_to"] and query["date_from"] > query["date_to"]:
+        name = _first_present(params, ("date_to", "data_fim"))
+        errors[name] = _error("invalid_range", f"{name} must not be earlier than the start date.")
     if errors:
         raise DocumentQueryError(errors)
     return query
+
+
+def _start_of_day(day):
+    return timezone.make_aware(datetime.combine(day, time.min))
 
 
 def filter_documents(query):
@@ -129,18 +207,30 @@ def filter_documents(query):
             | Q(description__icontains=term)
             | Q(tags__name__icontains=term)
         )
-    if query["document_type"]:
-        criteria &= Q(document_type__code=query["document_type"])
+    if query["document_types"]:
+        criteria &= Q(document_type__code__in=query["document_types"])
+    if query["disciplines"]:
+        criteria &= Q(discipline__code__in=query["disciplines"])
+    if query["statuses"]:
+        criteria &= Q(status__in=query["statuses"])
+    if query["responsible_id"]:
+        criteria &= Q(responsible_id=query["responsible_id"])
     if query["date_preset"]:
         criteria &= Q(created_at__gte=timezone.now() - DATE_RANGES[query["date_preset"]])
     if query["date_from"]:
-        criteria &= Q(created_at__date__gte=query["date_from"])
+        criteria &= Q(created_at__gte=_start_of_day(query["date_from"]))
     if query["date_to"]:
-        criteria &= Q(created_at__date__lte=query["date_to"])
+        criteria &= Q(created_at__lt=_start_of_day(query["date_to"] + timedelta(days=1)))
     queryset = queryset.filter(criteria)
 
-    if query["area"]:
-        queryset = queryset.filter(areas__active=True, areas__acronym=query["area"])
+    if query["areas"]:
+        queryset = queryset.filter(areas__active=True, areas__acronym__in=query["areas"])
+
+    if query["tags"]:
+        any_tag = Q()
+        for tag in query["tags"]:
+            any_tag |= Q(tags__name__iexact=tag)
+        queryset = queryset.filter(any_tag)
 
     return queryset
 

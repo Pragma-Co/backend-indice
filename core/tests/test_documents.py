@@ -370,7 +370,9 @@ class SimpleFiltersViewTests(TestCase):
         response = self.client.get("/documents/simple-filters")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(set(response.json()), {"areas", "types", "dates"})
+        self.assertEqual(
+            set(response.json()), {"areas", "types", "disciplines", "statuses", "dates"}
+        )
         self.assertEqual(response.json()["areas"], [{"acronym": "ENG", "name": "Engenharia"}])
         self.assertEqual(response.json()["types"], [{"code": "PDF", "name": "Relatório"}])
         self.assertTrue(response.json()["dates"])
@@ -386,7 +388,22 @@ class SimpleFiltersViewTests(TestCase):
         mocked_cache.set.assert_not_called()
 
     def test_builds_filter_groups_with_expected_shape(self):
-        self.assertEqual(set(build_simple_filters()), {"areas", "types", "dates"})
+        self.assertEqual(
+            set(build_simple_filters()), {"areas", "types", "disciplines", "statuses", "dates"}
+        )
+
+    def test_should_offer_active_disciplines_and_every_revision_status(self):
+        Discipline.objects.create(code="EST", name="Estruturas")
+        Discipline.objects.create(code="PNE", name="Pneumáticos", active=False)
+
+        filters = build_simple_filters()
+
+        self.assertEqual(filters["disciplines"], [{"code": "EST", "name": "Estruturas"}])
+        self.assertEqual(
+            [status["value"] for status in filters["statuses"]],
+            ["PENDING", "APPROVED", "REJECTED", "OBSOLETE"],
+        )
+        self.assertEqual(filters["statuses"][0]["label"], "Em revisão")
 
 
 class DocumentDetailServiceTests(TestCase):
