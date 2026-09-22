@@ -3,8 +3,8 @@ import uuid
 from pathlib import Path
 
 from django.conf import settings
-
 from django.utils import timezone
+
 from core.models import File, Revision
 from core.mongo import get_mongo_db
 from core.services.document_text_service import extract_text_for_ai
