@@ -19,12 +19,7 @@ from core.models import (
     User,
 )
 from core.services import audit_service
-from core.services.audit_service import (
-    USER_AGENT_MAX_LENGTH,
-    client_ip,
-    client_user_agent,
-    record_document_created,
-)
+from core.services.audit_service import USER_AGENT_MAX_LENGTH, client_user_agent
 
 LOGGER_NAME = "core.services.audit_service"
 
@@ -143,57 +138,6 @@ class AuditServiceTests(TestCase):
                 self.assertIsNone(entry.user)
                 self.assertNotIn("actor", entry.record)
 
-    def test_should_record_the_remote_address_of_the_request(self):
-        request = self._request(self.user, REMOTE_ADDR="203.0.113.7")
-
-        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
-
-        entry = AuditLog.objects.get()
-        self.assertEqual(entry.ip_address, "203.0.113.7")
-
-    def test_should_ignore_forwarded_for_unless_it_is_trusted(self):
-        request = self._request(
-            self.user, REMOTE_ADDR="172.18.0.1", HTTP_X_FORWARDED_FOR="198.51.100.9"
-        )
-
-        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
-
-        entry = AuditLog.objects.get()
-        self.assertEqual(entry.ip_address, "172.18.0.1")
-
-    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
-    def test_should_use_the_first_forwarded_for_address_when_trusted(self):
-        request = self._request(
-            self.user,
-            REMOTE_ADDR="172.18.0.1",
-            HTTP_X_FORWARDED_FOR="198.51.100.9, 10.0.0.1",
-        )
-
-        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
-
-        entry = AuditLog.objects.get()
-        self.assertEqual(entry.ip_address, "198.51.100.9")
-
-    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
-    def test_should_fall_back_to_the_remote_address_when_forwarded_for_is_invalid(self):
-        request = self._request(
-            self.user, REMOTE_ADDR="172.18.0.1", HTTP_X_FORWARDED_FOR="not-an-ip"
-        )
-
-        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
-
-        entry = AuditLog.objects.get()
-        self.assertEqual(entry.ip_address, "172.18.0.1")
-
-    def test_should_still_record_the_event_when_no_valid_address_is_available(self):
-        request = self._request(self.user, REMOTE_ADDR="not-an-ip")
-
-        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
-
-        entry = AuditLog.objects.get()
-        self.assertIsNone(entry.ip_address)
-        self.assertEqual(entry.action, AuditAction.DOC_DOWNLOAD)
-
     def test_should_not_raise_when_the_insert_fails(self):
         request = self._request(self.user)
 
@@ -285,19 +229,6 @@ class AuditServiceTests(TestCase):
         )
         self.assertEqual(entry.record["original_name"], "copia.pdf")
 
-    def test_should_record_a_submitted_document(self):
-        request = self._request(self.user)
-        document = SimpleNamespace(id=12, code="AK-2100-EST-DWG-0001")
-
-        audit_service.log_document_submitted(request, document, {"temp_file_id": "tmp"})
-
-        entry = AuditLog.objects.get()
-        self.assertEqual(entry.action, AuditAction.DOC_SUBMIT_SUCCESS)
-        self.assertEqual(entry.entity, "document")
-        self.assertEqual(entry.entity_id, 12)
-        self.assertEqual(entry.record["document_code"], "AK-2100-EST-DWG-0001")
-        self.assertEqual(entry.record["temp_file_id"], "tmp")
-
     def test_should_not_raise_when_the_builder_input_is_malformed(self):
         request = self._request(self.user)
 
@@ -306,48 +237,65 @@ class AuditServiceTests(TestCase):
 
         self.assertEqual(AuditLog.objects.count(), 0)
 
-class ClientIpTests(TestCase):
-    def setUp(self):
-        self.factory = RequestFactory()
+    def test_should_record_the_remote_address_of_the_request(self):
+        request = self._request(self.user, REMOTE_ADDR="203.0.113.7")
 
-    def test_should_use_the_first_forwarded_address_when_behind_a_proxy(self):
-        request = self.factory.post(
-            "/documents", HTTP_X_FORWARDED_FOR="203.0.113.7, 10.0.0.1", REMOTE_ADDR="172.18.0.1"
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
+
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.ip_address, "203.0.113.7")
+
+    def test_should_ignore_forwarded_for_unless_it_is_trusted(self):
+        request = self._request(
+            self.user, REMOTE_ADDR="172.18.0.1", HTTP_X_FORWARDED_FOR="198.51.100.9"
         )
 
-        ip = client_ip(request)
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
 
-        self.assertEqual(ip, "203.0.113.7")
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.ip_address, "172.18.0.1")
 
-    def test_should_fall_back_to_the_remote_address(self):
-        request = self.factory.post("/documents", REMOTE_ADDR="198.51.100.20")
-
-        ip = client_ip(request)
-
-        self.assertEqual(ip, "198.51.100.20")
-
-    def test_should_ignore_a_forwarded_value_that_is_not_an_ip(self):
-        request = self.factory.post(
-            "/documents", HTTP_X_FORWARDED_FOR="not-an-ip", REMOTE_ADDR="198.51.100.20"
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
+    def test_should_use_the_first_forwarded_for_address_when_trusted(self):
+        request = self._request(
+            self.user,
+            REMOTE_ADDR="172.18.0.1",
+            HTTP_X_FORWARDED_FOR="198.51.100.9, 10.0.0.1",
         )
 
-        ip = client_ip(request)
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
 
-        self.assertEqual(ip, "198.51.100.20")
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.ip_address, "198.51.100.9")
 
-    def test_should_return_none_when_no_valid_address_is_available(self):
-        request = self.factory.post("/documents", REMOTE_ADDR="")
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
+    def test_should_fall_back_to_the_remote_address_when_forwarded_for_is_invalid(self):
+        request = self._request(
+            self.user, REMOTE_ADDR="172.18.0.1", HTTP_X_FORWARDED_FOR="not-an-ip"
+        )
 
-        ip = client_ip(request)
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
 
-        self.assertIsNone(ip)
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.ip_address, "172.18.0.1")
 
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_accept_ipv6_addresses(self):
-        request = self.factory.post("/documents", HTTP_X_FORWARDED_FOR="2001:db8::1")
+        request = self._request(self.user, HTTP_X_FORWARDED_FOR="2001:db8::1")
 
-        ip = client_ip(request)
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
 
-        self.assertEqual(ip, "2001:db8::1")
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.ip_address, "2001:db8::1")
+
+    def test_should_still_record_the_event_when_no_valid_address_is_available(self):
+        request = self._request(self.user, REMOTE_ADDR="not-an-ip")
+
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
+
+        entry = AuditLog.objects.get()
+        self.assertIsNone(entry.ip_address)
+        self.assertEqual(entry.action, AuditAction.DOC_DOWNLOAD)
 
 
 class ClientUserAgentTests(TestCase):
@@ -366,11 +314,11 @@ class ClientUserAgentTests(TestCase):
         self.assertEqual(user_agent, "")
 
 
-class RecordDocumentCreatedTests(TestCase):
+class DocumentSubmittedAuditTests(TestCase):
     def setUp(self):
-        area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
         self.user = User.objects.create_user(
-            email="ana@example.com", password="secret", name="Ana", area=area
+            email="ana@example.com", password="secret", name="Ana", area=self.area
         )
         self.document = Document.objects.create(
             code="AK-2100-EST-DWG-0001",
@@ -386,55 +334,62 @@ class RecordDocumentCreatedTests(TestCase):
             HTTP_X_FORWARDED_FOR="203.0.113.7",
             HTTP_USER_AGENT="Mozilla/5.0 (test)",
         )
+        self.request.user = AnonymousUser()
 
-    def test_should_store_who_what_when_and_where(self):
-        entry = record_document_created(self.document, self.request)
+    def test_should_store_the_document_details_alongside_the_acting_user(self):
+        audit_service.log_document_submitted(self.request, self.document, {"temp_file_id": "tmp"})
 
-        entry.refresh_from_db()
-        self.assertEqual(entry.user, self.user)
-        self.assertEqual(entry.action, AuditAction.CREATE)
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.action, AuditAction.DOC_SUBMIT_SUCCESS)
         self.assertEqual(entry.entity, "document")
         self.assertEqual(entry.entity_id, self.document.id)
-        self.assertEqual(entry.ip_address, "203.0.113.7")
-        self.assertIsNotNone(entry.occurred_at)
-        self.assertEqual(
-            entry.record,
-            {
-                "event": "DOCUMENT_CREATED",
-                "code": "AK-2100-EST-DWG-0001",
-                "title": "Desenho da caverna 14",
-                "version": 1,
-                "revision": "REV01",
-                "user_agent": "Mozilla/5.0 (test)",
-            },
+        self.assertEqual(entry.record["document_code"], "AK-2100-EST-DWG-0001")
+        self.assertEqual(entry.record["temp_file_id"], "tmp")
+        self.assertEqual(entry.record["title"], "Desenho da caverna 14")
+        self.assertEqual(entry.record["version"], 1)
+        self.assertEqual(entry.record["revision"], "REV01")
+        self.assertEqual(entry.record["user_agent"], "Mozilla/5.0 (test)")
+        self.assertEqual(entry.record["responsible_id"], self.user.id)
+
+    def test_should_fetch_the_latest_revision_when_none_is_given(self):
+        Revision.objects.create(document=self.document, version=2, author=self.user)
+
+        audit_service.log_document_submitted(self.request, self.document, {"temp_file_id": "tmp"})
+
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.record["version"], 2)
+        self.assertEqual(entry.record["revision"], "REV02")
+
+    def test_should_use_the_given_revision_instead_of_fetching_one(self):
+        given_revision = SimpleNamespace(version=9)
+
+        audit_service.log_document_submitted(
+            self.request, self.document, {"temp_file_id": "tmp"}, revision=given_revision
         )
 
-    def test_should_record_the_timestamp_in_utc(self):
-        entry = record_document_created(self.document, self.request)
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.record["version"], 9)
+        self.assertEqual(entry.record["revision"], "REV09")
 
-        entry.refresh_from_db()
-        self.assertEqual(entry.occurred_at.utcoffset().total_seconds(), 0)
-
-    def test_should_return_none_and_log_instead_of_raising_when_the_write_fails(self):
+    def test_should_not_raise_when_the_write_fails(self):
         with (
             mock.patch.object(AuditLog.objects, "create", side_effect=RuntimeError("db down")),
-            self.assertLogs("core.services.audit_service", level="ERROR") as logs,
+            self.assertLogs(LOGGER_NAME, level="ERROR"),
         ):
-            entry = record_document_created(self.document, self.request)
+            result = audit_service.log_document_submitted(
+                self.request, self.document, {"temp_file_id": "tmp"}
+            )
 
-        self.assertIsNone(entry)
-        self.assertIn("DOCUMENT_CREATED", "\n".join(logs.output))
+        self.assertIsNone(result)
         self.assertEqual(AuditLog.objects.count(), 0)
 
-    def test_should_leave_the_surrounding_transaction_usable_after_a_database_error(self):
+    def test_should_leave_the_document_usable_after_a_write_failure(self):
         with (
-            mock.patch(
-                "core.services.audit_service.client_ip", return_value="definitely-not-an-ip"
-            ),
-            self.assertLogs("core.services.audit_service", level="ERROR"),
+            mock.patch.object(AuditLog.objects, "create", side_effect=RuntimeError("db down")),
+            self.assertLogs(LOGGER_NAME, level="ERROR"),
         ):
-            entry = record_document_created(self.document, self.request)
+            audit_service.log_document_submitted(
+                self.request, self.document, {"temp_file_id": "tmp"}
+            )
 
-        self.assertIsNone(entry)
         self.assertTrue(Document.objects.filter(pk=self.document.pk).exists())
-
