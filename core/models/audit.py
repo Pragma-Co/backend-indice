@@ -28,7 +28,7 @@ class AuditLog(models.Model):
         # pure write cost — three is the ceiling here.
         db_index=False,
     )
-    action = models.CharField(max_length=10, choices=AuditAction.choices)
+    action = models.CharField(max_length=30, choices=AuditAction.choices)
     entity = models.CharField(max_length=40)
     entity_id = models.BigIntegerField(null=True, blank=True)
     record = models.JSONField(null=True, blank=True)
@@ -47,6 +47,7 @@ class AuditLog(models.Model):
             models.Index(fields=["entity", "entity_id", "-occurred_at"], name="ix_audit_entity"),
             # "what this person did" — the audit screen per collaborator
             models.Index(fields=["user", "-occurred_at"], name="ix_audit_user"),
+            models.Index(fields=["-occurred_at"], name="ix_audit_occurred_at"),
         ]
 
     def __str__(self):
