@@ -172,13 +172,19 @@ Main listing of the document library: serves both the direct navigation ("Ver to
 
 | Parameter | Meaning |
 |-----------|---------|
-| `q` | free text, case-insensitive, matched against title and code (also description and tags) |
-| `tipo` | document type code, e.g. `DWG` |
-| `area` | area acronym, e.g. `EST` |
+| `q` | free text, case-insensitive, matched against title, code, description and tags |
+| `tipo` | document type code(s), e.g. `DWG` |
+| `area` | area acronym(s), e.g. `EST` |
+| `discipline` | discipline code(s), e.g. `MAT` |
+| `status` | status of the most recent revision: `PENDING`, `APPROVED`, `REJECTED`, `OBSOLETE` |
+| `tags` | tag name(s), case-insensitive, exact match |
+| `responsible_id` | id of the responsible user |
 | `data` | creation date preset: `last_7_days`, `last_month` or `last_year` |
-| `date_from`, `date_to` | explicit creation date range, `YYYY-MM-DD`, inclusive |
+| `date_from`, `date_to` | explicit creation date range, `YYYY-MM-DD`, both ends included (`data_inicio` and `data_fim` are accepted as synonyms) |
 | `page` | page number, starting at 1 (default 1) |
 | `page_size` | items per page (default 20, capped at 100) |
+
+`tipo`, `area`, `discipline`, `status` and `tags` accept several values, in any of the forms a client may produce: repeated (`tipo=DWG&tipo=MEM`), bracketed (`tipo[]=DWG&tipo[]=MEM`) or comma-separated (`tipo=DWG,MEM`). Codes are case-insensitive. Values of the same filter are alternatives (OR); different filters are cumulative (AND). `GET /documents/simple-filters` lists the options for the side panel: `areas`, `types`, `disciplines`, `statuses` (value and Portuguese label) and `dates`.
 
 Response `200`, ordered by most recent first:
 
@@ -205,7 +211,7 @@ Response `200`, ordered by most recent first:
 }
 ```
 
-`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count` is the total found with the current filters, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`/`page_size` or a malformed date, `invalid_choice` for an unknown `data` preset.
+`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
 
 ### `POST /documents`
 

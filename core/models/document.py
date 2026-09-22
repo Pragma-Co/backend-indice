@@ -64,6 +64,13 @@ class Document(models.Model):
                 ],
                 name="ix_document_filters",
             ),
+            GinIndex(
+                fields=["code"],
+                opclasses=["gin_trgm_ops"],
+                name="ix_document_code_trgm",
+            ),
+            models.Index(fields=["-updated_at", "-id"], name="ix_document_recent"),
+            models.Index(fields=["created_at"], name="ix_document_created_at"),
         ]
 
     def __str__(self):

@@ -357,6 +357,284 @@ class DocumentsSearchAndPaginationTests(TestCase):
         self.assertEqual(len(response.json()["results"]), 10)
 
 
+class DocumentsAdvancedFiltersTests(TestCase):
+    def setUp(self):
+        self.structures = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.quality = Area.objects.create(acronym="QUA", name="Qualidade")
+        self.systems = Area.objects.create(acronym="SIS", name="Sistemas")
+        self.structural = Discipline.objects.create(code="EST", name="Estruturas")
+        self.materials = Discipline.objects.create(code="MAT", name="Materiais")
+        self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
+        self.drawing = DocumentType.objects.create(code="DWG", name="Desenho Técnico")
+        self.report = DocumentType.objects.create(code="MEM", name="Memorial de Cálculo")
+        self.spec = DocumentType.objects.create(code="ESP", name="Especificação")
+        self.ana = User.objects.create_user(
+            email="ana@example.com", password="test-password", name="Ana", area=self.structures
+        )
+        self.bruno = User.objects.create_user(
+            email="bruno@example.com", password="test-password", name="Bruno", area=self.quality
+        )
+        self.client = Client()
+
+    def _document(
+        self,
+        code,
+        document_type=None,
+        areas=None,
+        discipline=None,
+        responsible=None,
+        days_ago=0,
+        status=None,
+        tags=(),
+        title=None,
+        description="",
+    ):
+        moment = timezone.now() - timedelta(days=days_ago)
+        document = Document.objects.create(
+            code=code,
+            title=title or code,
+            description=description,
+            project=self.project,
+            discipline=discipline or self.structural,
+            document_type=document_type or self.drawing,
+            responsible=responsible or self.ana,
+            created_at=moment,
+            updated_at=moment,
+        )
+        document.areas.add(*(areas or [self.structures]))
+        for name in tags:
+            document.tags.create(name=name)
+        if status is not None:
+            self._revision(document, 1, status)
+        return document
+
+    def _revision(self, document, version, status):
+        decided = status != RevisionStatus.PENDING
+        return Revision.objects.create(
+            document=document,
+            version=version,
+            status=status,
+            author=self.ana,
+            auditor=self.bruno if decided else None,
+            audited_at=timezone.now() if decided else None,
+        )
+
+    def _codes(self, response):
+        return sorted(item["code"] for item in response.json()["results"])
+
+    def test_should_accept_several_types_as_a_repeated_parameter(self):
+        self._document("DWG-1", self.drawing)
+        self._document("MEM-1", self.report)
+        self._document("ESP-1", self.spec)
+
+        response = self.client.get("/documents?tipo=DWG&tipo=MEM")
+
+        self.assertEqual(self._codes(response), ["DWG-1", "MEM-1"])
+        self.assertEqual(response.json()["count"], 2)
+
+    def test_should_accept_comma_separated_bracketed_and_lower_case_values(self):
+        self._document("DWG-1", self.drawing)
+        self._document("MEM-1", self.report)
+        self._document("ESP-1", self.spec)
+
+        comma = self.client.get("/documents", {"tipo": "dwg, mem"})
+        brackets = self.client.get("/documents?tipo[]=DWG&tipo[]=ESP")
+
+        self.assertEqual(self._codes(comma), ["DWG-1", "MEM-1"])
+        self.assertEqual(self._codes(brackets), ["DWG-1", "ESP-1"])
+
+    def test_should_match_any_of_several_areas_without_repeating_documents(self):
+        self._document("BOTH", areas=[self.structures, self.quality])
+        self._document("QUALITY", areas=[self.quality])
+        self._document("SYSTEMS", areas=[self.systems])
+
+        response = self.client.get("/documents", {"area": "EST,QUA"})
+
+        self.assertEqual(self._codes(response), ["BOTH", "QUALITY"])
+        self.assertEqual(response.json()["count"], 2)
+
+    def test_should_filter_by_several_disciplines(self):
+        self._document("STRUCTURAL", discipline=self.structural)
+        self._document("MATERIALS", discipline=self.materials)
+
+        one = self.client.get("/documents", {"discipline": "MAT"})
+        both = self.client.get("/documents?discipline=MAT&discipline=EST")
+
+        self.assertEqual(self._codes(one), ["MATERIALS"])
+        self.assertEqual(self._codes(both), ["MATERIALS", "STRUCTURAL"])
+
+    def test_should_filter_by_the_status_of_the_most_recent_revision(self):
+        revised = self._document("REVISED", status=RevisionStatus.APPROVED)
+        self._revision(revised, 2, RevisionStatus.PENDING)
+        self._document("APPROVED", status=RevisionStatus.APPROVED)
+        self._document("OBSOLETE", status=RevisionStatus.OBSOLETE)
+        self._document("NO-REVISION")
+
+        pending = self.client.get("/documents", {"status": "PENDING"})
+        several = self.client.get("/documents?status=APPROVED&status=OBSOLETE")
+
+        self.assertEqual(self._codes(pending), ["REVISED"])
+        self.assertEqual(self._codes(several), ["APPROVED", "OBSOLETE"])
+
+    def test_should_answer_400_for_an_unknown_status(self):
+        response = self.client.get("/documents", {"status": "PENDING,DRAFT"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["errors"]["status"]["code"], "invalid_choice")
+
+    def test_should_filter_by_the_responsible_user(self):
+        self._document("FROM-ANA", responsible=self.ana)
+        self._document("FROM-BRUNO", responsible=self.bruno)
+
+        response = self.client.get("/documents", {"responsible_id": self.bruno.id})
+        nobody = self.client.get("/documents", {"responsible_id": 999999})
+
+        self.assertEqual(self._codes(response), ["FROM-BRUNO"])
+        self.assertEqual(nobody.json()["count"], 0)
+
+    def test_should_answer_400_for_an_invalid_responsible_id(self):
+        response = self.client.get("/documents", {"responsible_id": "ana"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["errors"]["responsible_id"]["code"], "invalid")
+
+    def test_should_filter_by_any_of_several_tags_ignoring_case(self):
+        self._document("CAVERNA", tags=["Caverna 14"])
+        self._document("LONGARINA", tags=["longarina"])
+        self._document("UNTAGGED")
+
+        response = self.client.get("/documents", {"tags": "caverna 14,LONGARINA"})
+
+        self.assertEqual(self._codes(response), ["CAVERNA", "LONGARINA"])
+
+    def test_should_search_the_description_and_the_tags_too(self):
+        self._document("BY-DESCRIPTION", description="Conjunto soldado da caverna")
+        self._document("BY-TAG", tags=["caverna dianteira"])
+        self._document("BY-TITLE", title="Desenho da Caverna 14")
+        self._document("UNRELATED", title="Revestimento")
+
+        response = self.client.get("/documents", {"q": "caverna"})
+
+        self.assertEqual(self._codes(response), ["BY-DESCRIPTION", "BY-TAG", "BY-TITLE"])
+        self.assertEqual(response.json()["count"], 3)
+
+    def test_should_combine_status_area_type_and_date_filters(self):
+        self._document(
+            "MATCH", self.drawing, [self.quality], status=RevisionStatus.APPROVED, days_ago=3
+        )
+        self._document(
+            "WRONG-STATUS", self.drawing, [self.quality], status=RevisionStatus.PENDING, days_ago=3
+        )
+        self._document(
+            "WRONG-AREA", self.drawing, [self.systems], status=RevisionStatus.APPROVED, days_ago=3
+        )
+        self._document(
+            "WRONG-TYPE", self.spec, [self.quality], status=RevisionStatus.APPROVED, days_ago=3
+        )
+        self._document(
+            "TOO-OLD", self.drawing, [self.quality], status=RevisionStatus.APPROVED, days_ago=40
+        )
+        date_from = (timezone.now() - timedelta(days=7)).date().isoformat()
+
+        response = self.client.get(
+            "/documents",
+            {"status": "APPROVED", "area": "QUA,EST", "tipo": "DWG,MEM", "date_from": date_from},
+        )
+
+        self.assertEqual(self._codes(response), ["MATCH"])
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["total_pages"], 1)
+
+    def test_should_return_nothing_for_a_date_range_without_documents(self):
+        self._document("RECENT", days_ago=1)
+
+        response = self.client.get(
+            "/documents", {"date_from": "2020-01-01", "date_to": "2020-12-31"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"], [])
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_should_include_both_ends_of_the_date_range(self):
+        self._document("ON-START", days_ago=6)
+        self._document("ON-END", days_ago=2)
+        self._document("DAY-BEFORE", days_ago=7)
+        self._document("DAY-AFTER", days_ago=1)
+        start = (timezone.now() - timedelta(days=6)).date().isoformat()
+        end = (timezone.now() - timedelta(days=2)).date().isoformat()
+
+        response = self.client.get("/documents", {"date_from": start, "date_to": end})
+
+        self.assertEqual(self._codes(response), ["ON-END", "ON-START"])
+
+    def test_should_accept_the_portuguese_names_of_the_date_range(self):
+        self._document("INSIDE", days_ago=5)
+        self._document("OUTSIDE", days_ago=30)
+        start = (timezone.now() - timedelta(days=7)).date().isoformat()
+        end = (timezone.now() - timedelta(days=3)).date().isoformat()
+
+        response = self.client.get("/documents", {"data_inicio": start, "data_fim": end})
+
+        self.assertEqual(self._codes(response), ["INSIDE"])
+
+    def test_should_answer_400_for_an_inverted_or_malformed_date_range(self):
+        inverted = self.client.get(
+            "/documents", {"date_from": "2026-09-10", "date_to": "2026-09-01"}
+        )
+        malformed = self.client.get("/documents", {"data_inicio": "10/09/2026"})
+
+        self.assertEqual(inverted.status_code, 400)
+        self.assertEqual(inverted.json()["errors"]["date_to"]["code"], "invalid_range")
+        self.assertEqual(malformed.status_code, 400)
+        self.assertEqual(malformed.json()["errors"]["data_inicio"]["code"], "invalid")
+
+    def test_should_paginate_only_the_documents_that_match_every_filter(self):
+        for index in range(5):
+            self._document(
+                f"DWG-{index}", self.drawing, status=RevisionStatus.PENDING, days_ago=index
+            )
+        for index in range(4):
+            self._document(f"MEM-{index}", self.report, status=RevisionStatus.PENDING)
+        self._document("DWG-APPROVED", self.drawing, status=RevisionStatus.APPROVED)
+
+        response = self.client.get(
+            "/documents", {"tipo": "DWG", "status": "PENDING", "page_size": 2, "page": 3}
+        )
+
+        self.assertEqual(response.json()["count"], 5)
+        self.assertEqual(response.json()["total_pages"], 3)
+        self.assertEqual(response.json()["current_page"], 3)
+        self.assertEqual(self._codes(response), ["DWG-4"])
+
+    def test_should_keep_a_fixed_number_of_queries_with_every_filter_active(self):
+        for index in range(8):
+            self._document(
+                f"DOC-{index}",
+                self.drawing,
+                [self.structures, self.quality],
+                status=RevisionStatus.PENDING,
+                tags=[f"tag-{index}", "comum"] if index == 0 else [f"tag-{index}"],
+                description="caverna",
+            )
+
+        with self.assertNumQueries(4):
+            response = self.client.get(
+                "/documents",
+                {
+                    "q": "caverna",
+                    "tipo": "DWG,MEM",
+                    "area": "EST,QUA",
+                    "discipline": "EST",
+                    "status": "PENDING,APPROVED",
+                    "responsible_id": self.ana.id,
+                    "data": "last_7_days",
+                },
+            )
+
+        self.assertEqual(response.json()["count"], 8)
+
+
 class SimpleFiltersViewTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -370,7 +648,9 @@ class SimpleFiltersViewTests(TestCase):
         response = self.client.get("/documents/simple-filters")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(set(response.json()), {"areas", "types", "dates"})
+        self.assertEqual(
+            set(response.json()), {"areas", "types", "disciplines", "statuses", "dates"}
+        )
         self.assertEqual(response.json()["areas"], [{"acronym": "ENG", "name": "Engenharia"}])
         self.assertEqual(response.json()["types"], [{"code": "PDF", "name": "Relatório"}])
         self.assertTrue(response.json()["dates"])
@@ -386,7 +666,22 @@ class SimpleFiltersViewTests(TestCase):
         mocked_cache.set.assert_not_called()
 
     def test_builds_filter_groups_with_expected_shape(self):
-        self.assertEqual(set(build_simple_filters()), {"areas", "types", "dates"})
+        self.assertEqual(
+            set(build_simple_filters()), {"areas", "types", "disciplines", "statuses", "dates"}
+        )
+
+    def test_should_offer_active_disciplines_and_every_revision_status(self):
+        Discipline.objects.create(code="EST", name="Estruturas")
+        Discipline.objects.create(code="PNE", name="Pneumáticos", active=False)
+
+        filters = build_simple_filters()
+
+        self.assertEqual(filters["disciplines"], [{"code": "EST", "name": "Estruturas"}])
+        self.assertEqual(
+            [status["value"] for status in filters["statuses"]],
+            ["PENDING", "APPROVED", "REJECTED", "OBSOLETE"],
+        )
+        self.assertEqual(filters["statuses"][0]["label"], "Em revisão")
 
 
 class DocumentDetailServiceTests(TestCase):
