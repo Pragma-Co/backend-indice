@@ -4,6 +4,7 @@ from pathlib import Path
 
 from django.conf import settings
 
+from django.utils import timezone
 from core.models import File, Revision
 from core.mongo import get_mongo_db
 from core.services.document_text_service import extract_text_for_ai
@@ -37,6 +38,7 @@ def create_new_revision(existing_file, uploaded_file, file_hash, file_type):
         document=document,
         version=last_version + 1,
         status="PENDING",
+        issue_date=timezone.localdate(),
         author=document.responsible,
     )
 
