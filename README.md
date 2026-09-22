@@ -128,6 +128,7 @@ To add more users later: `docker compose exec api python manage.py createsuperus
 | <http://localhost:8000/health/> | Health check: PostgreSQL + MongoDB connectivity |
 | <http://localhost:8000/projects/> | Active projects (JSON, read-only) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/disciplines/> | Active disciplines (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| <http://localhost:8000/documents> | Paginated document listing and search — see [API endpoints](#api-endpoints) |
 | `POST http://localhost:8000/documents` | Register a document (confirmation step) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/admin/> | Django admin panel |
 | `localhost:5433` | PostgreSQL (localhost only, e.g. for DBeaver/pgAdmin) |
@@ -165,6 +166,47 @@ Disciplines available in the **Disciplina** select. `code` is the discipline acr
 ]
 ```
 
+### `GET /documents`
+
+Main listing of the document library: serves both the direct navigation ("Ver todos os documentos") and the searches fired from the home screen. All parameters are optional and combined with AND; without any of them the endpoint returns the whole collection.
+
+| Parameter | Meaning |
+|-----------|---------|
+| `q` | free text, case-insensitive, matched against title and code (also description and tags) |
+| `tipo` | document type code, e.g. `DWG` |
+| `area` | area acronym, e.g. `EST` |
+| `data` | creation date preset: `last_7_days`, `last_month` or `last_year` |
+| `date_from`, `date_to` | explicit creation date range, `YYYY-MM-DD`, inclusive |
+| `page` | page number, starting at 1 (default 1) |
+| `page_size` | items per page (default 20, capped at 100) |
+
+Response `200`, ordered by most recent first:
+
+```json
+{
+  "count": 30,
+  "total_pages": 2,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 33,
+      "code": "AK-2100-MAT-ESP-0004",
+      "title": "Card 31 live",
+      "description": "",
+      "type": { "code": "ESP", "name": "Especificação Técnica" },
+      "discipline": { "code": "MAT", "name": "Materiais e Processos" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
+      "status": "PENDING",
+      "updated_at": "2026-09-18T21:30:04.000000+00:00"
+    }
+  ]
+}
+```
+
+`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count` is the total found with the current filters, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`/`page_size` or a malformed date, `invalid_choice` for an unknown `data` preset.
+
 ### `POST /documents`
 
 Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
@@ -197,6 +239,15 @@ Request (`application/json`):
 | `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
 | `areas` | yes | at least one active area acronym; the "tags" of the form are the areas |
 
+**Ids are not stable across databases.** `manage.py seed` assigns whatever ids the sequences are at, so the numbers in the example above will differ on your machine. Get valid ones before calling the endpoint:
+
+```bash
+curl http://localhost:8000/projects/    # project id and the discipline_ids linked to it
+docker compose exec api python manage.py shell -c "from core.models import User; print(User.objects.get(email='beatriz.canuto@akaer.local').id)"
+```
+
+Document type codes (`DWG`, `MEM`, ...) and area acronyms (`EST`, `QUA`, ...) are stable; `GET /documents/simple-filters` lists them.
+
 Responses:
 
 - `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
@@ -204,6 +255,14 @@ Responses:
 - `404` with `{"errors": {"temp_file_id": {"code": "not_found", ...}}}` when the temporary file no longer exists (upload it again).
 - `409` when the same file (by SHA-256) is already attached to a registered document.
 - `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
+
+**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the responsible, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
+
+Known limitations of the audit entry, all tied to the absence of authentication and of a production proxy:
+
+- **The IP is only as trustworthy as the proxy in front of the API.** `X-Forwarded-For` is sent by the client, so a caller reaching Django directly can forge it. In production the reverse proxy must overwrite (not append to) that header; until then treat `ip_address` as informative, not as evidence.
+- **The author is the declared responsible, not the caller.** There is no login yet and the endpoint is public, so `user` is the `responsible_id` of the payload and any caller can attribute the event to any active user. It becomes the session user once authentication exists.
+- **A failed write leaves only the server log.** This is deliberate: the card requires that auditing never aborts or reverts the publication. The failure is logged with `logger.exception` under `core.services.audit_service`, which is the hook for an alert when monitoring is in place.
 
 **Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
 

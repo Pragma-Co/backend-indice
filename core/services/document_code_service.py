@@ -20,3 +20,7 @@ def next_sequence(prefix: str) -> int:
     codes = Document.objects.filter(code__startswith=f"{prefix}-").values_list("code", flat=True)
     highest = max((_sequence_of(code, prefix) for code in codes), default=0)
     return highest + 1
+
+
+def revision_label(version: int) -> str:
+    return f"REV{version:02d}"
