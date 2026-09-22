@@ -293,7 +293,9 @@ def _get_document_or_none(document_id):
             "areas",
             Prefetch(
                 "revisions",
-                queryset=Revision.objects.select_related("author").order_by("-version"),
+                queryset=Revision.objects.select_related("author", "auditor")
+                .prefetch_related("files")
+                .order_by("-version"),
             ),
         )
         .filter(pk=document_id)
@@ -331,6 +333,18 @@ def _compute_access_status(document, user):
     return ACCESS_PENDING
 
 
+def _serialize_file(file):
+    return {
+        "id": file.id,
+        "original_name": file.original_name,
+        "extension": file.extension,
+        "mime_type": file.mime_type,
+        "size_bytes": file.size_bytes,
+        "sha256": file.sha256,
+        "view_url": f"/api/files/{file.id}/view",
+    }
+
+
 def _serialize_revision(revision):
     return {
         "id": revision.id,
@@ -347,6 +361,7 @@ def _serialize_revision(revision):
         "auditor_comment": revision.auditor_comment or "",
         "audited_at": revision.audited_at.isoformat() if revision.audited_at else None,
         "created_at": revision.created_at.isoformat(),
+        "files": [_serialize_file(f) for f in revision.files.all()],
     }
 
 

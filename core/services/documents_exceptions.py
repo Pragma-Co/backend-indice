@@ -8,3 +8,7 @@ class MissingUserError(Exception):
 
 class UserNotFoundError(Exception):
     pass
+
+
+class DocumentFilePermissionError(Exception):
+    pass
