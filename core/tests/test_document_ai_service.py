@@ -3,20 +3,37 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
+import httpx
 from django.test import Client, TestCase, override_settings
+from groq import APIConnectionError, APITimeoutError, RateLimitError
 
 from core.models import Area, Discipline, DocumentType, Project
-from core.services.document_ai_exceptions import AISuggestionError, UnsupportedFileTypeError
+from core.services.document_ai_exceptions import UnsupportedFileTypeError
 from core.services.document_ai_service import suggest_document_metadata
 from core.services.document_exceptions import TempFileNotFoundError
 
 TEMP_FILE_ID = "11111111-2222-4333-8444-555555555555"
+
+GROQ_REQUEST = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
 
 
 def _fake_groq_response(content: str):
     response = mock.Mock()
     response.choices = [mock.Mock(message=mock.Mock(content=content))]
     return response
+
+
+def _fake_timeout_error():
+    return APITimeoutError(request=GROQ_REQUEST)
+
+
+def _fake_rate_limit_error():
+    response = httpx.Response(status_code=429, request=GROQ_REQUEST)
+    return RateLimitError("rate limited", response=response, body=None)
+
+
+def _fake_connection_error():
+    return APIConnectionError(request=GROQ_REQUEST)
 
 
 def _happy_path_answers():
@@ -157,15 +174,94 @@ class SuggestDocumentMetadataTests(TestCase):
         mock_client.assert_not_called()
         mock_mongo.assert_not_called()
 
-    def test_given_groq_failure_when_suggested_then_raises_ai_suggestion_error(
+    def test_given_groq_generic_failure_when_suggested_then_returns_null_fields(
         self, mock_client, mock_record, mock_mongo
     ):
         self._temp_file()
         mock_client.return_value.chat.completions.create.side_effect = Exception("boom")
 
-        with self.assertRaises(AISuggestionError):
-            suggest_document_metadata(TEMP_FILE_ID)
-        mock_mongo.return_value.__getitem__.return_value.update_one.assert_not_called()
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertIsNone(result["project"])
+        self.assertIsNone(result["discipline"])
+        self.assertIsNone(result["document_type"])
+        self.assertIsNone(result["area"])
+        mock_mongo.return_value.__getitem__.return_value.update_one.assert_called_once_with(
+            {"temp_file_id": TEMP_FILE_ID}, {"$set": {"ai_suggestion": result}}
+        )
+
+    def test_given_groq_timeout_when_suggested_then_affected_fields_are_null(
+        self, mock_client, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_client.return_value.chat.completions.create.side_effect = [
+            _fake_timeout_error(),
+            _fake_groq_response("Fuselagem"),
+            _fake_groq_response("Estruturas"),
+            _fake_groq_response("Desenho Técnico"),
+            _fake_groq_response("Engenharia Estrutural"),
+        ]
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertEqual(result["project"], {"id": self.project.id, "name": "Fuselagem"})
+
+    def test_given_groq_rate_limit_when_suggested_then_affected_fields_are_null(
+        self, mock_client, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_client.return_value.chat.completions.create.side_effect = [
+            _fake_groq_response("TÍTULO: T\nDESCRIÇÃO: D"),
+            _fake_rate_limit_error(),
+            _fake_groq_response("Estruturas"),
+            _fake_groq_response("Desenho Técnico"),
+            _fake_groq_response("Engenharia Estrutural"),
+        ]
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "T")
+        self.assertIsNone(result["project"])
+
+    def test_given_groq_communication_error_when_suggested_then_affected_fields_are_null(
+        self, mock_client, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_client.return_value.chat.completions.create.side_effect = [
+            _fake_groq_response("TÍTULO: T\nDESCRIÇÃO: D"),
+            _fake_connection_error(),
+            _fake_groq_response("Estruturas"),
+            _fake_groq_response("Desenho Técnico"),
+            _fake_groq_response("Engenharia Estrutural"),
+        ]
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "T")
+        self.assertIsNone(result["project"])
+
+    def test_given_project_suggestion_fails_when_suggested_then_discipline_uses_all_disciplines(
+        self, mock_client, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_client.return_value.chat.completions.create.side_effect = [
+            _fake_groq_response("TÍTULO: T\nDESCRIÇÃO: D"),
+            Exception("boom"),
+            _fake_groq_response("Hidráulica"),
+            _fake_groq_response("Desenho Técnico"),
+            _fake_groq_response("Engenharia Estrutural"),
+        ]
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["project"])
+        self.assertEqual(
+            result["discipline"], {"id": self.other_discipline.id, "name": "Hidráulica"}
+        )
 
     def test_given_mongo_write_fails_when_suggested_then_response_is_not_blocked(
         self, mock_client, mock_record, mock_mongo
@@ -242,3 +338,20 @@ class SuggestDocumentMetadataViewTests(TestCase):
     ):
         response = self.client.get(f"/documents/{TEMP_FILE_ID}/suggestions")
         self.assertEqual(response.status_code, 405)
+
+    def test_given_groq_failure_when_posted_then_returns_200_with_null_suggestion_fields(
+        self, mock_client, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_client.return_value.chat.completions.create.side_effect = Exception("boom")
+
+        response = self.client.post(f"/documents/{TEMP_FILE_ID}/suggestions")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIsNone(body["title"])
+        self.assertIsNone(body["description"])
+        self.assertIsNone(body["project"])
+        self.assertIsNone(body["discipline"])
+        self.assertIsNone(body["document_type"])
+        self.assertIsNone(body["area"])

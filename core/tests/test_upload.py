@@ -24,7 +24,7 @@ from core.services.file_validation_service import (
     validate_file_size,
     validate_file_type,
 )
-from core.services.temp_upload_service import store_uploaded_file
+from core.services.temp_upload_service import get_temp_upload_record, store_uploaded_file
 from core.services.upload_exceptions import (
     DuplicateFileError,
     FileTooLargeError,
@@ -178,6 +178,24 @@ class StoreUploadedFileTests(TestCase):
             0
         ][0]
         self.assertEqual(inserted_metadata["extracted_text"], "")
+
+
+class GetTempUploadRecordTests(TestCase):
+    @mock.patch("core.services.temp_upload_service.get_mongo_db")
+    def test_given_mongo_read_fails_when_fetched_then_returns_empty_dict(self, mock_mongo):
+        mock_mongo.return_value.__getitem__.return_value.find_one.side_effect = Exception("boom")
+
+        result = get_temp_upload_record("11111111-2222-4333-8444-555555555555")
+
+        self.assertEqual(result, {})
+
+    @mock.patch("core.services.temp_upload_service.get_mongo_db")
+    def test_given_no_matching_record_when_fetched_then_returns_empty_dict(self, mock_mongo):
+        mock_mongo.return_value.__getitem__.return_value.find_one.return_value = None
+
+        result = get_temp_upload_record("11111111-2222-4333-8444-555555555555")
+
+        self.assertEqual(result, {})
 
 
 class UploadDocumentViewTests(TestCase):

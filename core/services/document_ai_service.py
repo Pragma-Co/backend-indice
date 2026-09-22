@@ -3,6 +3,7 @@ import re
 import uuid
 from pathlib import Path
 
+import groq
 from django.conf import settings
 
 from core.groq_client import get_groq_client
@@ -13,7 +14,13 @@ from core.services.catalog_service import (
     list_active_document_types,
     list_active_projects,
 )
-from core.services.document_ai_exceptions import AISuggestionError, UnsupportedFileTypeError
+from core.services.document_ai_exceptions import (
+    AICommunicationError,
+    AIRateLimitError,
+    AISuggestionError,
+    AITimeoutError,
+    UnsupportedFileTypeError,
+)
 from core.services.document_exceptions import TempFileNotFoundError
 from core.services.temp_upload_service import get_temp_upload_record
 
@@ -75,62 +82,86 @@ def _ask_groq(system_prompt: str, user_prompt: str) -> str:
             model=settings.GROQ_MODEL,
             temperature=0.3,
         )
+    except groq.APITimeoutError as exc:
+        logger.warning("Groq request timed out")
+        raise AITimeoutError() from exc
+    except groq.RateLimitError as exc:
+        logger.warning("Groq rate limit exceeded")
+        raise AIRateLimitError() from exc
+    except groq.APIConnectionError as exc:
+        logger.warning("Groq communication error: %s", exc)
+        raise AICommunicationError() from exc
     except Exception as exc:
         logger.exception("Groq request failed")
         raise AISuggestionError() from exc
     return (response.choices[0].message.content or "").strip()
 
 
-def _suggest_title_and_description(llm_text: str) -> tuple[str, str]:
-    answer = _ask_groq(
+def _ask_groq_safely(system_prompt: str, user_prompt: str) -> str | None:
+    try:
+        return _ask_groq(system_prompt, user_prompt)
+    except AISuggestionError:
+        return None
+
+
+def _suggest_title_and_description(llm_text: str) -> tuple[str | None, str | None]:
+    answer = _ask_groq_safely(
         "Você é um assistente que nomeia e resume documentos técnicos de engenharia em português.",
         f"Analise o texto a seguir:\n\n{llm_text}\n\nResponda em exatamente duas linhas, "
         "neste formato, sem texto adicional:\nTÍTULO: <um título curto e objetivo para o "
         "documento>\nDESCRIÇÃO: <uma breve descrição, em português, do conteúdo do "
         "documento>",
     )
+    if answer is None:
+        return None, None
     return _parse_title_and_description(answer)
 
 
-def _suggest_project(llm_text: str, projects: list) -> dict:
+def _suggest_project(llm_text: str, projects: list) -> dict | None:
     project_names = [project.name for project in projects]
-    answer = _ask_groq(
+    answer = _ask_groq_safely(
         "Você é um especialista em projetos de engenharia. Responda apenas com o nome de "
         "um projeto, exatamente como está escrito na lista fornecida.",
         f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual dos "
         f"projetos a seguir é o mais adequado: {project_names}? Responda apenas com o nome "
         "do projeto, sem texto adicional.",
     )
+    if answer is None:
+        return None
     return _match_catalog_name(answer, projects)
 
 
-def _suggest_discipline(llm_text: str, disciplines: list) -> dict:
+def _suggest_discipline(llm_text: str, disciplines: list) -> dict | None:
     discipline_names = [discipline.name for discipline in disciplines]
-    answer = _ask_groq(
+    answer = _ask_groq_safely(
         "Você é um especialista em disciplinas de engenharia. Responda apenas com o nome "
         "de uma disciplina, exatamente como está escrita na lista fornecida.",
         f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual das "
         f"disciplinas a seguir é a mais adequada: {discipline_names}? Responda apenas com "
         "o nome da disciplina, sem texto adicional.",
     )
+    if answer is None:
+        return None
     return _match_catalog_name(answer, disciplines)
 
 
-def _suggest_document_type(llm_text: str, document_types: list) -> dict:
+def _suggest_document_type(llm_text: str, document_types: list) -> dict | None:
     document_type_names = [document_type.name for document_type in document_types]
-    answer = _ask_groq(
+    answer = _ask_groq_safely(
         "Você é um especialista em gestão documental de engenharia. Responda apenas com o "
         "nome de um tipo de documento, exatamente como está escrito na lista fornecida.",
         f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual dos tipos "
         f"de documento a seguir é o mais adequado: {document_type_names}? Responda apenas "
         "com o nome do tipo de documento, sem texto adicional.",
     )
+    if answer is None:
+        return None
     return _match_catalog_name(answer, document_types)
 
 
-def _suggest_area(llm_text: str, areas: list) -> dict:
+def _suggest_area(llm_text: str, areas: list) -> dict | None:
     area_names = [area.name for area in areas]
-    answer = _ask_groq(
+    answer = _ask_groq_safely(
         "Você é um especialista em áreas de engenharia responsáveis por documentos "
         "técnicos. Responda apenas com o nome de uma área, exatamente como está escrita "
         "na lista fornecida.",
@@ -138,6 +169,8 @@ def _suggest_area(llm_text: str, areas: list) -> dict:
         f"a seguir é a mais adequada para ser responsável por este documento: "
         f"{area_names}? Responda apenas com o nome da área, sem texto adicional.",
     )
+    if answer is None:
+        return None
     return _match_catalog_name(answer, areas)
 
 
@@ -157,7 +190,9 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
     title, description = _suggest_title_and_description(llm_text)
     project = _suggest_project(llm_text, projects)
 
-    matched_project = next((p for p in projects if p.id == project["id"]), None)
+    matched_project = (
+        next((p for p in projects if p.id == project["id"]), None) if project else None
+    )
     discipline_candidates = (
         list(matched_project.disciplines.all())
         if matched_project is not None
