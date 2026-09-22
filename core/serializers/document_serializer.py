@@ -1,8 +1,5 @@
 from core.models import Document
-
-
-def revision_label(version: int) -> str:
-    return f"REV{version:02d}"
+from core.services.document_code_service import revision_label
 
 
 def serialize_created_document(document: Document) -> dict:
