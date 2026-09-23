@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import uuid
@@ -21,8 +22,13 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {"pdf", "docx"}
 
-TITLE_PATTERN = re.compile(r"T[IÍ]TULO:\s*(.+)", re.IGNORECASE)
-DESCRIPTION_PATTERN = re.compile(r"DESCRI[ÇC][AÃ]O:\s*(.+)", re.IGNORECASE | re.DOTALL)
+SYSTEM_PROMPT = (
+    "Você é um especialista em gestão documental de engenharia. Classifique documentos "
+    "técnicos em português e responda sempre com um único objeto JSON válido, sem "
+    "nenhum texto, comentário ou marcação adicional."
+)
+
+JSON_BLOCK_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def _locate_temp_file(temp_file_id: str) -> Path:
@@ -38,20 +44,12 @@ def _locate_temp_file(temp_file_id: str) -> Path:
     return matches[0]
 
 
-def _match_catalog_name(suggested_name: str, catalog_items) -> dict:
-    normalized = suggested_name.strip().lower()
+def _match_catalog_name(suggested_name, catalog_items) -> dict:
+    normalized = str(suggested_name or "").strip().lower()
     for item in catalog_items:
         if item.name.strip().lower() == normalized:
             return {"id": item.id, "name": item.name}
-    return {"id": None, "name": suggested_name.strip()}
-
-
-def _parse_title_and_description(answer: str) -> tuple[str, str]:
-    title_match = TITLE_PATTERN.search(answer)
-    description_match = DESCRIPTION_PATTERN.search(answer)
-    title = title_match.group(1).strip() if title_match else ""
-    description = description_match.group(1).strip() if description_match else answer.strip()
-    return title, description
+    return {"id": None, "name": str(suggested_name or "").strip()}
 
 
 def _save_suggestion_to_temp_upload(temp_file_id: str, suggestion: dict) -> None:
@@ -74,6 +72,7 @@ def _ask_groq(system_prompt: str, user_prompt: str) -> str:
             ],
             model=settings.GROQ_MODEL,
             temperature=0.3,
+            response_format={"type": "json_object"},
         )
     except Exception as exc:
         logger.exception("Groq request failed")
@@ -81,64 +80,52 @@ def _ask_groq(system_prompt: str, user_prompt: str) -> str:
     return (response.choices[0].message.content or "").strip()
 
 
-def _suggest_title_and_description(llm_text: str) -> tuple[str, str]:
-    answer = _ask_groq(
-        "Você é um assistente que nomeia e resume documentos técnicos de engenharia em português.",
-        f"Analise o texto a seguir:\n\n{llm_text}\n\nResponda em exatamente duas linhas, "
-        "neste formato, sem texto adicional:\nTÍTULO: <um título curto e objetivo para o "
-        "documento>\nDESCRIÇÃO: <uma breve descrição, em português, do conteúdo do "
-        "documento>",
-    )
-    return _parse_title_and_description(answer)
+def _parse_json_answer(answer: str) -> dict:
+    try:
+        data = json.loads(answer)
+    except (json.JSONDecodeError, TypeError) as exc:
+        match = JSON_BLOCK_PATTERN.search(answer)
+        if match is None:
+            logger.error("Groq answer was not valid JSON: %r", answer)
+            raise AISuggestionError() from exc
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError as exc:
+            logger.error("Groq answer was not valid JSON: %r", answer)
+            raise AISuggestionError() from exc
+
+    if not isinstance(data, dict):
+        raise AISuggestionError()
+    return data
 
 
-def _suggest_project(llm_text: str, projects: list) -> dict:
-    project_names = [project.name for project in projects]
-    answer = _ask_groq(
-        "Você é um especialista em projetos de engenharia. Responda apenas com o nome de "
-        "um projeto, exatamente como está escrito na lista fornecida.",
-        f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual dos "
-        f"projetos a seguir é o mais adequado: {project_names}? Responda apenas com o nome "
-        "do projeto, sem texto adicional.",
-    )
-    return _match_catalog_name(answer, projects)
+def _build_project_catalog_section(projects: list) -> str:
+    lines = []
+    for project in projects:
+        discipline_names = ", ".join(discipline.name for discipline in project.disciplines.all())
+        lines.append(f'- "{project.name}": disciplinas possíveis -> [{discipline_names}]')
+    return "\n".join(lines)
 
 
-def _suggest_discipline(llm_text: str, disciplines: list) -> dict:
-    discipline_names = [discipline.name for discipline in disciplines]
-    answer = _ask_groq(
-        "Você é um especialista em disciplinas de engenharia. Responda apenas com o nome "
-        "de uma disciplina, exatamente como está escrita na lista fornecida.",
-        f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual das "
-        f"disciplinas a seguir é a mais adequada: {discipline_names}? Responda apenas com "
-        "o nome da disciplina, sem texto adicional.",
-    )
-    return _match_catalog_name(answer, disciplines)
-
-
-def _suggest_document_type(llm_text: str, document_types: list) -> dict:
+def _build_user_prompt(
+    llm_text: str, projects: list, document_types: list, areas: list
+) -> str:
     document_type_names = [document_type.name for document_type in document_types]
-    answer = _ask_groq(
-        "Você é um especialista em gestão documental de engenharia. Responda apenas com o "
-        "nome de um tipo de documento, exatamente como está escrito na lista fornecida.",
-        f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual dos tipos "
-        f"de documento a seguir é o mais adequado: {document_type_names}? Responda apenas "
-        "com o nome do tipo de documento, sem texto adicional.",
-    )
-    return _match_catalog_name(answer, document_types)
-
-
-def _suggest_area(llm_text: str, areas: list) -> dict:
     area_names = [area.name for area in areas]
-    answer = _ask_groq(
-        "Você é um especialista em áreas de engenharia responsáveis por documentos "
-        "técnicos. Responda apenas com o nome de uma área, exatamente como está escrita "
-        "na lista fornecida.",
-        f"Analise o texto a seguir:\n\n{llm_text}\n\nCom base nesse texto, qual das áreas "
-        f"a seguir é a mais adequada para ser responsável por este documento: "
-        f"{area_names}? Responda apenas com o nome da área, sem texto adicional.",
+
+    return (
+        "Analise o texto de um documento técnico de engenharia e responda apenas com um "
+        "objeto JSON com exatamente estas chaves: \"title\" (título curto e objetivo, em "
+        "português), \"description\" (breve descrição, em português, do conteúdo do "
+        "documento), \"project\" (nome de um dos projetos listados abaixo), \"discipline\" "
+        "(nome de uma das disciplinas possíveis do projeto escolhido), \"document_type\" "
+        "(nome de um dos tipos de documento listados abaixo) e \"area\" (nome de uma das "
+        "áreas listadas abaixo).\n\n"
+        f"Projetos e suas disciplinas possíveis:\n{_build_project_catalog_section(projects)}\n\n"
+        f"Tipos de documento possíveis: {document_type_names}\n\n"
+        f"Áreas possíveis: {area_names}\n\n"
+        f"Texto do documento:\n\n{llm_text}"
     )
-    return _match_catalog_name(answer, areas)
 
 
 def suggest_document_metadata(temp_file_id: str) -> dict:
@@ -154,26 +141,26 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
     document_types = list(list_active_document_types())
     areas = list(list_active_areas())
 
-    title, description = _suggest_title_and_description(llm_text)
-    project = _suggest_project(llm_text, projects)
+    answer = _ask_groq(
+        SYSTEM_PROMPT, _build_user_prompt(llm_text, projects, document_types, areas)
+    )
+    data = _parse_json_answer(answer)
 
+    project = _match_catalog_name(data.get("project"), projects)
     matched_project = next((p for p in projects if p.id == project["id"]), None)
     discipline_candidates = (
         list(matched_project.disciplines.all())
         if matched_project is not None
         else list(list_active_disciplines())
     )
-    discipline = _suggest_discipline(llm_text, discipline_candidates)
-    document_type = _suggest_document_type(llm_text, document_types)
-    area = _suggest_area(llm_text, areas)
 
     suggestion = {
-        "title": title,
-        "description": description,
+        "title": str(data.get("title") or "").strip(),
+        "description": str(data.get("description") or "").strip(),
         "project": project,
-        "discipline": discipline,
-        "document_type": document_type,
-        "area": area,
+        "discipline": _match_catalog_name(data.get("discipline"), discipline_candidates),
+        "document_type": _match_catalog_name(data.get("document_type"), document_types),
+        "area": _match_catalog_name(data.get("area"), areas),
     }
     _save_suggestion_to_temp_upload(temp_file_id, suggestion)
     return suggestion

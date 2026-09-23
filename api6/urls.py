@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import path
 
 from core.views.api_root_view import api_root
-from core.views.catalog_view import list_disciplines, list_projects
+from core.views.catalog_view import list_disciplines, list_projects, list_document_types
 from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.documents_view import (
     document_detail,
@@ -33,4 +33,5 @@ urlpatterns = [
     ),
     path("projects/", list_projects, name="project-list"),
     path("disciplines/", list_disciplines, name="discipline-list"),
+    path("documents/types", list_document_types, name="document-type-list")
 ]

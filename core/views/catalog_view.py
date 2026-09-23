@@ -6,8 +6,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
-from core.serializers.catalog_serializer import serialize_discipline, serialize_project
-from core.services.catalog_service import list_active_disciplines, list_active_projects
+from core.serializers.catalog_serializer import serialize_discipline, serialize_project, serialize_document_type
+from core.services.catalog_service import list_active_disciplines, list_active_projects, list_active_document_types
 
 logger = logging.getLogger(__name__)
 
@@ -37,3 +37,9 @@ def list_projects(request):
 def list_disciplines(request):
     """GET /disciplines/ -> active disciplines ordered by name."""
     return _respond_list(request, list_active_disciplines, serialize_discipline, "disciplines")
+
+@csrf_exempt
+@require_GET
+def list_document_types(request):
+    """GET /documents/types -> active document types ordered by name."""
+    return _respond_list(request, list_active_document_types, serialize_document_type, "document types")
