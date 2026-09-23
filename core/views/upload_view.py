@@ -43,7 +43,7 @@ def upload_document(request):
         return JsonResponse(
             {
                 "error": "File type not allowed or content doesn't match a supported type.",
-                "allowed_types": ["pdf", "doc", "jpeg", "png"],
+                "allowed_types": ["pdf", "doc", "docx", "jpeg", "png"],
             },
             status=400,
         )

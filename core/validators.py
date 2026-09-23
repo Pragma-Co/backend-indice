@@ -18,6 +18,9 @@ ALLOWED_FILE_TYPES = [
     ),
     AllowedFileType(mime_type="image/jpeg", extension="jpg", signature=b"\xff\xd8\xff"),
     AllowedFileType(mime_type="image/png", extension="png", signature=b"\x89PNG\r\n\x1a\n"),
+    AllowedFileType(mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extension="docx",
+        signature=b"PK\x03\x04",)
 ]
 
 _MAX_SIGNATURE_LENGTH = max(t.offset + len(t.signature) for t in ALLOWED_FILE_TYPES)
