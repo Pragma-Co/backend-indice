@@ -272,6 +272,22 @@ Known limitations of the audit entry, all tied to the absence of authentication 
 
 **Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
 
+### `GET /documents/<id>`
+
+Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
+
+Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED`) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
+
+`access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
+
+### `GET /files/<id>/view`
+
+Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). Other answers: `400 MissingUser` without `user_id`, `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
+
+### `POST /documents/<id>/request-access`
+
+Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access request and answers `201 {"id", "status": "PENDING", "created": true}`; a second call while the request is still pending answers `201` with `"created": false` and the same `id`. A viewer who can already read the document (responsible or approved grant) gets `409 {"error": "AlreadyHasAccess"}` and no row is created. `400 MissingUser`, `404 UserNotFound`, `404 DocumentNotFound`.
+
 ## Useful commands
 
 ```bash
