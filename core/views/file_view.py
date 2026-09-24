@@ -7,7 +7,7 @@ from pathlib import Path
 from django.conf import settings
 from django.http import FileResponse, Http404
 from django.views.decorators.http import require_GET
-from django.views.decorators.clickjacking import xframe_options_sameorigin
+from django.views.decorators.clickjacking import xframe_options_exempt
 
 from core.services.documents_exceptions import DocumentFilePermissionError
 from core.services.file_service import (
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 @require_GET
-@xframe_options_sameorigin
+@xframe_options_exempt
 def document_file_view(request, file_id):
     user_id = request.GET.get("user_id")
 
