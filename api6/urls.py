@@ -33,5 +33,5 @@ urlpatterns = [
     ),
     path("projects/", list_projects, name="project-list"),
     path("disciplines/", list_disciplines, name="discipline-list"),
-    path("documents/types", list_document_types, name="document-type-list")
+    path("documents/types", list_document_types, name="document-type-list"),
 ]

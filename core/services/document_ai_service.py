@@ -107,19 +107,17 @@ def _build_project_catalog_section(projects: list) -> str:
     return "\n".join(lines)
 
 
-def _build_user_prompt(
-    llm_text: str, projects: list, document_types: list, areas: list
-) -> str:
+def _build_user_prompt(llm_text: str, projects: list, document_types: list, areas: list) -> str:
     document_type_names = [document_type.name for document_type in document_types]
     area_names = [area.name for area in areas]
 
     return (
         "Analise o texto de um documento técnico de engenharia e responda apenas com um "
-        "objeto JSON com exatamente estas chaves: \"title\" (título curto e objetivo, em "
-        "português), \"description\" (breve descrição, em português, do conteúdo do "
-        "documento), \"project\" (nome de um dos projetos listados abaixo), \"discipline\" "
-        "(nome de uma das disciplinas possíveis do projeto escolhido), \"document_type\" "
-        "(nome de um dos tipos de documento listados abaixo) e \"area\" (nome de uma das "
+        'objeto JSON com exatamente estas chaves: "title" (título curto e objetivo, em '
+        'português), "description" (breve descrição, em português, do conteúdo do '
+        'documento), "project" (nome de um dos projetos listados abaixo), "discipline" '
+        '(nome de uma das disciplinas possíveis do projeto escolhido), "document_type" '
+        '(nome de um dos tipos de documento listados abaixo) e "area" (nome de uma das '
         "áreas listadas abaixo).\n\n"
         f"Projetos e suas disciplinas possíveis:\n{_build_project_catalog_section(projects)}\n\n"
         f"Tipos de documento possíveis: {document_type_names}\n\n"
@@ -141,9 +139,7 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
     document_types = list(list_active_document_types())
     areas = list(list_active_areas())
 
-    answer = _ask_groq(
-        SYSTEM_PROMPT, _build_user_prompt(llm_text, projects, document_types, areas)
-    )
+    answer = _ask_groq(SYSTEM_PROMPT, _build_user_prompt(llm_text, projects, document_types, areas))
     data = _parse_json_answer(answer)
 
     project = _match_catalog_name(data.get("project"), projects)

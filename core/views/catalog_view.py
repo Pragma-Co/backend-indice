@@ -46,8 +46,11 @@ def list_disciplines(request):
     """GET /disciplines/ -> active disciplines ordered by name."""
     return _respond_list(request, list_active_disciplines, serialize_discipline, "disciplines")
 
+
 @csrf_exempt
 @require_GET
 def list_document_types(request):
     """GET /documents/types -> active document types ordered by name."""
-    return _respond_list(request, list_active_document_types, serialize_document_type, "document types")
+    return _respond_list(
+        request, list_active_document_types, serialize_document_type, "document types"
+    )

@@ -13,6 +13,7 @@ def serialize_project(project: Project) -> dict:
 def serialize_discipline(discipline: Discipline) -> dict:
     return {"id": discipline.id, "code": discipline.code, "name": discipline.name}
 
+
 def serialize_document_type(document_type) -> dict:
     return {
         "id": document_type.id,
