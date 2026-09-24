@@ -68,7 +68,7 @@ class DocumentCreationServiceTests(TestCase):
             "description": "Conjunto soldado",
             "project_id": self.project.id,
             "discipline_id": self.discipline.id,
-            "document_type": "DWG",
+            "document_type": self.document_type.id,
             "confidentiality": "CONFIDENTIAL",
             "responsible_id": self.user.id,
             "areas": ["EST", "QUA"],
@@ -127,7 +127,7 @@ class DocumentCreationServiceTests(TestCase):
         payload = self._payload(
             project_id=inactive_project.id,
             discipline_id=9999,
-            document_type="XXX",
+            document_type=9999,
             responsible_id=9999,
             areas=["EST", "OLD", "NOPE"],
         )
@@ -183,7 +183,7 @@ class DocumentCreationServiceTests(TestCase):
             project_id=str(self.project.id),
             discipline_id=str(self.discipline.id),
             responsible_id=str(self.user.id),
-            document_type=" dwg ",
+            document_type=str(self.document_type.id),
             confidentiality="public",
             areas=[" est ", "qua", "EST"],
             title="  Título  ",

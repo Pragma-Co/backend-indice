@@ -1,23 +1,44 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.core.cache import cache
+from django.core.paginator import Paginator
 from django.db.models import OuterRef, Prefetch, Q, Subquery
 from django.utils import timezone
 
-from core.models import Area, Document, DocumentAccess, DocumentType, Revision, User
+from core.models import (
+    Area,
+    Discipline,
+    Document,
+    DocumentAccess,
+    DocumentType,
+    Revision,
+    User,
+)
 from core.models.choices import AccessStatus, RevisionStatus
+from core.serializers.document_serializer import revision_label
+from core.services.document_exceptions import DocumentQueryError
 from core.services.documents_exceptions import (
     DocumentNotFoundError,
     MissingUserError,
     UserNotFoundError,
 )
 
-SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters"
+SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters:v2"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
 DATE_FILTERS = [
     {"value": "last_7_days", "label": "Últimos 7 dias"},
     {"value": "last_month", "label": "Último mês"},
     {"value": "last_year", "label": "Último ano"},
+]
+
+
+STATUS_FILTERS = [
+    {"value": RevisionStatus.PENDING.value, "label": "Em revisão"},
+    {"value": RevisionStatus.APPROVED.value, "label": "Vigente"},
+    {"value": RevisionStatus.REJECTED.value, "label": "Rejeitado"},
+    {"value": RevisionStatus.OBSOLETE.value, "label": "Obsoleto"},
 ]
 
 
@@ -36,6 +57,10 @@ def build_simple_filters():
         "types": list(
             DocumentType.objects.filter(active=True).order_by("code").values("code", "name")
         ),
+        "disciplines": list(
+            Discipline.objects.filter(active=True).order_by("code").values("code", "name")
+        ),
+        "statuses": STATUS_FILTERS,
         "dates": DATE_FILTERS,
     }
 
@@ -48,62 +73,181 @@ def get_simple_filters():
     return payload
 
 
-def _apply_date_filter(queryset, date_filter):
-    if date_filter not in DATE_RANGES:
-        return queryset
-    return queryset.filter(created_at__gte=timezone.now() - DATE_RANGES[date_filter])
+def _error(code, message):
+    return {"code": code, "message": message}
 
 
-def _apply_date_range(queryset, date_from, date_to):
+def _positive_int(params, name, default, errors):
+    raw = params.get(name, "").strip()
+    if not raw:
+        return default
+    if not raw.isdigit() or int(raw) < 1:
+        errors[name] = _error("invalid", f"{name} must be a positive integer.")
+        return default
+    return int(raw)
+
+
+def _first_present(params, names):
+    for name in names:
+        if params.get(name, "").strip():
+            return name
+    return names[0]
+
+
+def _iso_date(params, names, errors):
+    name = _first_present(params, names)
+    raw = params.get(name, "").strip()
+    if not raw:
+        return None
     try:
-        if date_from:
-            queryset = queryset.filter(created_at__date__gte=date.fromisoformat(date_from))
-        if date_to:
-            queryset = queryset.filter(created_at__date__lte=date.fromisoformat(date_to))
+        return date.fromisoformat(raw)
     except ValueError:
-        return queryset.none()
-    return queryset
+        errors[name] = _error("invalid", f"{name} must be a date in the YYYY-MM-DD format.")
+        return None
 
 
-def get_documents(params):
-    latest_revision_status = (
-        Revision.objects.filter(document=OuterRef("pk")).order_by("-version").values("status")[:1]
-    )
+def _date_preset(params, errors):
+    raw = params.get("data", "").strip()
+    if raw and raw not in DATE_RANGES:
+        errors["data"] = _error("invalid_choice", f"data must be one of {sorted(DATE_RANGES)}.")
+        return ""
+    return raw
+
+
+def _raw_values(params, name):
+    getlist = getattr(params, "getlist", None)
+    if getlist is None:
+        raw = params.get(name, "")
+        return raw if isinstance(raw, list) else [raw]
+    return getlist(name) + getlist(f"{name}[]")
+
+
+def _multiple(params, name, normalize=str.upper):
+    values = []
+    for raw in _raw_values(params, name):
+        for piece in str(raw).split(","):
+            value = normalize(piece.strip())
+            if value and value not in values:
+                values.append(value)
+    return values
+
+
+def _statuses(params, errors):
+    statuses = _multiple(params, "status")
+    unknown = sorted(set(statuses) - set(RevisionStatus.values))
+    if unknown:
+        errors["status"] = _error(
+            "invalid_choice", f"status must be among {sorted(RevisionStatus.values)}."
+        )
+        return []
+    return statuses
+
+
+def _responsible_id(params, errors):
+    raw = params.get("responsible_id", "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        errors["responsible_id"] = _error("invalid", "responsible_id must be a positive integer.")
+        return None
+    return int(raw)
+
+
+def parse_document_query(params):
+    errors = {}
+    query = {
+        "search_term": params.get("q", "").strip(),
+        "areas": _multiple(params, "area"),
+        "document_types": _multiple(params, "tipo"),
+        "disciplines": _multiple(params, "discipline"),
+        "statuses": _statuses(params, errors),
+        "tags": _multiple(params, "tags", normalize=str),
+        "responsible_id": _responsible_id(params, errors),
+        "date_preset": _date_preset(params, errors),
+        "date_from": _iso_date(params, ("date_from", "data_inicio"), errors),
+        "date_to": _iso_date(params, ("date_to", "data_fim"), errors),
+        "page": _positive_int(params, "page", 1, errors),
+        "page_size": min(
+            _positive_int(params, "page_size", DEFAULT_PAGE_SIZE, errors), MAX_PAGE_SIZE
+        ),
+    }
+    if query["date_from"] and query["date_to"] and query["date_from"] > query["date_to"]:
+        name = _first_present(params, ("date_to", "data_fim"))
+        errors[name] = _error("invalid_range", f"{name} must not be earlier than the start date.")
+    if errors:
+        raise DocumentQueryError(errors)
+    return query
+
+
+def _start_of_day(day):
+    return timezone.make_aware(datetime.combine(day, time.min))
+
+
+def filter_documents(query):
+    latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
     queryset = (
         Document.objects.filter(document_type__active=True)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
-        .annotate(status=Subquery(latest_revision_status))
+        .annotate(
+            status=Subquery(latest_revision.values("status")[:1]),
+            latest_version=Subquery(latest_revision.values("version")[:1]),
+        )
         .select_related("document_type", "discipline", "project")
         .prefetch_related("areas", "tags")
         .order_by("-updated_at", "-id")
         .distinct()
     )
 
-    search_term = params.get("q", "").strip()
-    if search_term:
-        queryset = queryset.filter(
-            Q(title__icontains=search_term)
-            | Q(code__icontains=search_term)
-            | Q(description__icontains=search_term)
-            | Q(tags__name__icontains=search_term)
-        ).distinct()
+    criteria = Q()
+    if query["search_term"]:
+        term = query["search_term"]
+        criteria &= (
+            Q(title__icontains=term)
+            | Q(code__icontains=term)
+            | Q(description__icontains=term)
+            | Q(tags__name__icontains=term)
+        )
+    if query["document_types"]:
+        criteria &= Q(document_type__code__in=query["document_types"])
+    if query["disciplines"]:
+        criteria &= Q(discipline__code__in=query["disciplines"])
+    if query["statuses"]:
+        criteria &= Q(status__in=query["statuses"])
+    if query["responsible_id"]:
+        criteria &= Q(responsible_id=query["responsible_id"])
+    if query["date_preset"]:
+        criteria &= Q(created_at__gte=timezone.now() - DATE_RANGES[query["date_preset"]])
+    if query["date_from"]:
+        criteria &= Q(created_at__gte=_start_of_day(query["date_from"]))
+    if query["date_to"]:
+        criteria &= Q(created_at__lt=_start_of_day(query["date_to"] + timedelta(days=1)))
+    queryset = queryset.filter(criteria)
 
-    area = params.get("area", "").strip()
-    if area:
-        queryset = queryset.filter(areas__active=True, areas__acronym=area).distinct()
+    if query["areas"]:
+        queryset = queryset.filter(areas__active=True, areas__acronym__in=query["areas"])
 
-    document_type = params.get("tipo", "").strip()
-    if document_type:
-        queryset = queryset.filter(document_type__active=True, document_type__code=document_type)
+    if query["tags"]:
+        any_tag = Q()
+        for tag in query["tags"]:
+            any_tag |= Q(tags__name__iexact=tag)
+        queryset = queryset.filter(any_tag)
 
-    queryset = _apply_date_filter(queryset, params.get("data", "").strip())
-    queryset = _apply_date_range(
-        queryset,
-        params.get("date_from", "").strip(),
-        params.get("date_to", "").strip(),
-    )
+    return queryset
 
-    return [_serialize_document(document) for document in queryset]
+
+def get_documents(params):
+    query = parse_document_query(params)
+    paginator = Paginator(filter_documents(query), query["page_size"])
+    page_number = query["page"]
+    page_items = paginator.page(page_number) if page_number <= paginator.num_pages else []
+
+    return {
+        "count": paginator.count,
+        "total_pages": paginator.num_pages,
+        "current_page": page_number,
+        "page_size": query["page_size"],
+        "results": [_serialize_document(document) for document in page_items],
+    }
 
 
 def _serialize_document(document):
@@ -116,11 +260,21 @@ def _serialize_document(document):
             "code": document.document_type.code,
             "name": document.document_type.name,
         },
+        "discipline": {
+            "code": document.discipline.code,
+            "name": document.discipline.name,
+        },
         "areas": [
             {"acronym": area.acronym, "name": area.name}
             for area in document.areas.all()
             if area.active
         ],
+        "revision": None
+        if document.latest_version is None
+        else {
+            "version": document.latest_version,
+            "label": revision_label(document.latest_version),
+        },
         "status": document.status,
         "updated_at": document.updated_at.isoformat(),
     }
@@ -139,7 +293,9 @@ def _get_document_or_none(document_id):
             "areas",
             Prefetch(
                 "revisions",
-                queryset=Revision.objects.select_related("author").order_by("-version"),
+                queryset=Revision.objects.select_related("author", "auditor")
+                .prefetch_related("files")
+                .order_by("-version"),
             ),
         )
         .filter(pk=document_id)
@@ -177,6 +333,18 @@ def _compute_access_status(document, user):
     return ACCESS_PENDING
 
 
+def _serialize_file(file):
+    return {
+        "id": file.id,
+        "original_name": file.original_name,
+        "extension": file.extension,
+        "mime_type": file.mime_type,
+        "size_bytes": file.size_bytes,
+        "sha256": file.sha256,
+        "view_url": f"/api/files/{file.id}/view",
+    }
+
+
 def _serialize_revision(revision):
     return {
         "id": revision.id,
@@ -193,6 +361,7 @@ def _serialize_revision(revision):
         "auditor_comment": revision.auditor_comment or "",
         "audited_at": revision.audited_at.isoformat() if revision.audited_at else None,
         "created_at": revision.created_at.isoformat(),
+        "files": [_serialize_file(f) for f in revision.files.all()],
     }
 
 

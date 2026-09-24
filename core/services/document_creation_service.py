@@ -135,11 +135,12 @@ def validate_payload(payload) -> dict:
     cleaned["discipline"] = discipline
 
     document_type = None
-    type_code = _clean_text(payload.get("document_type")).upper()
-    if not type_code:
+    type_id = _clean_id(payload.get("document_type"))
+    print(f"Validating document type: {type_id}\n\n{payload.get('document_type')}")
+    if not type_id:
         errors["document_type"] = _error(REQUIRED, "Document type is required.")
     else:
-        document_type = DocumentType.objects.filter(code=type_code, active=True).first()
+        document_type = DocumentType.objects.filter(id=type_id, active=True).first()
         if document_type is None:
             errors["document_type"] = _error(NOT_FOUND, "Document type not found or inactive.")
     cleaned["document_type"] = document_type

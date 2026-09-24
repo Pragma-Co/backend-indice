@@ -7,7 +7,16 @@ from unittest import mock
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from core.models import Area, Discipline, Document, DocumentType, Project, User
+from core.models import (
+    Area,
+    AuditAction,
+    AuditLog,
+    Discipline,
+    Document,
+    DocumentType,
+    Project,
+    User,
+)
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
     DocumentStorageError,
@@ -37,7 +46,7 @@ class CreateDocumentViewTests(TestCase):
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.project.disciplines.add(self.discipline)
-        DocumentType.objects.create(code="DWG", name="Desenho")
+        self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
         self.url = reverse("document-list")
 
     def _temp_file(self, extension="pdf", content=PDF_BYTES):
@@ -52,7 +61,7 @@ class CreateDocumentViewTests(TestCase):
             "description": "Conjunto soldado",
             "project_id": self.project.id,
             "discipline_id": self.discipline.id,
-            "document_type": "DWG",
+            "document_type": self.document_type.id,
             "confidentiality": "PUBLIC",
             "responsible_id": self.user.id,
             "areas": ["EST"],
@@ -60,9 +69,9 @@ class CreateDocumentViewTests(TestCase):
         payload.update(overrides)
         return payload
 
-    def _post(self, payload, client=None):
+    def _post(self, payload, client=None, **extra):
         return (client or self.client).post(
-            self.url, data=json.dumps(payload), content_type="application/json"
+            self.url, data=json.dumps(payload), content_type="application/json", **extra
         )
 
     def test_should_create_the_document_and_answer_201_with_the_consolidated_data(self, mongo):
@@ -194,7 +203,7 @@ class CreateDocumentViewTests(TestCase):
         put_response = client.put(self.url)
 
         self.assertEqual(get_response.status_code, 200)
-        self.assertIn("documents", get_response.json())
+        self.assertIn("results", get_response.json())
         self.assertEqual(put_response.status_code, 405)
         self.assertEqual(put_response["Allow"], "GET, POST")
 
@@ -205,3 +214,44 @@ class CreateDocumentViewTests(TestCase):
         response = self._post(self._payload(), client=client)
 
         self.assertEqual(response.status_code, 201)
+
+    def test_should_record_the_document_created_event_after_publishing(self, mongo):
+        self._temp_file()
+
+        response = self._post(
+            self._payload(),
+            HTTP_X_FORWARDED_FOR="203.0.113.7, 10.0.0.1",
+            HTTP_USER_AGENT="Mozilla/5.0 (test)",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.user, self.user)
+        self.assertEqual(entry.action, AuditAction.CREATE)
+        self.assertEqual(entry.entity, "document")
+        self.assertEqual(entry.entity_id, response.json()["id"])
+        self.assertEqual(entry.ip_address, "203.0.113.7")
+        self.assertEqual(entry.record["event"], "DOCUMENT_CREATED")
+        self.assertEqual(entry.record["code"], response.json()["code"])
+        self.assertEqual(entry.record["version"], 1)
+        self.assertEqual(entry.record["revision"], "REV01")
+        self.assertEqual(entry.record["user_agent"], "Mozilla/5.0 (test)")
+
+    def test_should_still_answer_201_when_the_audit_log_cannot_be_written(self, mongo):
+        self._temp_file()
+
+        with (
+            mock.patch.object(AuditLog.objects, "create", side_effect=RuntimeError("db down")),
+            self.assertLogs("core.services.audit_service", level="ERROR"),
+        ):
+            response = self._post(self._payload())
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Document.objects.count(), 1)
+        self.assertEqual(AuditLog.objects.count(), 0)
+
+    def test_should_not_record_an_event_when_the_document_is_rejected(self, mongo):
+        response = self._post({})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(AuditLog.objects.count(), 0)

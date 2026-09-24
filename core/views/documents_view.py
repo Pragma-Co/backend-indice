@@ -6,9 +6,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.serializers.document_serializer import serialize_created_document
+from core.services.audit_service import record_document_created
 from core.services.document_creation_service import create_document
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
+    DocumentQueryError,
     DocumentStorageError,
     DocumentValidationError,
     DuplicateDocumentFileError,
@@ -32,7 +34,9 @@ logger = logging.getLogger(__name__)
 @require_GET
 def documents(request):
     try:
-        return JsonResponse({"documents": get_documents(request.GET)})
+        return JsonResponse(get_documents(request.GET))
+    except DocumentQueryError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
         logger.exception("Failed to list documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
@@ -78,6 +82,7 @@ def create_document_view(request):
         logger.exception("Failed to create document")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
+    record_document_created(document, request)
     return JsonResponse(serialize_created_document(document), status=201)
 
 
