@@ -46,7 +46,7 @@ class CreateDocumentViewTests(TestCase):
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.project.disciplines.add(self.discipline)
-        DocumentType.objects.create(code="DWG", name="Desenho")
+        self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
         self.url = reverse("document-list")
 
     def _temp_file(self, extension="pdf", content=PDF_BYTES):
@@ -61,7 +61,7 @@ class CreateDocumentViewTests(TestCase):
             "description": "Conjunto soldado",
             "project_id": self.project.id,
             "discipline_id": self.discipline.id,
-            "document_type": "DWG",
+            "document_type": self.document_type.id,
             "confidentiality": "PUBLIC",
             "responsible_id": self.user.id,
             "areas": ["EST"],
