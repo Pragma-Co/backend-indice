@@ -4,6 +4,7 @@ import re
 import uuid
 from pathlib import Path
 
+import groq
 from django.conf import settings
 
 from core.groq_client import get_groq_client
@@ -14,13 +15,20 @@ from core.services.catalog_service import (
     list_active_document_types,
     list_active_projects,
 )
-from core.services.document_ai_exceptions import AISuggestionError, UnsupportedFileTypeError
+from core.services.document_ai_exceptions import (
+    AICommunicationError,
+    AIRateLimitError,
+    AISuggestionError,
+    AITimeoutError,
+    UnsupportedFileTypeError,
+)
 from core.services.document_exceptions import TempFileNotFoundError
 from core.services.temp_upload_service import get_temp_upload_record
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {"pdf", "docx"}
+SUGGESTION_FIELDS = ("title", "description", "project", "discipline", "document_type", "area")
 
 SYSTEM_PROMPT = (
     "Você é um especialista em gestão documental de engenharia. Classifique documentos "
@@ -44,12 +52,18 @@ def _locate_temp_file(temp_file_id: str) -> Path:
     return matches[0]
 
 
-def _match_catalog_name(suggested_name, catalog_items) -> dict:
-    normalized = str(suggested_name or "").strip().lower()
+def _clean_text(value) -> str | None:
+    return str(value or "").strip() or None
+
+
+def _match_catalog_name(suggested_name, catalog_items) -> dict | None:
+    name = _clean_text(suggested_name)
+    if name is None:
+        return None
     for item in catalog_items:
-        if item.name.strip().lower() == normalized:
+        if item.name.strip().lower() == name.lower():
             return {"id": item.id, "name": item.name}
-    return {"id": None, "name": str(suggested_name or "").strip()}
+    return {"id": None, "name": name}
 
 
 def _save_suggestion_to_temp_upload(temp_file_id: str, suggestion: dict) -> None:
@@ -74,6 +88,15 @@ def _ask_groq(system_prompt: str, user_prompt: str) -> str:
             temperature=0.3,
             response_format={"type": "json_object"},
         )
+    except groq.APITimeoutError as exc:
+        logger.warning("Groq request timed out")
+        raise AITimeoutError() from exc
+    except groq.RateLimitError as exc:
+        logger.warning("Groq rate limit exceeded")
+        raise AIRateLimitError() from exc
+    except groq.APIConnectionError as exc:
+        logger.warning("Groq communication error: %s", exc)
+        raise AICommunicationError() from exc
     except Exception as exc:
         logger.exception("Groq request failed")
         raise AISuggestionError() from exc
@@ -133,17 +156,28 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
         raise UnsupportedFileTypeError(extension)
 
     record = get_temp_upload_record(temp_file_id)
-    llm_text = record.get("extracted_text") or ""
+    llm_text = (record.get("extracted_text") or "").strip()
+    if not llm_text:
+        empty_suggestion = dict.fromkeys(SUGGESTION_FIELDS)
+        _save_suggestion_to_temp_upload(temp_file_id, empty_suggestion)
+        return empty_suggestion
 
     projects = list(list_active_projects())
     document_types = list(list_active_document_types())
     areas = list(list_active_areas())
 
-    answer = _ask_groq(SYSTEM_PROMPT, _build_user_prompt(llm_text, projects, document_types, areas))
-    data = _parse_json_answer(answer)
+    try:
+        answer = _ask_groq(
+            SYSTEM_PROMPT, _build_user_prompt(llm_text, projects, document_types, areas)
+        )
+        data = _parse_json_answer(answer)
+    except AISuggestionError:
+        data = {}
 
     project = _match_catalog_name(data.get("project"), projects)
-    matched_project = next((p for p in projects if p.id == project["id"]), None)
+    matched_project = (
+        next((p for p in projects if p.id == project["id"]), None) if project else None
+    )
     discipline_candidates = (
         list(matched_project.disciplines.all())
         if matched_project is not None
@@ -151,8 +185,8 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
     )
 
     suggestion = {
-        "title": str(data.get("title") or "").strip(),
-        "description": str(data.get("description") or "").strip(),
+        "title": _clean_text(data.get("title")),
+        "description": _clean_text(data.get("description")),
         "project": project,
         "discipline": _match_catalog_name(data.get("discipline"), discipline_candidates),
         "document_type": _match_catalog_name(data.get("document_type"), document_types),
