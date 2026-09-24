@@ -1,5 +1,3 @@
-"""Inline file streaming for document preview."""
-
 import logging
 import mimetypes
 from pathlib import Path

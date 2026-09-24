@@ -1,5 +1,3 @@
-"""Service layer for streaming document files for preview."""
-
 from core.models import Document, DocumentAccess, User
 from core.models.choices import AccessStatus, RevisionStatus
 from core.models.revision import File
@@ -7,7 +5,7 @@ from core.services.documents_exceptions import DocumentFilePermissionError
 
 
 class DocumentFileNotFoundError(Exception):
-    """Arquivo inexistente."""
+    pass
 
 
 def _get_document_for_file(file_obj):
@@ -45,18 +43,12 @@ def _user_can_view(document, user):
         return True
 
     current_revision = _get_current_revision(document)
-    return (
-        current_revision is not None
-        and current_revision.status == RevisionStatus.APPROVED
-    )
+    return current_revision is not None and current_revision.status == RevisionStatus.APPROVED
 
 
 def get_document_file_for_view(file_id, user_id=None):
-    """Busca o arquivo e valida o acesso antes de servir inline."""
     file_obj = (
-        File.objects.select_related("revision", "revision__document")
-        .filter(pk=file_id)
-        .first()
+        File.objects.select_related("revision", "revision__document").filter(pk=file_id).first()
     )
     if file_obj is None:
         raise DocumentFileNotFoundError()
