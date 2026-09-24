@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 DOCUMENT_ENTITY = "document"
 DOCUMENT_CREATED_EVENT = "DOCUMENT_CREATED"
+DOCUMENT_ACCESS_DENIED_EVENT = "DOCUMENT_ACCESS_DENIED"
 USER_AGENT_MAX_LENGTH = 512
 
 
@@ -53,4 +54,25 @@ def record_document_created(document: Document, request) -> AuditLog | None:
             )
     except Exception:
         logger.exception("Failed to record the %s audit event", DOCUMENT_CREATED_EVENT)
+        return None
+
+
+def record_document_access_denied(document: Document, user, request) -> AuditLog | None:
+    try:
+        with transaction.atomic():
+            return AuditLog.objects.create(
+                user=user,
+                action=AuditAction.READ,
+                entity=DOCUMENT_ENTITY,
+                entity_id=document.id,
+                record={
+                    "event": DOCUMENT_ACCESS_DENIED_EVENT,
+                    "code": document.code,
+                    "outcome": "denied",
+                    "user_agent": client_user_agent(request),
+                },
+                ip_address=client_ip(request),
+            )
+    except Exception:
+        logger.exception("Failed to record the %s audit event", DOCUMENT_ACCESS_DENIED_EVENT)
         return None

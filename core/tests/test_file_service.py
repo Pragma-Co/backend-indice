@@ -1,239 +1,122 @@
-from unittest.mock import MagicMock, patch
+import shutil
+import tempfile
+from pathlib import Path
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
 
-from core.models.choices import AccessStatus, RevisionStatus
-from core.services.documents_exceptions import DocumentFilePermissionError
-from core.services.file_service import (
-    DocumentFileNotFoundError,
-    _get_current_revision,
-    _get_document_for_file,
-    _user_can_view,
-    get_document_file_for_view,
+from core.models import (
+    AccessStatus,
+    Area,
+    Discipline,
+    Document,
+    DocumentAccess,
+    DocumentType,
+    File,
+    Project,
+    Revision,
+    RevisionStatus,
+    User,
 )
+from core.services.documents_exceptions import (
+    AccessDeniedError,
+    DocumentFileNotFoundError,
+    MissingUserError,
+    UserNotFoundError,
+)
+from core.services.file_service import get_document_file_for_view
+
+PDF_BYTES = b"%PDF-1.4 file service"
 
 
-class FileServiceTestBase(TestCase):
+class GetDocumentFileForViewTests(TestCase):
     def setUp(self):
-        self.approved_revision = MagicMock()
-        self.approved_revision.status = RevisionStatus.APPROVED
+        self.storage_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.storage_dir, ignore_errors=True)
+        override = override_settings(DOCUMENT_STORAGE_DIR=self.storage_dir)
+        override.enable()
+        self.addCleanup(override.disable)
 
-        self.pending_revision = MagicMock()
-        self.pending_revision.status = RevisionStatus.PENDING
-
-        self.document = MagicMock()
-        self.document.responsible_id = 12
-        self.document.revisions.all.return_value = [self.approved_revision]
-
-        self.user = MagicMock()
-        self.user.id = 99
-
-        self.responsible_user = MagicMock()
-        self.responsible_user.id = 12
-
-        self.file_obj = MagicMock()
-        self.file_obj.revision.document_id = self.document.pk
-        self.file_obj.revision.document = self.document
-
-
-class TestGetCurrentRevision(FileServiceTestBase):
-    def test_returns_none_when_there_are_no_revisions(self):
-        document = MagicMock()
-        document.revisions.all.return_value = []
-
-        self.assertIsNone(_get_current_revision(document))
-
-    def test_returns_the_approved_revision_when_present(self):
-        document = MagicMock()
-        document.revisions.all.return_value = [
-            self.pending_revision,
-            self.approved_revision,
-        ]
-
-        self.assertIs(_get_current_revision(document), self.approved_revision)
-
-    def test_returns_the_first_revision_when_none_is_approved(self):
-        another_pending = MagicMock()
-        another_pending.status = RevisionStatus.PENDING
-        document = MagicMock()
-        document.revisions.all.return_value = [self.pending_revision, another_pending]
-
-        self.assertIs(_get_current_revision(document), self.pending_revision)
-
-
-class TestGetDocumentForFile(FileServiceTestBase):
-    def test_returns_none_when_file_has_no_revision(self):
-        file_obj = MagicMock()
-        file_obj.revision = None
-
-        self.assertIsNone(_get_document_for_file(file_obj))
-
-    @patch("core.services.file_service.Document")
-    def test_queries_document_by_revision_document_id(self, DocumentMock):
-        file_obj = MagicMock()
-        file_obj.revision.document_id = 42
-
-        chain = DocumentMock.objects.filter.return_value
-        chain.select_related.return_value = chain
-        chain.filter.return_value = chain
-        chain.first.return_value = "document-42"
-
-        result = _get_document_for_file(file_obj)
-
-        self.assertEqual(result, "document-42")
-        DocumentMock.objects.filter.assert_called_once_with(document_type__active=True)
-        chain.filter.assert_called_once_with(pk=42)
-
-    @patch("core.services.file_service.Document")
-    def test_returns_none_when_document_does_not_exist(self, DocumentMock):
-        file_obj = MagicMock()
-        file_obj.revision.document_id = 42
-
-        chain = DocumentMock.objects.filter.return_value
-        chain.select_related.return_value = chain
-        chain.filter.return_value = chain
-        chain.first.return_value = None
-
-        self.assertIsNone(_get_document_for_file(file_obj))
-
-
-class TestUserCanView(FileServiceTestBase):
-    def test_returns_false_when_user_is_none(self):
-        self.assertFalse(_user_can_view(self.document, None))
-
-    def test_returns_true_when_user_is_the_responsible(self):
-        self.assertTrue(_user_can_view(self.document, self.responsible_user))
-
-    @patch("core.services.file_service.DocumentAccess")
-    def test_returns_true_when_user_has_approved_access(self, DocumentAccessMock):
-        DocumentAccessMock.objects.filter.return_value.exists.return_value = True
-
-        self.assertTrue(_user_can_view(self.document, self.user))
-
-        DocumentAccessMock.objects.filter.assert_called_once_with(
-            document=self.document, user=self.user, status=AccessStatus.APPROVED
+        area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.owner = User.objects.create_user(
+            email="owner@example.com", password="pw", name="Owner", area=area
+        )
+        self.reader = User.objects.create_user(
+            email="reader@example.com", password="pw", name="Reader", area=area
+        )
+        self.stranger = User.objects.create_user(
+            email="stranger@example.com", password="pw", name="Stranger", area=area
+        )
+        self.document = Document.objects.create(
+            code="AK-2100-EST-DWG-0001",
+            title="Desenho",
+            project=Project.objects.create(code="AK-2100", name="Fuselagem"),
+            discipline=Discipline.objects.create(code="EST", name="Estruturas"),
+            document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
+            responsible=self.owner,
+        )
+        revision = Revision.objects.create(
+            document=self.document,
+            version=1,
+            status=RevisionStatus.APPROVED,
+            author=self.owner,
+            auditor=self.reader,
+            audited_at=timezone.now(),
+        )
+        self.storage_path = "documents/AK-2100-EST-DWG-0001/v1/ak-2100-est-dwg-0001.pdf"
+        full_path = Path(self.storage_dir) / self.storage_path
+        full_path.parent.mkdir(parents=True)
+        full_path.write_bytes(PDF_BYTES)
+        self.stored_file = File.objects.create(
+            revision=revision,
+            original_name="desenho.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(PDF_BYTES),
+            sha256="b" * 64,
+            storage_path=self.storage_path,
+        )
+        DocumentAccess.objects.create(
+            document=self.document,
+            user=self.reader,
+            status=AccessStatus.APPROVED,
+            approver=self.owner,
+            decided_at=timezone.now(),
         )
 
-    @patch("core.services.file_service.DocumentAccess")
-    def test_returns_true_when_current_revision_is_approved(self, DocumentAccessMock):
-        DocumentAccessMock.objects.filter.return_value.exists.return_value = False
+    def test_should_return_the_file_and_its_path_to_the_responsible(self):
+        file_obj, path = get_document_file_for_view(self.stored_file.id, self.owner.id)
 
-        self.assertTrue(_user_can_view(self.document, self.user))
+        self.assertEqual(file_obj, self.stored_file)
+        self.assertEqual(path.read_bytes(), PDF_BYTES)
 
-    @patch("core.services.file_service.DocumentAccess")
-    def test_returns_false_when_no_access_and_revision_is_pending(self, DocumentAccessMock):
-        DocumentAccessMock.objects.filter.return_value.exists.return_value = False
-        document = MagicMock()
-        document.responsible_id = 12
-        document.revisions.all.return_value = [self.pending_revision]
+    def test_should_return_the_file_to_a_user_with_an_approved_grant(self):
+        file_obj, _ = get_document_file_for_view(self.stored_file.id, self.reader.id)
 
-        self.assertFalse(_user_can_view(document, self.user))
+        self.assertEqual(file_obj, self.stored_file)
 
-    @patch("core.services.file_service.DocumentAccess")
-    def test_returns_false_when_no_access_and_no_revisions(self, DocumentAccessMock):
-        DocumentAccessMock.objects.filter.return_value.exists.return_value = False
-        document = MagicMock()
-        document.responsible_id = 12
-        document.revisions.all.return_value = []
+    def test_should_deny_a_user_without_a_grant_even_when_the_revision_is_approved(self):
+        with self.assertRaises(AccessDeniedError) as context:
+            get_document_file_for_view(self.stored_file.id, self.stranger.id)
 
-        self.assertFalse(_user_can_view(document, self.user))
+        document, user = context.exception.args
+        self.assertEqual(document, self.document)
+        self.assertEqual(user, self.stranger)
 
+    def test_should_require_a_user(self):
+        with self.assertRaises(MissingUserError):
+            get_document_file_for_view(self.stored_file.id, None)
 
-class TestGetDocumentFileForView(FileServiceTestBase):
-    @patch("core.services.file_service.File")
-    def test_raises_when_file_does_not_exist(self, FileMock):
-        FileMock.objects.select_related.return_value.filter.return_value.first.return_value = None
+    def test_should_reject_an_unknown_user(self):
+        with self.assertRaises(UserNotFoundError):
+            get_document_file_for_view(self.stored_file.id, 999999)
+
+    def test_should_raise_for_an_unknown_file(self):
+        with self.assertRaises(DocumentFileNotFoundError):
+            get_document_file_for_view(999999, self.owner.id)
+
+    def test_should_raise_when_the_bytes_are_missing_from_storage(self):
+        (Path(self.storage_dir) / self.storage_path).unlink()
 
         with self.assertRaises(DocumentFileNotFoundError):
-            get_document_file_for_view(file_id=999)
-
-    @patch("core.services.file_service._get_document_for_file")
-    @patch("core.services.file_service.File")
-    def test_raises_when_document_is_not_found(self, FileMock, get_document_mock):
-        FileMock.objects.select_related.return_value.filter.return_value.first.return_value = (
-            MagicMock()
-        )
-        get_document_mock.return_value = None
-
-        with self.assertRaises(DocumentFileNotFoundError):
-            get_document_file_for_view(file_id=1)
-
-    @patch("core.services.file_service._user_can_view")
-    @patch("core.services.file_service._get_document_for_file")
-    @patch("core.services.file_service.File")
-    def test_raises_permission_error_when_user_cannot_view(
-        self, FileMock, get_document_mock, can_view_mock
-    ):
-        file_obj = MagicMock()
-        FileMock.objects.select_related.return_value.filter.return_value.first.return_value = (
-            file_obj
-        )
-        get_document_mock.return_value = MagicMock()
-        can_view_mock.return_value = False
-
-        with self.assertRaises(DocumentFilePermissionError):
-            get_document_file_for_view(file_id=1, user_id=99)
-
-    @patch("core.services.file_service.User")
-    @patch("core.services.file_service._user_can_view")
-    @patch("core.services.file_service._get_document_for_file")
-    @patch("core.services.file_service.File")
-    def test_returns_file_when_user_can_view(
-        self, FileMock, get_document_mock, can_view_mock, UserMock
-    ):
-        file_obj = MagicMock()
-        FileMock.objects.select_related.return_value.filter.return_value.first.return_value = (
-            file_obj
-        )
-        document = MagicMock()
-        get_document_mock.return_value = document
-        can_view_mock.return_value = True
-        user = MagicMock()
-        UserMock.objects.filter.return_value.first.return_value = user
-
-        result = get_document_file_for_view(file_id=1, user_id=99)
-
-        self.assertIs(result, file_obj)
-        UserMock.objects.filter.assert_called_once_with(pk=99)
-        can_view_mock.assert_called_once_with(document, user)
-
-    @patch("core.services.file_service._user_can_view")
-    @patch("core.services.file_service._get_document_for_file")
-    @patch("core.services.file_service.File")
-    def test_does_not_query_user_when_user_id_is_none(
-        self, FileMock, get_document_mock, can_view_mock
-    ):
-        file_obj = MagicMock()
-        FileMock.objects.select_related.return_value.filter.return_value.first.return_value = (
-            file_obj
-        )
-        get_document_mock.return_value = MagicMock()
-        can_view_mock.return_value = False
-
-        with self.assertRaises(DocumentFilePermissionError):
-            get_document_file_for_view(file_id=1, user_id=None)
-
-        can_view_mock.assert_called_once()
-        args = can_view_mock.call_args.args
-        self.assertIsNone(args[1])
-
-    @patch("core.services.file_service.User")
-    @patch("core.services.file_service._user_can_view")
-    @patch("core.services.file_service._get_document_for_file")
-    @patch("core.services.file_service.File")
-    def test_returns_none_user_when_user_id_does_not_exist(
-        self, FileMock, get_document_mock, can_view_mock, UserMock
-    ):
-        file_obj = MagicMock()
-        FileMock.objects.select_related.return_value.filter.return_value.first.return_value = (
-            file_obj
-        )
-        get_document_mock.return_value = MagicMock()
-        UserMock.objects.filter.return_value.first.return_value = None
-        can_view_mock.return_value = False
-
-        with self.assertRaises(DocumentFilePermissionError):
-            get_document_file_for_view(file_id=1, user_id=12345)
-
-        args = can_view_mock.call_args.args
-        self.assertIsNone(args[1])
+            get_document_file_for_view(self.stored_file.id, self.owner.id)
