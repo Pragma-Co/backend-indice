@@ -18,6 +18,7 @@ from core.models.choices import AccessStatus, RevisionStatus
 from core.serializers.document_serializer import revision_label
 from core.services.document_exceptions import DocumentQueryError
 from core.services.documents_exceptions import (
+    AlreadyHasAccessError,
     DocumentNotFoundError,
     MissingUserError,
     UserNotFoundError,
@@ -333,6 +334,33 @@ def _compute_access_status(document, user):
     return ACCESS_PENDING
 
 
+def can_view_document(document, user):
+    return _compute_access_status(document, user) == ACCESS_APPROVED
+
+
+def resolve_user(user_id):
+    if not user_id:
+        raise MissingUserError()
+    try:
+        return User.objects.get(pk=user_id)
+    except (User.DoesNotExist, ValueError, TypeError) as exc:
+        raise UserNotFoundError() from exc
+
+
+def _latest_access_request(document, user):
+    if user is None:
+        return None
+    access = DocumentAccess.objects.filter(document=document, user=user).first()
+    if access is None:
+        return None
+    requested = access.requested_at or access.decided_at
+    return {
+        "id": access.id,
+        "status": access.status,
+        "created_at": requested.isoformat() if requested else None,
+    }
+
+
 def _serialize_file(file):
     return {
         "id": file.id,
@@ -345,13 +373,12 @@ def _serialize_file(file):
     }
 
 
-def _serialize_revision(revision):
-    return {
+def _serialize_revision(revision, can_read):
+    serialized = {
         "id": revision.id,
         "version": revision.version,
         "status": revision.status,
         "issue_date": revision.issue_date.isoformat() if revision.issue_date else None,
-        "change_description": revision.change_description,
         "author": {"id": revision.author_id, "name": revision.author.name},
         "auditor": (
             {"id": revision.auditor_id, "name": revision.auditor.name}
@@ -361,17 +388,19 @@ def _serialize_revision(revision):
         "auditor_comment": revision.auditor_comment or "",
         "audited_at": revision.audited_at.isoformat() if revision.audited_at else None,
         "created_at": revision.created_at.isoformat(),
-        "files": [_serialize_file(f) for f in revision.files.all()],
     }
+    if can_read:
+        serialized["change_description"] = revision.change_description
+        serialized["files"] = [_serialize_file(f) for f in revision.files.all()]
+    return serialized
 
 
-def _serialize_document_detail(document, access_status):
+def _serialize_document_detail(document, access_status, can_read, access_request):
     current_revision = _get_current_revision(document)
-    return {
+    serialized = {
         "id": document.id,
         "code": document.code,
         "title": document.title,
-        "description": document.description or "",
         "project": {
             "id": document.project_id,
             "code": document.project.code,
@@ -397,12 +426,18 @@ def _serialize_document_detail(document, access_status):
             "name": document.responsible.name,
             "email": document.responsible.email,
         },
-        "revision": _serialize_revision(current_revision) if current_revision else None,
-        "versions": [_serialize_revision(revision) for revision in document.revisions.all()],
+        "revision": (_serialize_revision(current_revision, can_read) if current_revision else None),
+        "versions": [
+            _serialize_revision(revision, can_read) for revision in document.revisions.all()
+        ],
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "access_status": access_status,
+        "access_request": access_request,
     }
+    if can_read:
+        serialized["description"] = document.description or ""
+    return serialized
 
 
 def get_document_detail(document_id, user_id=None):
@@ -415,7 +450,10 @@ def get_document_detail(document_id, user_id=None):
         user = User.objects.filter(pk=user_id).first()
 
     access_status = _compute_access_status(document, user)
-    return _serialize_document_detail(document, access_status)
+    can_read = access_status == ACCESS_APPROVED
+    return _serialize_document_detail(
+        document, access_status, can_read, _latest_access_request(document, user)
+    )
 
 
 def request_document_access(document_id, user_id, justification=""):
@@ -423,13 +461,9 @@ def request_document_access(document_id, user_id, justification=""):
     if document is None:
         raise DocumentNotFoundError()
 
-    if not user_id:
-        raise MissingUserError()
-
-    try:
-        user = User.objects.get(pk=user_id)
-    except User.DoesNotExist as exc:
-        raise UserNotFoundError() from exc
+    user = resolve_user(user_id)
+    if can_view_document(document, user):
+        raise AlreadyHasAccessError()
 
     access, created = DocumentAccess.objects.get_or_create(
         document=document,

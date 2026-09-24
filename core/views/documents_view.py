@@ -17,6 +17,7 @@ from core.services.document_exceptions import (
     TempFileNotFoundError,
 )
 from core.services.documents_exceptions import (
+    AlreadyHasAccessError,
     DocumentNotFoundError,
     MissingUserError,
     UserNotFoundError,
@@ -135,6 +136,8 @@ def request_access(request, document_id):
         return JsonResponse({"error": "MissingUser"}, status=400)
     except UserNotFoundError:
         return JsonResponse({"error": "UserNotFound"}, status=404)
+    except AlreadyHasAccessError:
+        return JsonResponse({"error": "AlreadyHasAccess"}, status=409)
     except Exception as exc:
         logger.exception("Failed to request document access")
         return JsonResponse({"error": type(exc).__name__}, status=500)

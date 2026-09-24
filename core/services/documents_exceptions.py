@@ -10,5 +10,13 @@ class UserNotFoundError(Exception):
     pass
 
 
-class DocumentFilePermissionError(Exception):
+class AccessDeniedError(Exception):
+    pass
+
+
+class AlreadyHasAccessError(Exception):
+    pass
+
+
+class DocumentFileNotFoundError(Exception):
     pass
