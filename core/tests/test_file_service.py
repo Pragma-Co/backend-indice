@@ -123,9 +123,7 @@ class TestUserCanView:
         assert _user_can_view(document, responsible_user) is True
 
     @patch("core.services.file_service.DocumentAccess")
-    def test_returns_true_when_user_has_approved_access(
-        self, DocumentAccessMock, document, user
-    ):
+    def test_returns_true_when_user_has_approved_access(self, DocumentAccessMock, document, user):
         DocumentAccessMock.objects.filter.return_value.exists.return_value = True
 
         assert _user_can_view(document, user) is True
@@ -154,9 +152,7 @@ class TestUserCanView:
         assert _user_can_view(document, user) is False
 
     @patch("core.services.file_service.DocumentAccess")
-    def test_returns_false_when_no_access_and_no_revisions(
-        self, DocumentAccessMock, user
-    ):
+    def test_returns_false_when_no_access_and_no_revisions(self, DocumentAccessMock, user):
         DocumentAccessMock.objects.filter.return_value.exists.return_value = False
         document = MagicMock()
         document.responsible_id = 12
@@ -175,9 +171,7 @@ class TestGetDocumentFileForView:
 
     @patch("core.services.file_service._get_document_for_file")
     @patch("core.services.file_service.File")
-    def test_raises_when_document_is_not_found(
-        self, FileMock, get_document_mock
-    ):
+    def test_raises_when_document_is_not_found(self, FileMock, get_document_mock):
         FileMock.objects.select_related.return_value.filter.return_value.first.return_value = (
             MagicMock()
         )
