@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
+from django.test import TestCase
 
 from core.models.choices import AccessStatus, RevisionStatus
 from core.services.documents_exceptions import DocumentFilePermissionError
@@ -13,78 +13,60 @@ from core.services.file_service import (
 )
 
 
-@pytest.fixture
-def approved_revision():
-    rev = MagicMock()
-    rev.status = RevisionStatus.APPROVED
-    return rev
+class FileServiceTestBase(TestCase):
+    def setUp(self):
+        self.approved_revision = MagicMock()
+        self.approved_revision.status = RevisionStatus.APPROVED
+
+        self.pending_revision = MagicMock()
+        self.pending_revision.status = RevisionStatus.PENDING
+
+        self.document = MagicMock()
+        self.document.responsible_id = 12
+        self.document.revisions.all.return_value = [self.approved_revision]
+
+        self.user = MagicMock()
+        self.user.id = 99
+
+        self.responsible_user = MagicMock()
+        self.responsible_user.id = 12
+
+        self.file_obj = MagicMock()
+        self.file_obj.revision.document_id = self.document.pk
+        self.file_obj.revision.document = self.document
 
 
-@pytest.fixture
-def pending_revision():
-    rev = MagicMock()
-    rev.status = RevisionStatus.PENDING
-    return rev
-
-
-@pytest.fixture
-def document(approved_revision):
-    doc = MagicMock()
-    doc.responsible_id = 12
-    doc.revisions.all.return_value = [approved_revision]
-    return doc
-
-
-@pytest.fixture
-def user():
-    u = MagicMock()
-    u.id = 99
-    return u
-
-
-@pytest.fixture
-def responsible_user():
-    u = MagicMock()
-    u.id = 12
-    return u
-
-
-@pytest.fixture
-def file_obj(document):
-    f = MagicMock()
-    f.revision.document_id = document.pk
-    f.revision.document = document
-    return f
-
-
-class TestGetCurrentRevision:
+class TestGetCurrentRevision(FileServiceTestBase):
     def test_returns_none_when_there_are_no_revisions(self):
         document = MagicMock()
         document.revisions.all.return_value = []
 
-        assert _get_current_revision(document) is None
+        self.assertIsNone(_get_current_revision(document))
 
-    def test_returns_the_approved_revision_when_present(self, approved_revision, pending_revision):
+    def test_returns_the_approved_revision_when_present(self):
         document = MagicMock()
-        document.revisions.all.return_value = [pending_revision, approved_revision]
+        document.revisions.all.return_value = [
+            self.pending_revision,
+            self.approved_revision,
+        ]
 
-        assert _get_current_revision(document) is approved_revision
+        self.assertIs(_get_current_revision(document), self.approved_revision)
 
-    def test_returns_the_first_revision_when_none_is_approved(self, pending_revision):
+    def test_returns_the_first_revision_when_none_is_approved(self):
         another_pending = MagicMock()
         another_pending.status = RevisionStatus.PENDING
         document = MagicMock()
-        document.revisions.all.return_value = [pending_revision, another_pending]
+        document.revisions.all.return_value = [self.pending_revision, another_pending]
 
-        assert _get_current_revision(document) is pending_revision
+        self.assertIs(_get_current_revision(document), self.pending_revision)
 
 
-class TestGetDocumentForFile:
+class TestGetDocumentForFile(FileServiceTestBase):
     def test_returns_none_when_file_has_no_revision(self):
         file_obj = MagicMock()
         file_obj.revision = None
 
-        assert _get_document_for_file(file_obj) is None
+        self.assertIsNone(_get_document_for_file(file_obj))
 
     @patch("core.services.file_service.Document")
     def test_queries_document_by_revision_document_id(self, DocumentMock):
@@ -98,7 +80,7 @@ class TestGetDocumentForFile:
 
         result = _get_document_for_file(file_obj)
 
-        assert result == "document-42"
+        self.assertEqual(result, "document-42")
         DocumentMock.objects.filter.assert_called_once_with(document_type__active=True)
         chain.filter.assert_called_once_with(pk=42)
 
@@ -112,61 +94,57 @@ class TestGetDocumentForFile:
         chain.filter.return_value = chain
         chain.first.return_value = None
 
-        assert _get_document_for_file(file_obj) is None
+        self.assertIsNone(_get_document_for_file(file_obj))
 
 
-class TestUserCanView:
-    def test_returns_false_when_user_is_none(self, document):
-        assert _user_can_view(document, None) is False
+class TestUserCanView(FileServiceTestBase):
+    def test_returns_false_when_user_is_none(self):
+        self.assertFalse(_user_can_view(self.document, None))
 
-    def test_returns_true_when_user_is_the_responsible(self, document, responsible_user):
-        assert _user_can_view(document, responsible_user) is True
+    def test_returns_true_when_user_is_the_responsible(self):
+        self.assertTrue(_user_can_view(self.document, self.responsible_user))
 
     @patch("core.services.file_service.DocumentAccess")
-    def test_returns_true_when_user_has_approved_access(self, DocumentAccessMock, document, user):
+    def test_returns_true_when_user_has_approved_access(self, DocumentAccessMock):
         DocumentAccessMock.objects.filter.return_value.exists.return_value = True
 
-        assert _user_can_view(document, user) is True
+        self.assertTrue(_user_can_view(self.document, self.user))
 
         DocumentAccessMock.objects.filter.assert_called_once_with(
-            document=document, user=user, status=AccessStatus.APPROVED
+            document=self.document, user=self.user, status=AccessStatus.APPROVED
         )
 
     @patch("core.services.file_service.DocumentAccess")
-    def test_returns_true_when_current_revision_is_approved(
-        self, DocumentAccessMock, document, user, approved_revision
-    ):
+    def test_returns_true_when_current_revision_is_approved(self, DocumentAccessMock):
         DocumentAccessMock.objects.filter.return_value.exists.return_value = False
 
-        assert _user_can_view(document, user) is True
+        self.assertTrue(_user_can_view(self.document, self.user))
 
     @patch("core.services.file_service.DocumentAccess")
-    def test_returns_false_when_no_access_and_revision_is_pending(
-        self, DocumentAccessMock, user, pending_revision
-    ):
+    def test_returns_false_when_no_access_and_revision_is_pending(self, DocumentAccessMock):
         DocumentAccessMock.objects.filter.return_value.exists.return_value = False
         document = MagicMock()
         document.responsible_id = 12
-        document.revisions.all.return_value = [pending_revision]
+        document.revisions.all.return_value = [self.pending_revision]
 
-        assert _user_can_view(document, user) is False
+        self.assertFalse(_user_can_view(document, self.user))
 
     @patch("core.services.file_service.DocumentAccess")
-    def test_returns_false_when_no_access_and_no_revisions(self, DocumentAccessMock, user):
+    def test_returns_false_when_no_access_and_no_revisions(self, DocumentAccessMock):
         DocumentAccessMock.objects.filter.return_value.exists.return_value = False
         document = MagicMock()
         document.responsible_id = 12
         document.revisions.all.return_value = []
 
-        assert _user_can_view(document, user) is False
+        self.assertFalse(_user_can_view(document, self.user))
 
 
-class TestGetDocumentFileForView:
+class TestGetDocumentFileForView(FileServiceTestBase):
     @patch("core.services.file_service.File")
     def test_raises_when_file_does_not_exist(self, FileMock):
         FileMock.objects.select_related.return_value.filter.return_value.first.return_value = None
 
-        with pytest.raises(DocumentFileNotFoundError):
+        with self.assertRaises(DocumentFileNotFoundError):
             get_document_file_for_view(file_id=999)
 
     @patch("core.services.file_service._get_document_for_file")
@@ -177,7 +155,7 @@ class TestGetDocumentFileForView:
         )
         get_document_mock.return_value = None
 
-        with pytest.raises(DocumentFileNotFoundError):
+        with self.assertRaises(DocumentFileNotFoundError):
             get_document_file_for_view(file_id=1)
 
     @patch("core.services.file_service._user_can_view")
@@ -193,7 +171,7 @@ class TestGetDocumentFileForView:
         get_document_mock.return_value = MagicMock()
         can_view_mock.return_value = False
 
-        with pytest.raises(DocumentFilePermissionError):
+        with self.assertRaises(DocumentFilePermissionError):
             get_document_file_for_view(file_id=1, user_id=99)
 
     @patch("core.services.file_service.User")
@@ -215,7 +193,7 @@ class TestGetDocumentFileForView:
 
         result = get_document_file_for_view(file_id=1, user_id=99)
 
-        assert result is file_obj
+        self.assertIs(result, file_obj)
         UserMock.objects.filter.assert_called_once_with(pk=99)
         can_view_mock.assert_called_once_with(document, user)
 
@@ -232,12 +210,12 @@ class TestGetDocumentFileForView:
         get_document_mock.return_value = MagicMock()
         can_view_mock.return_value = False
 
-        with pytest.raises(DocumentFilePermissionError):
+        with self.assertRaises(DocumentFilePermissionError):
             get_document_file_for_view(file_id=1, user_id=None)
 
         can_view_mock.assert_called_once()
-        _, args = can_view_mock.call_args
-        assert args[1] is None
+        args = can_view_mock.call_args.args
+        self.assertIsNone(args[1])
 
     @patch("core.services.file_service.User")
     @patch("core.services.file_service._user_can_view")
@@ -254,8 +232,8 @@ class TestGetDocumentFileForView:
         UserMock.objects.filter.return_value.first.return_value = None
         can_view_mock.return_value = False
 
-        with pytest.raises(DocumentFilePermissionError):
+        with self.assertRaises(DocumentFilePermissionError):
             get_document_file_for_view(file_id=1, user_id=12345)
 
-        _, args = can_view_mock.call_args
-        assert args[1] is None
+        args = can_view_mock.call_args.args
+        self.assertIsNone(args[1])
