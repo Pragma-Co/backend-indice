@@ -136,7 +136,6 @@ def request_access(request, document_id):
 
     try:
         result = request_document_access(document_id, user_id, justification)
-        return JsonResponse(result, status=201)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
     except MissingUserError:
@@ -146,3 +145,14 @@ def request_access(request, document_id):
     except Exception as exc:
         logger.exception("Failed to request document access")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+
+    audit_service.log_access_requested(
+        request,
+        result["document_id"],
+        result["document_code"],
+        user_id,
+        justification,
+        result["created"],
+    ) 
+    return JsonResponse(result, status=201)
+    

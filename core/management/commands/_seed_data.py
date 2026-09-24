@@ -718,7 +718,6 @@ FILES_BY_TYPE = {
 
 MIME_TYPES = {
     "pdf": "application/pdf",
-    "doc": "application/msword",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "jpeg": "image/jpeg",
     "png": "image/png",
@@ -728,7 +727,6 @@ MIME_TYPES = {
 # Plausible byte ranges per extension, all within the 100 MB ceiling
 SIZE_RANGES = {
     "pdf": (180_000, 7_500_000),
-    "doc": (90_000, 1_800_000),
     "docx": (90_000, 1_800_000),
     "jpeg": (400_000, 5_500_000),
     "png": (120_000, 3_200_000),

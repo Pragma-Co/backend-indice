@@ -340,4 +340,6 @@ def request_document_access(document_id, user_id, justification=""):
         "id": access.id,
         "status": access.status,
         "created": created,
+        "document_id": document.id,
+        "document_code": document.code,
     }

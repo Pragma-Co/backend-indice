@@ -1,10 +1,10 @@
 from django.db import migrations, models
 
-STORABLE_EXTENSIONS = ["pdf", "doc", "docx", "jpeg", "png"]
+STORABLE_EXTENSIONS = ["pdf", "docx", "jpeg", "png"]
 
 ADD_CONSTRAINT_NOT_VALID = """
     ALTER TABLE "file" ADD CONSTRAINT "ck_file_extension"
-        CHECK ("extension" IN ('pdf', 'doc', 'docx', 'jpeg', 'png')) NOT VALID;
+        CHECK ("extension" IN ('pdf', 'docx', 'jpeg', 'png')) NOT VALID;
 """
 
 DROP_CONSTRAINT = 'ALTER TABLE "file" DROP CONSTRAINT "ck_file_extension";'

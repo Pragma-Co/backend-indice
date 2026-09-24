@@ -46,11 +46,11 @@ class AuditAction(models.TextChoices):
     DOC_SUBMIT_SUCCESS = "DOC_SUBMIT_SUCCESS", "Document registration submitted"
     DOC_CANCEL = "DOC_CANCEL", "Document registration cancelled"
     DOC_DOWNLOAD = "DOC_DOWNLOAD", "Document downloaded"
+    DOC_ACCESS_REQUESTED = "DOC_ACCESS_REQUESTED", "Document access requested"
 
 
 class FileExtension(models.TextChoices):
     PDF = "pdf", "PDF"
-    DOC = "doc", "Word document (legacy)"
     DOCX = "docx", "Word document"
     JPEG = "jpeg", "JPEG image"
     PNG = "png", "PNG image"

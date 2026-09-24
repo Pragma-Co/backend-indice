@@ -158,4 +158,20 @@ def log_document_submitted(request, document, body, revision=None):
             "responsible_id": document.responsible_id,
         },
         body,
+        
+    )
+
+@never_raises
+def log_access_requested(request, document_id, document_code, user_id, justification, created):
+    log_event(
+        request,
+        AuditAction.DOC_ACCESS_REQUESTED,
+        ENTITY_DOCUMENT,
+        document_id,
+        {
+            "document_code": document_code,
+            "justification": justification,
+            "already_requested": not created,
+        },
+        {"user_id": user_id},
     )
