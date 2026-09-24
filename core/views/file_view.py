@@ -4,8 +4,8 @@ from pathlib import Path
 
 from django.conf import settings
 from django.http import FileResponse, Http404
-from django.views.decorators.http import require_GET
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.http import require_GET
 
 from core.services.documents_exceptions import DocumentFilePermissionError
 from core.services.file_service import (
@@ -23,13 +23,13 @@ def document_file_view(request, file_id):
 
     try:
         file_obj = get_document_file_for_view(file_id, user_id)
-    except DocumentFileNotFoundError:
-        raise Http404("Arquivo não encontrado.")
-    except DocumentFilePermissionError:
-        raise Http404("Arquivo não encontrado.")
-    except Exception as exc:
+    except DocumentFileNotFoundError as err:
+        raise Http404("Arquivo não encontrado.") from err
+    except DocumentFilePermissionError as err:
+        raise Http404("Arquivo não encontrado.") from err
+    except Exception as err:
         logger.exception("Failed to stream document file")
-        raise Http404(type(exc).__name__)
+        raise Http404(type(err).__name__) from err
 
     storage_path = Path(settings.DOCUMENT_STORAGE_DIR) / file_obj.storage_path
     if not storage_path.is_file():
