@@ -279,7 +279,7 @@ class Command(BaseCommand):
                         "change_description": change_description,
                         "author": author,
                         "auditor": auditor,
-                        "auditor_comment": auditor_comment,
+                        "auditor_comment": auditor_comment or  "",
                         "audited_at": audited_at,
                         "created_at": self._ago(created_days_ago),
                     },
@@ -341,7 +341,7 @@ class Command(BaseCommand):
                 user=users[user_key],
                 defaults={
                     "status": status,
-                    "justification": justification,
+                    "justification": justification or "",
                     "requested_at": (
                         self._ago(requested_days_ago) if requested_days_ago is not None else None
                     ),
