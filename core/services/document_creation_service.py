@@ -165,6 +165,16 @@ def validate_payload(payload) -> dict:
             errors["responsible_id"] = _error(NOT_FOUND, "Responsible user not found or inactive.")
     cleaned["responsible"] = responsible
 
+    created_by = None
+    created_by_id = _clean_id(payload.get("user_id")) or _clean_id(payload.get("created_by_id"))
+    if created_by_id is not None:
+        created_by = User.objects.filter(pk=created_by_id, is_active=True).first()
+        if created_by is None:
+            errors["user_id"] = _error(NOT_FOUND, "User not found or inactive.")
+    if created_by is None:
+        created_by = responsible
+    cleaned["created_by"] = created_by
+
     areas = []
     area_codes = _clean_code_list(payload.get("areas"))
     if area_codes is None:
@@ -260,6 +270,7 @@ def _create_document_with_unique_code(cleaned: dict) -> Document:
                     document_type=cleaned["document_type"],
                     confidentiality_level=cleaned["confidentiality"],
                     responsible=cleaned["responsible"],
+                    created_by=cleaned["created_by"],
                 )
         except IntegrityError as exc:
             if "document_code" not in str(exc):

@@ -154,6 +154,16 @@ def _responsible_id(params, errors):
     return int(raw)
 
 
+def _created_by_id(params, errors):
+    raw = params.get("created_by_id", "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        errors["created_by_id"] = _error("invalid", "created_by_id must be a positive integer.")
+        return None
+    return int(raw)
+
+
 def parse_document_query(params):
     errors = {}
     query = {
@@ -164,6 +174,7 @@ def parse_document_query(params):
         "statuses": _statuses(params, errors),
         "tags": _multiple(params, "tags", normalize=str),
         "responsible_id": _responsible_id(params, errors),
+        "created_by_id": _created_by_id(params, errors),
         "date_preset": _date_preset(params, errors),
         "date_from": _iso_date(params, ("date_from", "data_inicio"), errors),
         "date_to": _iso_date(params, ("date_to", "data_fim"), errors),
@@ -216,6 +227,8 @@ def filter_documents(query):
         criteria &= Q(status__in=query["statuses"])
     if query["responsible_id"]:
         criteria &= Q(responsible_id=query["responsible_id"])
+    if query["created_by_id"]:
+        criteria &= Q(created_by_id=query["created_by_id"])
     if query["date_preset"]:
         criteria &= Q(created_at__gte=timezone.now() - DATE_RANGES[query["date_preset"]])
     if query["date_from"]:
