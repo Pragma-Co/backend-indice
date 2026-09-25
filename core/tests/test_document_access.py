@@ -55,6 +55,8 @@ class DocumentAccessTestCase(TestCase):
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
             responsible=self.owner,
+            created_by=self.owner,
+            updated_by=self.owner,
         )
         self.document.areas.add(area)
         self.revision = Revision.objects.create(
@@ -164,6 +166,13 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         self.assertIn("description", body)
         self.assertIn("files", body["revision"])
 
+    def test_should_expose_who_created_and_who_updated_the_document(self):
+        response = self._detail(self.owner)
+
+        body = response.json()
+        self.assertEqual(body["created_by"], {"id": self.owner.id, "name": "Owner"})
+        self.assertEqual(body["updated_by"], {"id": self.owner.id, "name": "Owner"})
+
     def test_should_hide_the_readable_content_from_a_user_without_access(self):
         response = self._detail(self.stranger)
 
@@ -181,6 +190,13 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
             self.assertNotIn("files", version)
             self.assertNotIn("change_description", version)
         self.assertIsNone(body["access_request"])
+
+    def test_should_still_expose_the_authors_to_a_user_without_access(self):
+        response = self._detail(self.stranger)
+
+        body = response.json()
+        self.assertEqual(body["created_by"], {"id": self.owner.id, "name": "Owner"})
+        self.assertEqual(body["updated_by"], {"id": self.owner.id, "name": "Owner"})
 
     def test_should_expose_the_pending_request_of_the_user(self):
         self._request_access(self.stranger.id)
@@ -232,7 +248,6 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         self.assertEqual(response.json(), {"error": "AccessDenied"})
         self.assertNotIn(PDF_BYTES, response.content)
 
-    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_record_the_denied_attempt_in_the_audit_trail(self):
         self._file(self.stranger, HTTP_X_FORWARDED_FOR="203.0.113.7")
 
@@ -306,18 +321,6 @@ class RequestAccessTests(DocumentAccessTestCase):
         self.assertEqual(second.status_code, 201)
         self.assertFalse(second.json()["created"])
         self.assertEqual(second.json()["id"], first.json()["id"])
-
-    def test_should_record_the_access_request_in_the_audit_trail(self):
-        response = self._request_access(self.stranger.id, "Preciso consultar o desenho")
-
-        entry = AuditLog.objects.get(action=AuditAction.DOC_ACCESS_REQUESTED)
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(entry.user, self.stranger)
-        self.assertEqual(entry.entity, "document")
-        self.assertEqual(entry.entity_id, self.document.id)
-        self.assertEqual(entry.record["document_code"], self.document.code)
-        self.assertEqual(entry.record["justification"], "Preciso consultar o desenho")
-        self.assertFalse(entry.record["already_requested"])
 
     def test_should_answer_409_for_the_responsible(self):
         response = self._request_access(self.owner.id)

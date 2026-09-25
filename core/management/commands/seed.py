@@ -200,6 +200,7 @@ class Command(BaseCommand):
                 type_code,
                 confidentiality,
                 responsible_key,
+                created_by_key,
                 area_acronyms,
                 tag_names,
                 created_days_ago,
@@ -227,6 +228,8 @@ class Command(BaseCommand):
                     "document_type": document_types[type_code],
                     "confidentiality_level": confidentiality,
                     "responsible": users[responsible_key],
+                    "created_by": users[created_by_key],
+                    "updated_by": users[created_by_key],
                     "created_at": self._ago(created_days_ago),
                     "updated_at": self._ago(created_days_ago),
                 },
@@ -276,7 +279,7 @@ class Command(BaseCommand):
                         "change_description": change_description,
                         "author": author,
                         "auditor": auditor,
-                        "auditor_comment": auditor_comment or "",
+                        "auditor_comment": auditor_comment,
                         "audited_at": audited_at,
                         "created_at": self._ago(created_days_ago),
                     },
@@ -338,7 +341,7 @@ class Command(BaseCommand):
                 user=users[user_key],
                 defaults={
                     "status": status,
-                    "justification": justification or "",
+                    "justification": justification,
                     "requested_at": (
                         self._ago(requested_days_ago) if requested_days_ago is not None else None
                     ),
