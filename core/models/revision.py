@@ -101,6 +101,7 @@ class File(models.Model):
     size_bytes = models.BigIntegerField()
     sha256 = models.CharField(max_length=64)
     file_group = models.UUIDField(default=uuid.uuid4, db_index=True, editable=False)
+    revision_changed = models.BooleanField(default=True, db_index=True)
     storage_path = models.CharField(max_length=500, unique=True)
     uploaded_at = models.DateTimeField(db_default=Now(), editable=False)
 

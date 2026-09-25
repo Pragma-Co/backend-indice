@@ -376,7 +376,7 @@ def _serialize_file(file):
 def _file_revision_history(document, file):
     history = []
     for revision in document.revisions.all():
-        if revision.files.filter(file_group=file.file_group).exists():
+        if revision.files.filter(file_group=file.file_group, revision_changed=True).exists():
             history.append(
                 {
                     "id": revision.id,
