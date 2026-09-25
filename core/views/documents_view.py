@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.serializers.document_serializer import serialize_created_document
-from core.services.audit_service import record_document_created
+from core.services import audit_service
 from core.services.document_creation_service import create_document
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
@@ -66,6 +66,13 @@ def create_document_view(request):
             status=404,
         )
     except DuplicateDocumentFileError as exc:
+        audit_service.log_duplicate_attempt(
+            request,
+            exc.existing_file,
+            audit_service.STAGE_SUBMIT,
+            {"temp_file_id": payload.get("temp_file_id")},
+            payload,
+        )
         return JsonResponse(
             {
                 "error": "This file is already registered.",
@@ -82,8 +89,8 @@ def create_document_view(request):
     except Exception as exc:
         logger.exception("Failed to create document")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+    audit_service.log_document_submitted(request, document, payload)
 
-    record_document_created(document, request)
     return JsonResponse(serialize_created_document(document), status=201)
 
 
@@ -129,6 +136,9 @@ def request_access(request, document_id):
 
     try:
         result = request_document_access(document_id, user_id, justification)
+        audit_service.log_access_requested(
+            request, document_id, "", user_id, justification, result["created"]
+        )
         return JsonResponse(result, status=201)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)

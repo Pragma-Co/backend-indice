@@ -7,6 +7,7 @@ from core.serializers.upload_serializer import (
     serialize_revision_result,
     serialize_upload_result,
 )
+from core.services import audit_service
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import (
     DuplicateFileError,
@@ -47,9 +48,17 @@ def upload_document(request):
             status=400,
         )
     except DuplicateFileError as exc:
+        audit_service.log_duplicate_attempt(
+            request,
+            exc.existing_file,
+            audit_service.STAGE_UPLOAD,
+            {"original_name": uploaded_file.name},
+        )
         return JsonResponse(serialize_duplicate_result(exc), status=409)
     except UploadStorageError:
         return JsonResponse({"error": "Failed to save the file. Please try again."}, status=500)
+
+    audit_service.log_temp_upload(request, result)
 
     if result.get("revision_created"):
         return JsonResponse(serialize_revision_result(result), status=201)
