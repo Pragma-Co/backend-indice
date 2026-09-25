@@ -279,7 +279,7 @@ class Command(BaseCommand):
                         "change_description": change_description,
                         "author": author,
                         "auditor": auditor,
-                        "auditor_comment": auditor_comment or  "",
+                        "auditor_comment": auditor_comment or "",
                         "audited_at": audited_at,
                         "created_at": self._ago(created_days_ago),
                     },
