@@ -426,6 +426,7 @@ def create_document_revision(document_id, temp_file_id, source_file_id) -> Revis
                 mime_type=file_info["mime_type"][:127],
                 size_bytes=file_info["size_bytes"],
                 sha256=file_info["sha256"],
+                file_group=current_file.file_group,
                 storage_path=storage_path,
             )
             if source_path is None:
