@@ -449,11 +449,11 @@ def _serialize_document_detail(document, access_status, can_read, access_request
         },
         "created_by": {
             "id": document.created_by_id,
-            "name": document.created_by.name if document.created_by else None,
+            "name": document.created_by.name,
         },
         "updated_by": {
             "id": document.updated_by_id,
-            "name": document.updated_by.name if document.updated_by else None,
+            "name": document.updated_by.name,
         },
         "revision": (_serialize_revision(current_revision, can_read) if current_revision else None),
         "versions": [

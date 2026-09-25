@@ -50,6 +50,8 @@ class DocumentsViewTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
             created_at=timezone.now() - timedelta(days=2),
             updated_at=timezone.now() - timedelta(days=1),
         )
@@ -85,6 +87,8 @@ class DocumentsViewTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
         )
         document.areas.add(self.area)
         return document
@@ -165,6 +169,8 @@ class DocumentsSearchAndPaginationTests(TestCase):
             discipline=self.discipline,
             document_type=document_type or self.drawing,
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
             created_at=moment,
             updated_at=moment,
         )
@@ -204,6 +210,8 @@ class DocumentsSearchAndPaginationTests(TestCase):
         self.assertEqual(item["revision"], {"version": 2, "label": "REV02"})
         self.assertEqual(item["status"], "PENDING")
         self.assertIn("updated_at", item)
+        self.assertEqual(item["created_by"], {"id": self.user.id, "name": "Ana"})
+        self.assertEqual(item["updated_by"], {"id": self.user.id, "name": "Ana"})
 
     def test_should_return_null_revision_for_a_document_without_revisions(self):
         self._document("AK-2100-EST-DWG-0001", "Desenho da caverna 14")
@@ -383,6 +391,7 @@ class DocumentsAdvancedFiltersTests(TestCase):
         areas=None,
         discipline=None,
         responsible=None,
+        created_by=None,
         days_ago=0,
         status=None,
         tags=(),
@@ -390,6 +399,7 @@ class DocumentsAdvancedFiltersTests(TestCase):
         description="",
     ):
         moment = timezone.now() - timedelta(days=days_ago)
+        author = created_by or responsible or self.ana
         document = Document.objects.create(
             code=code,
             title=title or code,
@@ -398,6 +408,8 @@ class DocumentsAdvancedFiltersTests(TestCase):
             discipline=discipline or self.structural,
             document_type=document_type or self.drawing,
             responsible=responsible or self.ana,
+            created_by=author,
+            updated_by=author,
             created_at=moment,
             updated_at=moment,
         )
@@ -634,6 +646,30 @@ class DocumentsAdvancedFiltersTests(TestCase):
 
         self.assertEqual(response.json()["count"], 8)
 
+    def test_should_filter_by_the_user_who_created_the_document(self):
+        self._document("BY-ANA", created_by=self.ana)
+        self._document("BY-BRUNO", created_by=self.bruno)
+
+        response = self.client.get("/documents", {"created_by_id": self.bruno.id})
+
+        self.assertEqual(self._codes(response), ["BY-BRUNO"])
+        self.assertEqual(response.json()["count"], 1)
+
+    def test_should_return_nothing_for_a_created_by_id_without_documents(self):
+        self._document("BY-ANA", created_by=self.ana)
+
+        response = self.client.get("/documents", {"created_by_id": 999999})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 0)
+        self.assertEqual(response.json()["results"], [])
+
+    def test_should_answer_400_for_an_invalid_created_by_id(self):
+        response = self.client.get("/documents", {"created_by_id": "ana"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["errors"]["created_by_id"]["code"], "invalid")
+
 
 class SimpleFiltersViewTests(TestCase):
     def setUp(self):
@@ -709,6 +745,8 @@ class DocumentDetailServiceTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.responsible,
+            created_by=self.responsible,
+            updated_by=self.responsible,
         )
         self.document.areas.add(self.area)
         Revision.objects.create(
@@ -760,7 +798,6 @@ class DocumentDetailServiceTests(TestCase):
         self.assertEqual(detail["access_status"], "PENDING")
 
     def test_should_return_in_review_access_when_current_revision_is_pending(self):
-
         self.document.revisions.all().delete()
         Revision.objects.create(
             document=self.document,
@@ -784,6 +821,12 @@ class DocumentDetailServiceTests(TestCase):
         self.assertEqual(detail["revision"]["version"], 1)
         self.assertEqual(detail["revision"]["status"], "APPROVED")
         self.assertEqual([a["acronym"] for a in detail["areas"]], ["ENG"])
+
+    def test_should_include_the_authors_of_the_document(self):
+        detail = get_document_detail(self.document.id, user_id=self.responsible.id)
+
+        self.assertEqual(detail["created_by"], {"id": self.responsible.id, "name": "Responsible"})
+        self.assertEqual(detail["updated_by"], {"id": self.responsible.id, "name": "Responsible"})
 
 
 class DocumentAccessRequestServiceTests(TestCase):
@@ -811,6 +854,8 @@ class DocumentAccessRequestServiceTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.responsible,
+            created_by=self.responsible,
+            updated_by=self.responsible,
         )
 
     def test_should_raise_document_not_found_for_missing_document(self):
@@ -871,6 +916,8 @@ class DocumentDetailViewTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.responsible,
+            created_by=self.responsible,
+            updated_by=self.responsible,
         )
         Revision.objects.create(
             document=self.document,
@@ -925,6 +972,8 @@ class RequestAccessViewTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.responsible,
+            created_by=self.responsible,
+            updated_by=self.responsible,
         )
         self.client = Client()
 

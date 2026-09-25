@@ -55,6 +55,8 @@ class DocumentAccessTestCase(TestCase):
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
             responsible=self.owner,
+            created_by=self.owner,
+            updated_by=self.owner,
         )
         self.document.areas.add(area)
         self.revision = Revision.objects.create(
@@ -164,6 +166,13 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         self.assertIn("description", body)
         self.assertIn("files", body["revision"])
 
+    def test_should_expose_who_created_and_who_updated_the_document(self):
+        response = self._detail(self.owner)
+
+        body = response.json()
+        self.assertEqual(body["created_by"], {"id": self.owner.id, "name": "Owner"})
+        self.assertEqual(body["updated_by"], {"id": self.owner.id, "name": "Owner"})
+
     def test_should_hide_the_readable_content_from_a_user_without_access(self):
         response = self._detail(self.stranger)
 
@@ -181,6 +190,13 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
             self.assertNotIn("files", version)
             self.assertNotIn("change_description", version)
         self.assertIsNone(body["access_request"])
+
+    def test_should_still_expose_the_authors_to_a_user_without_access(self):
+        response = self._detail(self.stranger)
+
+        body = response.json()
+        self.assertEqual(body["created_by"], {"id": self.owner.id, "name": "Owner"})
+        self.assertEqual(body["updated_by"], {"id": self.owner.id, "name": "Owner"})
 
     def test_should_expose_the_pending_request_of_the_user(self):
         self._request_access(self.stranger.id)

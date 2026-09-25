@@ -27,6 +27,8 @@ class FileExtensionConstraintTests(TestCase):
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
             responsible=user,
+            created_by=user,
+            updated_by=user,
         )
         self.revision = Revision.objects.create(document=document, version=1, author=user)
 
