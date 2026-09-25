@@ -265,6 +265,31 @@ class DocumentCreationServiceTests(TestCase):
             {"temp_file_id": TEMP_FILE_ID}
         )
 
+    def test_should_attach_multiple_temp_files_to_the_same_revision(self, mongo):
+        first_path = self._temp_file()
+        second_id = "22222222-2222-4333-8444-555555555555"
+        second_path = self._temp_file(temp_file_id=second_id, content=b"%PDF-1.4 second file")
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "arquivo.pdf",
+            "inferred_type": "application/pdf",
+        }
+
+        document = service.create_document(self._payload(temp_file_ids=[TEMP_FILE_ID, second_id]))
+
+        revision = Revision.objects.get(document=document)
+        stored_files = list(File.objects.filter(revision=revision).order_by("id"))
+        self.assertEqual(len(stored_files), 2)
+        self.assertEqual(
+            stored_files[0].storage_path,
+            "documents/AK-2100-EST-DWG-0001/v1/ak-2100-est-dwg-0001.pdf",
+        )
+        self.assertEqual(
+            stored_files[1].storage_path,
+            "documents/AK-2100-EST-DWG-0001/v1/ak-2100-est-dwg-0001-2.pdf",
+        )
+        self.assertFalse(first_path.exists())
+        self.assertFalse(second_path.exists())
+
     def test_should_increment_the_sequence_for_the_same_prefix(self, mongo):
         self._temp_file()
         service.create_document(self._payload())

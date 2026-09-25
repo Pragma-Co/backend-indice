@@ -178,15 +178,31 @@ def validate_payload(payload) -> dict:
             errors["areas"] = _error(NOT_FOUND, f"Unknown or inactive areas: {missing}.")
     cleaned["areas"] = areas
 
-    temp_file_id = _clean_text(payload.get("temp_file_id"))
-    if not temp_file_id:
-        errors["temp_file_id"] = _error(REQUIRED, "Temporary file id is required.")
+    has_temp_file_ids = "temp_file_ids" in payload
+    raw_temp_file_ids = payload.get("temp_file_ids")
+    if raw_temp_file_ids is None:
+        raw_temp_file_ids = [payload.get("temp_file_id")]
+    if not isinstance(raw_temp_file_ids, list) or not raw_temp_file_ids:
+        error_field = "temp_file_ids" if has_temp_file_ids else "temp_file_id"
+        errors[error_field] = _error(REQUIRED, "At least one temporary file is required.")
+        temp_file_ids = []
     else:
-        try:
-            uuid.UUID(temp_file_id)
-        except ValueError:
-            errors["temp_file_id"] = _error(INVALID, "Temporary file id must be a UUID.")
-    cleaned["temp_file_id"] = temp_file_id
+        temp_file_ids = [_clean_text(value) for value in raw_temp_file_ids]
+        if not any(temp_file_ids):
+            error_field = "temp_file_ids" if has_temp_file_ids else "temp_file_id"
+            errors[error_field] = _error(REQUIRED, "At least one temporary file is required.")
+        else:
+            invalid_ids = []
+            for temp_file_id in temp_file_ids:
+                try:
+                    uuid.UUID(temp_file_id)
+                except (ValueError, AttributeError):
+                    invalid_ids.append(temp_file_id)
+            if invalid_ids:
+                error_field = "temp_file_ids" if has_temp_file_ids else "temp_file_id"
+                errors[error_field] = _error(INVALID, "Every temporary file id must be a UUID.")
+    cleaned["temp_file_ids"] = temp_file_ids
+    cleaned["temp_file_id"] = temp_file_ids[0] if temp_file_ids else None
 
     if errors:
         raise DocumentValidationError(errors)
@@ -268,8 +284,9 @@ def _create_document_with_unique_code(cleaned: dict) -> Document:
     raise DocumentCodeCollisionError(prefix)
 
 
-def storage_path_for(code: str, version: int, extension: str) -> str:
-    return f"documents/{code}/v{version}/{code.lower()}.{extension}"
+def storage_path_for(code: str, version: int, extension: str, file_index: int = 0) -> str:
+    suffix = "" if file_index == 0 else f"-{file_index + 1}"
+    return f"documents/{code}/v{version}/{code.lower()}{suffix}.{extension}"
 
 
 def _move_to_storage(temp_path: Path, storage_path: str) -> None:
@@ -284,16 +301,20 @@ def _move_to_storage(temp_path: Path, storage_path: str) -> None:
 
 def create_document(payload) -> Document:
     cleaned = validate_payload(payload)
-    temp_file = resolve_temp_file(cleaned["temp_file_id"])
+    temp_files = []
+    for temp_file_id in cleaned["temp_file_ids"]:
+        temp_file = resolve_temp_file(temp_file_id)
+        temp_file["temp_file_id"] = temp_file_id
+        temp_files.append(temp_file)
 
-    existing_file = (
-        File.objects.filter(sha256=temp_file["sha256"])
-        .select_related("revision__document")
-        .order_by("-uploaded_at")
-        .first()
-    )
-    if existing_file is not None:
-        raise DuplicateDocumentFileError(existing_file)
+        existing_file = (
+            File.objects.filter(sha256=temp_file["sha256"])
+            .select_related("revision__document")
+            .order_by("-uploaded_at")
+            .first()
+        )
+        if existing_file is not None:
+            raise DuplicateDocumentFileError(existing_file)
 
     with transaction.atomic():
         document = _create_document_with_unique_code(cleaned)
@@ -307,17 +328,21 @@ def create_document(payload) -> Document:
             issue_date=timezone.localdate(),
             author=cleaned["responsible"],
         )
-        storage_path = storage_path_for(document.code, revision.version, temp_file["extension"])
-        File.objects.create(
-            revision=revision,
-            original_name=temp_file["original_name"][:255],
-            extension=temp_file["extension"],
-            mime_type=temp_file["mime_type"][:127],
-            size_bytes=temp_file["size_bytes"],
-            sha256=temp_file["sha256"],
-            storage_path=storage_path,
-        )
-        _move_to_storage(temp_file["path"], storage_path)
+        for file_index, temp_file in enumerate(temp_files):
+            storage_path = storage_path_for(
+                document.code, revision.version, temp_file["extension"], file_index
+            )
+            File.objects.create(
+                revision=revision,
+                original_name=temp_file["original_name"][:255],
+                extension=temp_file["extension"],
+                mime_type=temp_file["mime_type"][:127],
+                size_bytes=temp_file["size_bytes"],
+                sha256=temp_file["sha256"],
+                storage_path=storage_path,
+            )
+            _move_to_storage(temp_file["path"], storage_path)
 
-    _discard_temp_record(cleaned["temp_file_id"])
+    for temp_file_id in cleaned["temp_file_ids"]:
+        _discard_temp_record(temp_file_id)
     return document

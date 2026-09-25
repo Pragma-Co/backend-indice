@@ -70,7 +70,11 @@ def create_document_view(request):
             request,
             exc.existing_file,
             audit_service.STAGE_SUBMIT,
-            {"temp_file_id": payload.get("temp_file_id")},
+            {
+                "temp_file_id": payload.get("temp_file_id")
+                or (payload.get("temp_file_ids") or [None])[0],
+                "temp_file_ids": payload.get("temp_file_ids") or [payload.get("temp_file_id")],
+            },
             payload,
         )
         return JsonResponse(

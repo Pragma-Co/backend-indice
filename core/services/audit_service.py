@@ -154,6 +154,7 @@ def log_document_submitted(request, document, body, revision=None):
         {
             "document_code": document.code,
             "temp_file_id": body.get("temp_file_id"),
+            "temp_file_ids": body.get("temp_file_ids") or [body.get("temp_file_id")],
             "title": getattr(document, "title", None),
             "version": version,
             "revision": revision_label(version) if version is not None else None,
