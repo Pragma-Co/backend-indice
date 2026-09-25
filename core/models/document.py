@@ -36,6 +36,13 @@ class Document(models.Model):
         on_delete=models.PROTECT,
         related_name="created_documents",
     )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="updated_documents",
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(db_default=Now(), editable=False)
     updated_at = models.DateTimeField(db_default=Now(), editable=False)
 
@@ -77,6 +84,7 @@ class Document(models.Model):
             models.Index(fields=["-updated_at", "-id"], name="ix_document_recent"),
             models.Index(fields=["created_at"], name="ix_document_created_at"),
             models.Index(fields=["created_by"], name="ix_document_created_by"),
+            models.Index(fields=["updated_by"], name="ix_document_updated_by"),
         ]
 
     def __str__(self):

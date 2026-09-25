@@ -229,6 +229,7 @@ class Command(BaseCommand):
                     "confidentiality_level": confidentiality,
                     "responsible": users[responsible_key],
                     "created_by": users[created_by_key],
+                    "updated_by": users[created_by_key],
                     "created_at": self._ago(created_days_ago),
                     "updated_at": self._ago(created_days_ago),
                 },

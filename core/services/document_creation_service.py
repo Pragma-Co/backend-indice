@@ -271,6 +271,7 @@ def _create_document_with_unique_code(cleaned: dict) -> Document:
                     confidentiality_level=cleaned["confidentiality"],
                     responsible=cleaned["responsible"],
                     created_by=cleaned["created_by"],
+                    updated_by=cleaned["created_by"],
                 )
         except IntegrityError as exc:
             if "document_code" not in str(exc):

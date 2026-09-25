@@ -204,7 +204,7 @@ def filter_documents(query):
             status=Subquery(latest_revision.values("status")[:1]),
             latest_version=Subquery(latest_revision.values("version")[:1]),
         )
-        .select_related("document_type", "discipline", "project")
+        .select_related("document_type", "discipline", "project", "created_by", "updated_by")
         .prefetch_related("areas", "tags")
         .order_by("-updated_at", "-id")
         .distinct()
@@ -291,6 +291,14 @@ def _serialize_document(document):
         },
         "status": document.status,
         "updated_at": document.updated_at.isoformat(),
+        "created_by": {
+            "id": document.created_by_id,
+            "name": document.created_by.name if document.created_by else None,
+        },
+        "updated_by": {
+            "id": document.updated_by_id,
+            "name": document.updated_by.name if document.updated_by else None,
+        },
     }
 
 
@@ -302,7 +310,7 @@ ACCESS_PENDING = "PENDING"
 def _get_document_or_none(document_id):
     return (
         Document.objects.filter(document_type__active=True)
-        .select_related("project", "discipline", "document_type", "responsible")
+        .select_related("project", "discipline", "document_type", "responsible", "created_by", "updated_by")
         .prefetch_related(
             "areas",
             Prefetch(
@@ -438,6 +446,14 @@ def _serialize_document_detail(document, access_status, can_read, access_request
             "id": document.responsible_id,
             "name": document.responsible.name,
             "email": document.responsible.email,
+        },
+        "created_by": {
+            "id": document.created_by_id,
+            "name": document.created_by.name if document.created_by else None,
+        },
+        "updated_by": {
+            "id": document.updated_by_id,
+            "name": document.updated_by.name if document.updated_by else None,
         },
         "revision": (_serialize_revision(current_revision, can_read) if current_revision else None),
         "versions": [
