@@ -232,6 +232,7 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         self.assertEqual(response.json(), {"error": "AccessDenied"})
         self.assertNotIn(PDF_BYTES, response.content)
 
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_record_the_denied_attempt_in_the_audit_trail(self):
         self._file(self.stranger, HTTP_X_FORWARDED_FOR="203.0.113.7")
 

@@ -83,7 +83,7 @@ def log_event(request, action, entity, entity_id=None, details=None, body=None, 
                 "name": actor.name,
                 "authenticated": authenticated,
             }
-        AuditLog.objects.create(
+        return AuditLog.objects.create(
             user=actor,
             action=action,
             entity=entity,
@@ -143,7 +143,8 @@ def log_duplicate_attempt(request, existing_file, stage, details=None, body=None
 @never_raises
 def log_document_submitted(request, document, body, revision=None):
     if revision is None:
-        revision = document.revisions.order_by("-version").first()
+        revisions = getattr(document, "revisions", None)
+        revision = revisions.order_by("-version").first() if revisions is not None else None
     version = getattr(revision, "version", None)
     log_event(
         request,
@@ -153,14 +154,14 @@ def log_document_submitted(request, document, body, revision=None):
         {
             "document_code": document.code,
             "temp_file_id": body.get("temp_file_id"),
-            "title": document.title,
+            "title": getattr(document, "title", None),
             "version": version,
             "revision": revision_label(version) if version is not None else None,
             "user_agent": client_user_agent(request),
-            "responsible_id": document.responsible_id,
+            "responsible_id": getattr(document, "responsible_id", None),
         },
         body,
-        fallback_user=document.responsible,
+        fallback_user=getattr(document, "responsible", None),
     )
 
 
@@ -186,24 +187,31 @@ def log_access_requested(request, document_id, document_code, user_id, justifica
 
 @never_raises
 def record_document_created(document, request):
-    revision = document.revisions.order_by("-version").first()
-    version = getattr(revision, "version", None)
-    actor, _authenticated = _resolve_actor(request, None, fallback_user=document.responsible)
-    return AuditLog.objects.create(
-        user=actor,
-        action=AuditAction.CREATE,
-        entity=ENTITY_DOCUMENT,
-        entity_id=document.id,
-        record={
-            "event": "DOCUMENT_CREATED",
-            "code": document.code,
-            "title": document.title,
-            "version": version,
-            "revision": revision_label(version) if version is not None else None,
-            "user_agent": client_user_agent(request),
-        },
-        ip_address=client_ip(request),
-    )
+    try:
+        with transaction.atomic():
+            revision = document.revisions.order_by("-version").first()
+            version = getattr(revision, "version", None)
+            actor, _authenticated = _resolve_actor(
+                request, None, fallback_user=document.responsible
+            )
+            return AuditLog.objects.create(
+                user=actor,
+                action=AuditAction.CREATE,
+                entity=ENTITY_DOCUMENT,
+                entity_id=document.id,
+                record={
+                    "event": "DOCUMENT_CREATED",
+                    "code": document.code,
+                    "title": document.title,
+                    "version": version,
+                    "revision": revision_label(version) if version is not None else None,
+                    "user_agent": client_user_agent(request),
+                },
+                ip_address=client_ip(request),
+            )
+    except Exception:
+        logger.exception("Audit log write failed for DOCUMENT_CREATED")
+        return None
 
 
 @never_raises

@@ -33,6 +33,7 @@ class ClientIpTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_use_the_first_forwarded_address_when_behind_a_proxy(self):
         request = self.factory.post(
             "/documents", HTTP_X_FORWARDED_FOR="203.0.113.7, 10.0.0.1", REMOTE_ADDR="172.18.0.1"
@@ -65,6 +66,7 @@ class ClientIpTests(TestCase):
 
         self.assertIsNone(ip)
 
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_accept_ipv6_addresses(self):
         request = self.factory.post("/documents", HTTP_X_FORWARDED_FOR="2001:db8::1")
 
@@ -110,6 +112,7 @@ class RecordDocumentCreatedTests(TestCase):
             HTTP_USER_AGENT="Mozilla/5.0 (test)",
         )
 
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_store_who_what_when_and_where(self):
         entry = record_document_created(self.document, self.request)
 

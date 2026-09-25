@@ -188,7 +188,7 @@ class SubmissionAuditTests(TestCase):
             "description": "Conjunto soldado",
             "project_id": self.project.id,
             "discipline_id": self.discipline.id,
-            "document_type": "DWG",
+            "document_type": self.document_type.id,
             "confidentiality": "CONFIDENTIAL",
             "responsible_id": self.user.id,
             "areas": ["EST"],

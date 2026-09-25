@@ -215,6 +215,7 @@ class CreateDocumentViewTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
 
+    @override_settings(AUDIT_TRUST_FORWARDED_FOR=True)
     def test_should_record_the_document_created_event_after_publishing(self, mongo):
         self._temp_file()
 
@@ -227,12 +228,11 @@ class CreateDocumentViewTests(TestCase):
         self.assertEqual(response.status_code, 201)
         entry = AuditLog.objects.get()
         self.assertEqual(entry.user, self.user)
-        self.assertEqual(entry.action, AuditAction.CREATE)
+        self.assertEqual(entry.action, AuditAction.DOC_SUBMIT_SUCCESS)
         self.assertEqual(entry.entity, "document")
         self.assertEqual(entry.entity_id, response.json()["id"])
         self.assertEqual(entry.ip_address, "203.0.113.7")
-        self.assertEqual(entry.record["event"], "DOCUMENT_CREATED")
-        self.assertEqual(entry.record["code"], response.json()["code"])
+        self.assertEqual(entry.record["document_code"], response.json()["code"])
         self.assertEqual(entry.record["version"], 1)
         self.assertEqual(entry.record["revision"], "REV01")
         self.assertEqual(entry.record["user_agent"], "Mozilla/5.0 (test)")
