@@ -290,6 +290,31 @@ class DocumentCreationServiceTests(TestCase):
         self.assertFalse(first_path.exists())
         self.assertFalse(second_path.exists())
 
+    def test_should_create_a_revision_for_one_file_and_preserve_the_others(self, mongo):
+        first_id = TEMP_FILE_ID
+        second_id = "22222222-2222-4333-8444-555555555555"
+        new_id = "33333333-2222-4333-8444-555555555555"
+        self._temp_file(first_id, b"%PDF-1.4 first")
+        self._temp_file(second_id, b"%PDF-1.4 second")
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "arquivo.pdf",
+            "inferred_type": "application/pdf",
+        }
+        document = service.create_document(self._payload(temp_file_ids=[first_id, second_id]))
+        original_revision = Revision.objects.get(document=document)
+        source_file = original_revision.files.order_by("id").first()
+        self._temp_file(new_id, b"%PDF-1.4 replacement")
+
+        revision = service.create_document_revision(document.id, new_id, source_file.id)
+
+        self.assertEqual(revision.version, 2)
+        files = list(revision.files.order_by("id"))
+        self.assertEqual(len(files), 2)
+        original_hashes = set(original_revision.files.values_list("sha256", flat=True))
+        new_hashes = {file.sha256 for file in files}
+        self.assertEqual(len(new_hashes - original_hashes), 1)
+        self.assertEqual(len(new_hashes & original_hashes), 1)
+
     def test_should_increment_the_sequence_for_the_same_prefix(self, mongo):
         self._temp_file()
         service.create_document(self._payload())

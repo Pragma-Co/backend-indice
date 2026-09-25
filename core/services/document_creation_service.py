@@ -36,6 +36,7 @@ from core.services.document_exceptions import (
     DuplicateDocumentFileError,
     TempFileNotFoundError,
 )
+from core.services.documents_exceptions import DocumentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -346,3 +347,93 @@ def create_document(payload) -> Document:
     for temp_file_id in cleaned["temp_file_ids"]:
         _discard_temp_record(temp_file_id)
     return document
+
+
+def create_document_revision(document_id, temp_file_id, source_file_id) -> Revision:
+    document = (
+        Document.objects.select_related("responsible")
+        .filter(pk=document_id, document_type__active=True)
+        .first()
+    )
+    if document is None:
+        raise DocumentNotFoundError()
+
+    source_file = (
+        File.objects.filter(pk=source_file_id, revision__document=document)
+        .select_related("revision")
+        .first()
+    )
+    if source_file is None:
+        raise DocumentNotFoundError()
+
+    temp_file = resolve_temp_file(temp_file_id)
+    existing_file = (
+        File.objects.filter(sha256=temp_file["sha256"])
+        .select_related("revision__document")
+        .order_by("-uploaded_at")
+        .first()
+    )
+    if existing_file is not None:
+        raise DuplicateDocumentFileError(existing_file)
+
+    last_version = (
+        Revision.objects.filter(document=document)
+        .order_by("-version")
+        .values_list("version", flat=True)
+        .first()
+        or 0
+    )
+    revision = None
+    current_revision = (
+        Revision.objects.filter(document=document)
+        .order_by("-version")
+        .prefetch_related("files")
+        .first()
+    )
+    if current_revision is None:
+        raise DocumentNotFoundError()
+
+    with transaction.atomic():
+        revision = Revision.objects.create(
+            document=document,
+            version=last_version + 1,
+            status=RevisionStatus.PENDING,
+            issue_date=timezone.localdate(),
+            author=document.responsible,
+        )
+        for file_index, current_file in enumerate(current_revision.files.all()):
+            if current_file.pk == source_file.pk:
+                file_info = temp_file
+                source_path = None
+            else:
+                source_path = Path(settings.DOCUMENT_STORAGE_DIR) / current_file.storage_path
+                if not source_path.exists():
+                    raise DocumentStorageError()
+                file_info = {
+                    "original_name": current_file.original_name,
+                    "extension": current_file.extension,
+                    "mime_type": current_file.mime_type,
+                    "size_bytes": current_file.size_bytes,
+                    "sha256": current_file.sha256,
+                }
+            storage_path = storage_path_for(
+                document.code, revision.version, file_info["extension"], file_index
+            )
+            File.objects.create(
+                revision=revision,
+                original_name=file_info["original_name"][:255],
+                extension=file_info["extension"],
+                mime_type=file_info["mime_type"][:127],
+                size_bytes=file_info["size_bytes"],
+                sha256=file_info["sha256"],
+                storage_path=storage_path,
+            )
+            if source_path is None:
+                _move_to_storage(temp_file["path"], storage_path)
+            else:
+                destination = Path(settings.DOCUMENT_STORAGE_DIR) / storage_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, destination)
+
+    _discard_temp_record(temp_file_id)
+    return revision

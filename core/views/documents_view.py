@@ -7,7 +7,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from core.serializers.document_serializer import serialize_created_document
 from core.services import audit_service
-from core.services.document_creation_service import create_document
+from core.services.document_creation_service import create_document, create_document_revision
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
     DocumentQueryError,
@@ -113,6 +113,54 @@ def simple_filters(request):
     except Exception as exc:
         logger.exception("Failed to retrieve simple filters")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@csrf_exempt
+@require_POST
+def create_revision_view(request, document_id):
+    try:
+        payload = json.loads(request.body or "{}")
+        revision = create_document_revision(
+            document_id, payload.get("temp_file_id"), payload.get("source_file_id")
+        )
+        audit_service.log_document_submitted(
+            request,
+            revision.document,
+            {"temp_file_id": payload.get("temp_file_id")},
+            revision=revision,
+        )
+        return JsonResponse(
+            {
+                "id": revision.id,
+                "document_id": revision.document_id,
+                "version": revision.version,
+                "status": revision.status,
+            },
+            status=201,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"error": "InvalidJSON"}, status=400)
+    except DocumentNotFoundError:
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except TempFileNotFoundError:
+        return JsonResponse({"error": "TempFileNotFound"}, status=404)
+    except DuplicateDocumentFileError as exc:
+        audit_service.log_duplicate_attempt(
+            request,
+            exc.existing_file,
+            audit_service.STAGE_SUBMIT,
+            {"temp_file_id": payload.get("temp_file_id")},
+            payload,
+        )
+        return JsonResponse(
+            {
+                "error": "This file is already registered.",
+                "document": {"id": exc.document.id, "code": exc.document.code},
+            },
+            status=409,
+        )
+    except DocumentStorageError:
+        return JsonResponse({"error": "Failed to store the file."}, status=500)
 
 
 @require_GET
