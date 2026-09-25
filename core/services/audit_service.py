@@ -206,8 +206,6 @@ def record_document_created(document, request):
     )
 
 
-
-
 @never_raises
 def record_document_access_denied(document, user, request):
     return AuditLog.objects.create(

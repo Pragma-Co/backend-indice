@@ -18,6 +18,7 @@ from core.models import (
     Revision,
     User,
 )
+from core.services import audit_service
 from core.services.audit_service import (
     USER_AGENT_MAX_LENGTH,
     client_ip,
@@ -26,6 +27,7 @@ from core.services.audit_service import (
 )
 
 LOGGER_NAME = "core.services.audit_service"
+
 
 class ClientIpTests(TestCase):
     def setUp(self):
@@ -158,6 +160,7 @@ class RecordDocumentCreatedTests(TestCase):
 
         self.assertIsNone(entry)
         self.assertTrue(Document.objects.filter(pk=self.document.pk).exists())
+
 
 class AuditServiceTests(TestCase):
     def setUp(self):
