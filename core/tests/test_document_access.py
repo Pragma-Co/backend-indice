@@ -306,6 +306,18 @@ class RequestAccessTests(DocumentAccessTestCase):
         self.assertFalse(second.json()["created"])
         self.assertEqual(second.json()["id"], first.json()["id"])
 
+    def test_should_record_the_access_request_in_the_audit_trail(self):
+        response = self._request_access(self.stranger.id, "Preciso consultar o desenho")
+
+        entry = AuditLog.objects.get(action=AuditAction.DOC_ACCESS_REQUESTED)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(entry.user, self.stranger)
+        self.assertEqual(entry.entity, "document")
+        self.assertEqual(entry.entity_id, self.document.id)
+        self.assertEqual(entry.record["document_code"], self.document.code)
+        self.assertEqual(entry.record["justification"], "Preciso consultar o desenho")
+        self.assertFalse(entry.record["already_requested"])
+
     def test_should_answer_409_for_the_responsible(self):
         response = self._request_access(self.owner.id)
 
