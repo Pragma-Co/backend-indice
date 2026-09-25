@@ -312,7 +312,7 @@ def _get_document_or_none(document_id):
         Document.objects.filter(document_type__active=True)
         .select_related(
             "project", "discipline", "document_type", "responsible", "created_by", "updated_by"
-          )
+        )
         .prefetch_related(
             "areas",
             Prefetch(
