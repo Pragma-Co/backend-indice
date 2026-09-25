@@ -167,6 +167,26 @@ def log_document_submitted(request, document, body, revision=None):
 
 
 @never_raises
+def log_document_revision_created(request, revision, temp_file_id):
+    document = revision.document
+    log_event(
+        request,
+        AuditAction.DOC_REVISION_CREATED,
+        ENTITY_DOCUMENT,
+        document.id,
+        {
+            "document_code": document.code,
+            "temp_file_id": temp_file_id,
+            "version": revision.version,
+            "revision": revision_label(revision.version),
+            "responsible_id": document.responsible_id,
+        },
+        {"user_id": getattr(getattr(request, "user", None), "id", None)},
+        fallback_user=document.responsible,
+    )
+
+
+@never_raises
 def log_access_requested(request, document_id, document_code, user_id, justification, created):
     if not document_code:
         document_code = (

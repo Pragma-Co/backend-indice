@@ -123,12 +123,7 @@ def create_revision_view(request, document_id):
         revision = create_document_revision(
             document_id, payload.get("temp_file_id"), payload.get("source_file_id")
         )
-        audit_service.log_document_submitted(
-            request,
-            revision.document,
-            {"temp_file_id": payload.get("temp_file_id")},
-            revision=revision,
-        )
+        audit_service.log_document_revision_created(request, revision, payload.get("temp_file_id"))
         return JsonResponse(
             {
                 "id": revision.id,

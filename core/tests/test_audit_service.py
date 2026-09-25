@@ -434,6 +434,25 @@ class AuditServiceTests(TestCase):
         self.assertEqual(entry.record["document_code"], "AK-2100-EST-DWG-0001")
         self.assertEqual(entry.record["temp_file_id"], "tmp")
 
+    def test_should_record_a_created_revision(self):
+        document = Document.objects.create(
+            code="AK-2100-EST-DWG-0002",
+            title="Documento revisado",
+            project=Project.objects.create(code="AK-2200", name="Empenagem"),
+            discipline=Discipline.objects.create(code="AER", name="Aerodinâmica"),
+            document_type=DocumentType.objects.create(code="MEM", name="Memorial"),
+            responsible=self.user,
+        )
+        revision = Revision.objects.create(document=document, version=2, author=self.user)
+
+        audit_service.log_document_revision_created(self._request(self.user), revision, "tmp-2")
+
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.action, AuditAction.DOC_REVISION_CREATED)
+        self.assertEqual(entry.entity_id, document.id)
+        self.assertEqual(entry.record["version"], 2)
+        self.assertEqual(entry.record["temp_file_id"], "tmp-2")
+
     def test_should_not_raise_when_the_builder_input_is_malformed(self):
         request = self._request(self.user)
 
