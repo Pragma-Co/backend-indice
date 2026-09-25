@@ -54,6 +54,8 @@ class GetDocumentFileForViewTests(TestCase):
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
             responsible=self.owner,
+            created_by=self.owner,
+            updated_by=self.owner,
         )
         revision = Revision.objects.create(
             document=self.document,
