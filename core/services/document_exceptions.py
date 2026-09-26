@@ -15,6 +15,12 @@ class DuplicateDocumentFileError(Exception):
         super().__init__(f"File already registered under document {self.document.code}")
 
 
+class DuplicateRevisionUploadError(Exception):
+    def __init__(self, filename):
+        self.filename = filename
+        super().__init__(f"File {filename} is duplicated in this revision upload")
+
+
 class DocumentStorageError(Exception):
     pass
 

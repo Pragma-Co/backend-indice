@@ -104,6 +104,8 @@ class RecordDocumentCreatedTests(TestCase):
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
         )
         Revision.objects.create(document=self.document, version=1, author=self.user)
         self.request = RequestFactory().post(
@@ -442,6 +444,8 @@ class AuditServiceTests(TestCase):
             discipline=Discipline.objects.create(code="AER", name="Aerodinâmica"),
             document_type=DocumentType.objects.create(code="MEM", name="Memorial"),
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
         )
         revision = Revision.objects.create(document=document, version=2, author=self.user)
 

@@ -810,6 +810,19 @@ class DocumentDetailServiceTests(TestCase):
 
         self.assertEqual(detail["access_status"], "IN_REVIEW")
 
+    def test_should_show_the_latest_pending_revision_as_current(self):
+        Revision.objects.create(
+            document=self.document,
+            version=2,
+            status=RevisionStatus.PENDING,
+            author=self.responsible,
+        )
+
+        detail = get_document_detail(self.document.id, user_id=self.responsible.id)
+
+        self.assertEqual(detail["revision"]["version"], 2)
+        self.assertEqual(detail["revision"]["status"], RevisionStatus.PENDING)
+
     def test_should_include_consolidated_metadata_in_the_response(self):
         detail = get_document_detail(self.document.id, user_id=self.responsible.id)
 
