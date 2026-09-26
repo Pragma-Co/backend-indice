@@ -16,7 +16,7 @@ def mark_changed_files(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("core", "0008_rebuild_file_groups")]
+    dependencies = [("core", "0011_rebuild_file_groups")]
 
     operations = [
         migrations.AddField(

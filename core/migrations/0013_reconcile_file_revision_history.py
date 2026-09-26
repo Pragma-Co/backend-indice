@@ -33,6 +33,6 @@ def reconcile_file_history(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("core", "0009_mark_changed_revision_files")]
+    dependencies = [("core", "0012_mark_changed_revision_files")]
 
     operations = [migrations.RunPython(reconcile_file_history, migrations.RunPython.noop)]

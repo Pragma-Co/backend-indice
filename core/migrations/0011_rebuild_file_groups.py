@@ -19,6 +19,6 @@ def rebuild_file_groups(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("core", "0007_file_group")]
+    dependencies = [("core", "0010_file_group")]
 
     operations = [migrations.RunPython(rebuild_file_groups, migrations.RunPython.noop)]

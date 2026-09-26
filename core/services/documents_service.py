@@ -154,6 +154,16 @@ def _responsible_id(params, errors):
     return int(raw)
 
 
+def _created_by_id(params, errors):
+    raw = params.get("created_by_id", "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        errors["created_by_id"] = _error("invalid", "created_by_id must be a positive integer.")
+        return None
+    return int(raw)
+
+
 def parse_document_query(params):
     errors = {}
     query = {
@@ -164,6 +174,7 @@ def parse_document_query(params):
         "statuses": _statuses(params, errors),
         "tags": _multiple(params, "tags", normalize=str),
         "responsible_id": _responsible_id(params, errors),
+        "created_by_id": _created_by_id(params, errors),
         "date_preset": _date_preset(params, errors),
         "date_from": _iso_date(params, ("date_from", "data_inicio"), errors),
         "date_to": _iso_date(params, ("date_to", "data_fim"), errors),
@@ -193,7 +204,7 @@ def filter_documents(query):
             status=Subquery(latest_revision.values("status")[:1]),
             latest_version=Subquery(latest_revision.values("version")[:1]),
         )
-        .select_related("document_type", "discipline", "project")
+        .select_related("document_type", "discipline", "project", "created_by", "updated_by")
         .prefetch_related("areas", "tags")
         .order_by("-updated_at", "-id")
         .distinct()
@@ -216,6 +227,8 @@ def filter_documents(query):
         criteria &= Q(status__in=query["statuses"])
     if query["responsible_id"]:
         criteria &= Q(responsible_id=query["responsible_id"])
+    if query["created_by_id"]:
+        criteria &= Q(created_by_id=query["created_by_id"])
     if query["date_preset"]:
         criteria &= Q(created_at__gte=timezone.now() - DATE_RANGES[query["date_preset"]])
     if query["date_from"]:
@@ -278,6 +291,14 @@ def _serialize_document(document):
         },
         "status": document.status,
         "updated_at": document.updated_at.isoformat(),
+        "created_by": {
+            "id": document.created_by_id,
+            "name": document.created_by.name if document.created_by else None,
+        },
+        "updated_by": {
+            "id": document.updated_by_id,
+            "name": document.updated_by.name if document.updated_by else None,
+        },
     }
 
 
@@ -289,7 +310,9 @@ ACCESS_PENDING = "PENDING"
 def _get_document_or_none(document_id):
     return (
         Document.objects.filter(document_type__active=True)
-        .select_related("project", "discipline", "document_type", "responsible")
+        .select_related(
+            "project", "discipline", "document_type", "responsible", "created_by", "updated_by"
+        )
         .prefetch_related(
             "areas",
             Prefetch(
@@ -448,9 +471,18 @@ def _serialize_document_detail(document, access_status, can_read, access_request
             "name": document.responsible.name,
             "email": document.responsible.email,
         },
+        "created_by": {
+            "id": document.created_by_id,
+            "name": document.created_by.name if document.created_by else None,
+        },
+        "updated_by": {
+            "id": document.updated_by_id,
+            "name": document.updated_by.name if document.updated_by else None,
+        },
         "revision": (
             _serialize_revision(current_revision, can_read, document) if current_revision else None
         ),
+
         "versions": [
             _serialize_revision(revision, can_read, document)
             for revision in document.revisions.all()

@@ -4,7 +4,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("core", "0006_add_revision_audit_action")]
+    dependencies = [("core", "0009_add_revision_audit_action")]
 
     operations = [
         migrations.AddField(

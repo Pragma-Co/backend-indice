@@ -113,7 +113,6 @@ class StoreUploadedFileTests(TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
 
-    @override_settings()
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_given_no_file_when_stored_then_raises_missing_file_error(self, mock_mongo):
         with self.assertRaises(MissingFileError):
@@ -171,7 +170,7 @@ class StoreUploadedFileTests(TestCase):
     def test_given_pdf_extraction_fails_when_stored_then_response_is_not_blocked(self, mock_mongo):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("relatorio.pdf", PDF_HEADER)
-            result = store_uploaded_file(uploaded)  # should not raise, PDF_HEADER is not real PDF
+            result = store_uploaded_file(uploaded)
 
         self.assertIn("temp_file_id", result)
         inserted_metadata = mock_mongo.return_value.__getitem__.return_value.insert_one.call_args[
@@ -238,8 +237,6 @@ class UploadDocumentViewTests(TestCase):
 
 class CalculateFileHashTests(TestCase):
     def test_given_file_content_when_hashed_then_returns_expected_sha256(self):
-        import hashlib
-
         uploaded = SimpleUploadedFile("file.pdf", PDF_HEADER)
         result = calculate_file_hash(uploaded)
         self.assertEqual(result, hashlib.sha256(PDF_HEADER).hexdigest())
@@ -256,7 +253,9 @@ class StoreUploadedFileDeduplicationTests(TestCase):
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
 
         area = Area.objects.create(acronym="AR1", name="Area Teste")
-        user = User.objects.create(email="autor@example.com", name="Autor Teste", area=area)
+        user = User.objects.create_user(
+            email="autor@example.com", password="secret", name="Autor Teste", area=area
+        )
         project = Project.objects.create(code="PRJ-1", name="Projeto Teste")
         discipline = Discipline.objects.create(code="DISC1", name="Disciplina Teste")
         document_type = DocumentType.objects.create(code="DT1", name="Tipo Teste")
@@ -268,6 +267,8 @@ class StoreUploadedFileDeduplicationTests(TestCase):
             discipline=discipline,
             document_type=document_type,
             responsible=user,
+            created_by=user,
+            updated_by=user,
         )
         revision = Revision.objects.create(
             document=self.document,
@@ -277,7 +278,7 @@ class StoreUploadedFileDeduplicationTests(TestCase):
             auditor=user,
             audited_at=timezone.now(),
         )
-        self.existing_sha256 = __import__("hashlib").sha256(PDF_HEADER).hexdigest()
+        self.existing_sha256 = hashlib.sha256(PDF_HEADER).hexdigest()
         self.existing_file = File.objects.create(
             revision=revision,
             original_name="original.pdf",
@@ -319,7 +320,9 @@ class UploadDocumentViewDeduplicationTests(TestCase):
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
 
         area = Area.objects.create(acronym="AR2", name="Area Teste 2")
-        user = User.objects.create(email="autor2@example.com", name="Autor Teste 2", area=area)
+        user = User.objects.create_user(
+            email="autor2@example.com", password="secret", name="Autor Teste 2", area=area
+        )
         project = Project.objects.create(code="PRJ-2", name="Projeto Teste 2")
         discipline = Discipline.objects.create(code="DISC2", name="Disciplina Teste 2")
         document_type = DocumentType.objects.create(code="DT2", name="Tipo Teste 2")
@@ -331,6 +334,8 @@ class UploadDocumentViewDeduplicationTests(TestCase):
             discipline=discipline,
             document_type=document_type,
             responsible=user,
+            created_by=user,
+            updated_by=user,
         )
         revision = Revision.objects.create(
             document=document,
@@ -344,7 +349,7 @@ class UploadDocumentViewDeduplicationTests(TestCase):
             extension="pdf",
             mime_type="application/pdf",
             size_bytes=len(PDF_HEADER),
-            sha256=__import__("hashlib").sha256(PDF_HEADER).hexdigest(),
+            sha256=hashlib.sha256(PDF_HEADER).hexdigest(),
             storage_path="/fake/path/original.pdf",
         )
 
@@ -367,7 +372,9 @@ class DuplicateUploadAlwaysBlockedTests(TestCase):
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
 
         area = Area.objects.create(acronym="AR3", name="Area Teste 3")
-        user = User.objects.create(email="autor3@example.com", name="Autor Teste 3", area=area)
+        user = User.objects.create_user(
+            email="autor3@example.com", password="secret", name="Autor Teste 3", area=area
+        )
         project = Project.objects.create(code="PRJ-3", name="Projeto Teste 3")
         discipline = Discipline.objects.create(code="DISC3", name="Disciplina Teste 3")
         document_type = DocumentType.objects.create(code="DT3", name="Tipo Teste 3")
@@ -379,6 +386,8 @@ class DuplicateUploadAlwaysBlockedTests(TestCase):
             discipline=discipline,
             document_type=document_type,
             responsible=user,
+            created_by=user,
+            updated_by=user,
         )
         self.original_revision = Revision.objects.create(
             document=self.document,

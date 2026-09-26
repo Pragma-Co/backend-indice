@@ -19,7 +19,7 @@ AUDIT_ACTIONS = [value for value, _label in AUDIT_ACTION_CHOICES]
 
 
 class Migration(migrations.Migration):
-    dependencies = [("core", "0005_document_listing_indexes")]
+    dependencies = [("core", "0008_document_updated_by")]
 
     operations = [
         migrations.RemoveConstraint(model_name="auditlog", name="ck_audit_log_action"),
