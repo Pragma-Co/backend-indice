@@ -113,7 +113,7 @@ def simple_filters(request):
 
 @require_GET
 def document_detail(request, document_id):
-    user_id = request.GET.get("user_id")
+    user_id = request.user.id if request.user.is_authenticated else None
     try:
         return JsonResponse(get_document_detail(document_id, user_id))
     except DocumentNotFoundError:

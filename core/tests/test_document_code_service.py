@@ -53,10 +53,11 @@ class NextSequenceTests(TestCase):
             discipline=self.discipline,
             document_type=self.document_type,
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
         )
 
     def test_should_start_at_one_when_no_document_shares_the_prefix(self):
-
         sequence = next_sequence(self.prefix)
 
         self.assertEqual(sequence, 1)
