@@ -396,7 +396,23 @@ def _serialize_file(file):
     }
 
 
-def _serialize_revision(revision, can_read):
+def _file_revision_history(document, file):
+    history = []
+    for revision in document.revisions.all():
+        if revision.files.filter(file_group=file.file_group, revision_changed=True).exists():
+            history.append(
+                {
+                    "id": revision.id,
+                    "version": revision.version,
+                    "status": revision.status,
+                    "issue_date": revision.issue_date.isoformat() if revision.issue_date else None,
+                    "author": {"id": revision.author_id, "name": revision.author.name},
+                }
+            )
+    return history
+
+
+def _serialize_revision(revision, can_read, document=None):
     serialized = {
         "id": revision.id,
         "version": revision.version,
@@ -414,7 +430,13 @@ def _serialize_revision(revision, can_read):
     }
     if can_read:
         serialized["change_description"] = revision.change_description
-        serialized["files"] = [_serialize_file(f) for f in revision.files.all()]
+        serialized["files"] = []
+        for file in revision.files.all():
+            serialized_file = _serialize_file(file)
+            serialized_file["revision_history"] = (
+                _file_revision_history(document, file) if document is not None else []
+            )
+            serialized["files"].append(serialized_file)
     return serialized
 
 
@@ -457,9 +479,12 @@ def _serialize_document_detail(document, access_status, can_read, access_request
             "id": document.updated_by_id,
             "name": document.updated_by.name if document.updated_by else None,
         },
-        "revision": (_serialize_revision(current_revision, can_read) if current_revision else None),
+        "revision": (
+            _serialize_revision(current_revision, can_read, document) if current_revision else None
+        ),
         "versions": [
-            _serialize_revision(revision, can_read) for revision in document.revisions.all()
+            _serialize_revision(revision, can_read, document)
+            for revision in document.revisions.all()
         ],
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),

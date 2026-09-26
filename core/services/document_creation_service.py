@@ -36,6 +36,7 @@ from core.services.document_exceptions import (
     DuplicateDocumentFileError,
     TempFileNotFoundError,
 )
+from core.services.documents_exceptions import DocumentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -188,15 +189,31 @@ def validate_payload(payload) -> dict:
             errors["areas"] = _error(NOT_FOUND, f"Unknown or inactive areas: {missing}.")
     cleaned["areas"] = areas
 
-    temp_file_id = _clean_text(payload.get("temp_file_id"))
-    if not temp_file_id:
-        errors["temp_file_id"] = _error(REQUIRED, "Temporary file id is required.")
+    has_temp_file_ids = "temp_file_ids" in payload
+    raw_temp_file_ids = payload.get("temp_file_ids")
+    if raw_temp_file_ids is None:
+        raw_temp_file_ids = [payload.get("temp_file_id")]
+    if not isinstance(raw_temp_file_ids, list) or not raw_temp_file_ids:
+        error_field = "temp_file_ids" if has_temp_file_ids else "temp_file_id"
+        errors[error_field] = _error(REQUIRED, "At least one temporary file is required.")
+        temp_file_ids = []
     else:
-        try:
-            uuid.UUID(temp_file_id)
-        except ValueError:
-            errors["temp_file_id"] = _error(INVALID, "Temporary file id must be a UUID.")
-    cleaned["temp_file_id"] = temp_file_id
+        temp_file_ids = [_clean_text(value) for value in raw_temp_file_ids]
+        if not any(temp_file_ids):
+            error_field = "temp_file_ids" if has_temp_file_ids else "temp_file_id"
+            errors[error_field] = _error(REQUIRED, "At least one temporary file is required.")
+        else:
+            invalid_ids = []
+            for temp_file_id in temp_file_ids:
+                try:
+                    uuid.UUID(temp_file_id)
+                except (ValueError, AttributeError):
+                    invalid_ids.append(temp_file_id)
+            if invalid_ids:
+                error_field = "temp_file_ids" if has_temp_file_ids else "temp_file_id"
+                errors[error_field] = _error(INVALID, "Every temporary file id must be a UUID.")
+    cleaned["temp_file_ids"] = temp_file_ids
+    cleaned["temp_file_id"] = temp_file_ids[0] if temp_file_ids else None
 
     if errors:
         raise DocumentValidationError(errors)
@@ -280,8 +297,9 @@ def _create_document_with_unique_code(cleaned: dict) -> Document:
     raise DocumentCodeCollisionError(prefix)
 
 
-def storage_path_for(code: str, version: int, extension: str) -> str:
-    return f"documents/{code}/v{version}/{code.lower()}.{extension}"
+def storage_path_for(code: str, version: int, extension: str, file_index: int = 0) -> str:
+    suffix = "" if file_index == 0 else f"-{file_index + 1}"
+    return f"documents/{code}/v{version}/{code.lower()}{suffix}.{extension}"
 
 
 def _move_to_storage(temp_path: Path, storage_path: str) -> None:
@@ -296,16 +314,20 @@ def _move_to_storage(temp_path: Path, storage_path: str) -> None:
 
 def create_document(payload) -> Document:
     cleaned = validate_payload(payload)
-    temp_file = resolve_temp_file(cleaned["temp_file_id"])
+    temp_files = []
+    for temp_file_id in cleaned["temp_file_ids"]:
+        temp_file = resolve_temp_file(temp_file_id)
+        temp_file["temp_file_id"] = temp_file_id
+        temp_files.append(temp_file)
 
-    existing_file = (
-        File.objects.filter(sha256=temp_file["sha256"])
-        .select_related("revision__document")
-        .order_by("-uploaded_at")
-        .first()
-    )
-    if existing_file is not None:
-        raise DuplicateDocumentFileError(existing_file)
+        existing_file = (
+            File.objects.filter(sha256=temp_file["sha256"])
+            .select_related("revision__document")
+            .order_by("-uploaded_at")
+            .first()
+        )
+        if existing_file is not None:
+            raise DuplicateDocumentFileError(existing_file)
 
     with transaction.atomic():
         document = _create_document_with_unique_code(cleaned)
@@ -319,17 +341,113 @@ def create_document(payload) -> Document:
             issue_date=timezone.localdate(),
             author=cleaned["responsible"],
         )
-        storage_path = storage_path_for(document.code, revision.version, temp_file["extension"])
-        File.objects.create(
-            revision=revision,
-            original_name=temp_file["original_name"][:255],
-            extension=temp_file["extension"],
-            mime_type=temp_file["mime_type"][:127],
-            size_bytes=temp_file["size_bytes"],
-            sha256=temp_file["sha256"],
-            storage_path=storage_path,
-        )
-        _move_to_storage(temp_file["path"], storage_path)
+        for file_index, temp_file in enumerate(temp_files):
+            storage_path = storage_path_for(
+                document.code, revision.version, temp_file["extension"], file_index
+            )
+            File.objects.create(
+                revision=revision,
+                original_name=temp_file["original_name"][:255],
+                extension=temp_file["extension"],
+                mime_type=temp_file["mime_type"][:127],
+                size_bytes=temp_file["size_bytes"],
+                sha256=temp_file["sha256"],
+                storage_path=storage_path,
+            )
+            _move_to_storage(temp_file["path"], storage_path)
 
-    _discard_temp_record(cleaned["temp_file_id"])
+    for temp_file_id in cleaned["temp_file_ids"]:
+        _discard_temp_record(temp_file_id)
     return document
+
+
+def create_document_revision(document_id, temp_file_id, source_file_id) -> Revision:
+    document = (
+        Document.objects.select_related("responsible")
+        .filter(pk=document_id, document_type__active=True)
+        .first()
+    )
+    if document is None:
+        raise DocumentNotFoundError()
+
+    source_file = (
+        File.objects.filter(pk=source_file_id, revision__document=document)
+        .select_related("revision")
+        .first()
+    )
+    if source_file is None:
+        raise DocumentNotFoundError()
+
+    temp_file = resolve_temp_file(temp_file_id)
+    existing_file = (
+        File.objects.filter(sha256=temp_file["sha256"])
+        .select_related("revision__document")
+        .order_by("-uploaded_at")
+        .first()
+    )
+    if existing_file is not None:
+        raise DuplicateDocumentFileError(existing_file)
+
+    last_version = (
+        Revision.objects.filter(document=document)
+        .order_by("-version")
+        .values_list("version", flat=True)
+        .first()
+        or 0
+    )
+    revision = None
+    current_revision = (
+        Revision.objects.filter(document=document)
+        .order_by("-version")
+        .prefetch_related("files")
+        .first()
+    )
+    if current_revision is None:
+        raise DocumentNotFoundError()
+
+    with transaction.atomic():
+        revision = Revision.objects.create(
+            document=document,
+            version=last_version + 1,
+            status=RevisionStatus.PENDING,
+            issue_date=timezone.localdate(),
+            author=document.responsible,
+        )
+        for file_index, current_file in enumerate(current_revision.files.all()):
+            if current_file.pk == source_file.pk:
+                file_info = temp_file
+                source_path = None
+            else:
+                source_path = Path(settings.DOCUMENT_STORAGE_DIR) / current_file.storage_path
+                if not source_path.exists():
+                    raise DocumentStorageError()
+                file_info = {
+                    "original_name": current_file.original_name,
+                    "extension": current_file.extension,
+                    "mime_type": current_file.mime_type,
+                    "size_bytes": current_file.size_bytes,
+                    "sha256": current_file.sha256,
+                }
+            storage_path = storage_path_for(
+                document.code, revision.version, file_info["extension"], file_index
+            )
+            File.objects.create(
+                revision=revision,
+                original_name=file_info["original_name"][:255],
+                extension=file_info["extension"],
+                mime_type=file_info["mime_type"][:127],
+                size_bytes=file_info["size_bytes"],
+                sha256=file_info["sha256"],
+                file_group=current_file.file_group,
+                revision_changed=current_file.pk == source_file.pk,
+                storage_path=storage_path,
+            )
+            if source_path is None:
+                _move_to_storage(temp_file["path"], storage_path)
+            else:
+                destination = Path(settings.DOCUMENT_STORAGE_DIR) / storage_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, destination)
+
+    _discard_temp_record(temp_file_id)
+    return revision

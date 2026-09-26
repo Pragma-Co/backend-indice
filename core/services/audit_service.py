@@ -154,6 +154,7 @@ def log_document_submitted(request, document, body, revision=None):
         {
             "document_code": document.code,
             "temp_file_id": body.get("temp_file_id"),
+            "temp_file_ids": body.get("temp_file_ids") or [body.get("temp_file_id")],
             "title": getattr(document, "title", None),
             "version": version,
             "revision": revision_label(version) if version is not None else None,
@@ -162,6 +163,26 @@ def log_document_submitted(request, document, body, revision=None):
         },
         body,
         fallback_user=getattr(document, "responsible", None),
+    )
+
+
+@never_raises
+def log_document_revision_created(request, revision, temp_file_id):
+    document = revision.document
+    log_event(
+        request,
+        AuditAction.DOC_REVISION_CREATED,
+        ENTITY_DOCUMENT,
+        document.id,
+        {
+            "document_code": document.code,
+            "temp_file_id": temp_file_id,
+            "version": revision.version,
+            "revision": revision_label(revision.version),
+            "responsible_id": document.responsible_id,
+        },
+        {"user_id": getattr(getattr(request, "user", None), "id", None)},
+        fallback_user=document.responsible,
     )
 
 

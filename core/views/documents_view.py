@@ -1,13 +1,14 @@
 import json
 import logging
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.serializers.document_serializer import serialize_created_document
 from core.services import audit_service
-from core.services.document_creation_service import create_document
+from core.services.document_creation_service import create_document, create_document_revision
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
     DocumentQueryError,
@@ -70,7 +71,11 @@ def create_document_view(request):
             request,
             exc.existing_file,
             audit_service.STAGE_SUBMIT,
-            {"temp_file_id": payload.get("temp_file_id")},
+            {
+                "temp_file_id": payload.get("temp_file_id")
+                or (payload.get("temp_file_ids") or [None])[0],
+                "temp_file_ids": payload.get("temp_file_ids") or [payload.get("temp_file_id")],
+            },
             payload,
         )
         return JsonResponse(
@@ -111,9 +116,54 @@ def simple_filters(request):
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
+@csrf_exempt
+@require_POST
+def create_revision_view(request, document_id):
+    try:
+        payload = json.loads(request.body or "{}")
+        revision = create_document_revision(
+            document_id, payload.get("temp_file_id"), payload.get("source_file_id")
+        )
+        audit_service.log_document_revision_created(request, revision, payload.get("temp_file_id"))
+        return JsonResponse(
+            {
+                "id": revision.id,
+                "document_id": revision.document_id,
+                "version": revision.version,
+                "status": revision.status,
+            },
+            status=201,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"error": "InvalidJSON"}, status=400)
+    except DocumentNotFoundError:
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except TempFileNotFoundError:
+        return JsonResponse({"error": "TempFileNotFound"}, status=404)
+    except DuplicateDocumentFileError as exc:
+        audit_service.log_duplicate_attempt(
+            request,
+            exc.existing_file,
+            audit_service.STAGE_SUBMIT,
+            {"temp_file_id": payload.get("temp_file_id")},
+            payload,
+        )
+        return JsonResponse(
+            {
+                "error": "This file is already registered.",
+                "document": {"id": exc.document.id, "code": exc.document.code},
+            },
+            status=409,
+        )
+    except DocumentStorageError:
+        return JsonResponse({"error": "Failed to store the file."}, status=500)
+
+
 @require_GET
 def document_detail(request, document_id):
     user_id = request.user.id if request.user.is_authenticated else None
+    if user_id is None and settings.DEBUG:
+        user_id = request.GET.get("user_id")
     try:
         return JsonResponse(get_document_detail(document_id, user_id))
     except DocumentNotFoundError:

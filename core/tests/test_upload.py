@@ -366,7 +366,7 @@ class UploadDocumentViewDeduplicationTests(TestCase):
         self.assertEqual(body["document"]["status"], "PENDING")
 
 
-class ForceNewRevisionTests(TestCase):
+class DuplicateUploadAlwaysBlockedTests(TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
@@ -409,21 +409,17 @@ class ForceNewRevisionTests(TestCase):
         )
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_given_force_new_revision_when_stored_then_creates_new_revision_and_file(
-        self, mock_mongo
-    ):
+    def test_given_force_new_revision_when_stored_then_still_raises_duplicate(self, mock_mongo):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", self.content)
-            result = store_uploaded_file(uploaded, force_new_revision=True)
+            with self.assertRaises(DuplicateFileError):
+                store_uploaded_file(uploaded, force_new_revision=True)
 
-        self.assertTrue(result["revision_created"])
-        self.assertEqual(result["document"]["codigo_ra"], "RA-0500")
-        self.assertEqual(result["document"]["version"], 2)
-        self.assertEqual(Revision.objects.filter(document=self.document).count(), 2)
-        self.assertEqual(File.objects.filter(revision__document=self.document).count(), 2)
+        self.assertEqual(Revision.objects.filter(document=self.document).count(), 1)
+        self.assertEqual(File.objects.filter(revision__document=self.document).count(), 1)
         mock_mongo.assert_not_called()
 
-    def test_given_force_new_revision_via_view_when_posted_then_returns_201(self):
+    def test_given_force_new_revision_via_view_when_posted_then_returns_409(self):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", self.content)
             response = self.client.post(
@@ -431,8 +427,7 @@ class ForceNewRevisionTests(TestCase):
                 {"file": uploaded, "force_new_revision": "true"},
             )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 409)
         body = response.json()
-        self.assertFalse(body["duplicate"])
-        self.assertTrue(body["revision_created"])
-        self.assertEqual(body["document"]["version"], 2)
+        self.assertTrue(body["duplicate"])
+        self.assertEqual(Revision.objects.filter(document=self.document).count(), 1)
