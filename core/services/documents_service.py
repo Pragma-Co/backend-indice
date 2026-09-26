@@ -482,7 +482,6 @@ def _serialize_document_detail(document, access_status, can_read, access_request
         "revision": (
             _serialize_revision(current_revision, can_read, document) if current_revision else None
         ),
-
         "versions": [
             _serialize_revision(revision, can_read, document)
             for revision in document.revisions.all()
