@@ -126,11 +126,167 @@ To add more users later: `docker compose exec api python manage.py createsuperus
 |-----|-------------|
 | <http://localhost:8000/> | API root (welcome + endpoint list) |
 | <http://localhost:8000/health/> | Health check: PostgreSQL + MongoDB connectivity |
+| <http://localhost:8000/projects/> | Active projects (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| <http://localhost:8000/disciplines/> | Active disciplines (JSON, read-only) — see [API endpoints](#api-endpoints) |
+| <http://localhost:8000/documents> | Paginated document listing and search — see [API endpoints](#api-endpoints) |
+| `POST http://localhost:8000/documents` | Register a document (confirmation step) — see [API endpoints](#api-endpoints) |
 | <http://localhost:8000/admin/> | Django admin panel |
 | `localhost:5433` | PostgreSQL (localhost only, e.g. for DBeaver/pgAdmin) |
 | `localhost:27018` | MongoDB (localhost only, e.g. for Compass) |
 
 > These are the default ports. If you changed `API_PORT`, `POSTGRES_PORT` or `MONGO_PORT` in your `.env`, use those instead.
+
+## API endpoints
+
+The Vue frontend calls the API through the Vite dev-server proxy: the browser requests `/api/projects/` and the proxy strips the `/api` prefix, so Django receives `/projects/`. That is why the routes live at the root, next to `/health/`.
+
+The catalog endpoints below are **read-only** (`GET` only — any other method answers `405 Method Not Allowed`), return `application/json`, list **only active records** (`active=true`) and are **ordered by name**. On an unexpected failure they answer `500` with `{"error": "<ExceptionName>"}`; details go to the server log only (no hosts, credentials or stack traces in the response).
+
+Both catalogs are maintained through the Django admin and populated by `manage.py seed` (see [Demo data](#demo-data)).
+
+### `GET /projects/`
+
+Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code. `discipline_ids` lists the active disciplines linked to the project, ordered by id, so the form can offer only those in the Disciplina select (`POST /documents` rejects a discipline outside the project with `not_in_project`).
+
+```json
+[
+  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central", "discipline_ids": [1, 2, 7, 8] },
+  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical", "discipline_ids": [1, 2, 3, 8] }
+]
+```
+
+### `GET /disciplines/`
+
+Disciplines available in the **Disciplina** select. `code` is the discipline acronym used as the second part of the document code.
+
+```json
+[
+  { "id": 1, "code": "EST", "name": "Estruturas" },
+  { "id": 2, "code": "MAT", "name": "Materiais e Processos" }
+]
+```
+
+### `GET /documents`
+
+Main listing of the document library: serves both the direct navigation ("Ver todos os documentos") and the searches fired from the home screen. All parameters are optional and combined with AND; without any of them the endpoint returns the whole collection.
+
+| Parameter | Meaning |
+|-----------|---------|
+| `q` | free text, case-insensitive, matched against title, code, description and tags |
+| `tipo` | document type code(s), e.g. `DWG` |
+| `area` | area acronym(s), e.g. `EST` |
+| `discipline` | discipline code(s), e.g. `MAT` |
+| `status` | status of the most recent revision: `PENDING`, `APPROVED`, `REJECTED`, `OBSOLETE` |
+| `tags` | tag name(s), case-insensitive, exact match |
+| `responsible_id` | id of the responsible user |
+| `data` | creation date preset: `last_7_days`, `last_month` or `last_year` |
+| `date_from`, `date_to` | explicit creation date range, `YYYY-MM-DD`, both ends included (`data_inicio` and `data_fim` are accepted as synonyms) |
+| `page` | page number, starting at 1 (default 1) |
+| `page_size` | items per page (default 20, capped at 100) |
+
+`tipo`, `area`, `discipline`, `status` and `tags` accept several values, in any of the forms a client may produce: repeated (`tipo=DWG&tipo=MEM`), bracketed (`tipo[]=DWG&tipo[]=MEM`) or comma-separated (`tipo=DWG,MEM`). Codes are case-insensitive. Values of the same filter are alternatives (OR); different filters are cumulative (AND). `GET /documents/simple-filters` lists the options for the side panel: `areas`, `types`, `disciplines`, `statuses` (value and Portuguese label) and `dates`.
+
+Response `200`, ordered by most recent first:
+
+```json
+{
+  "count": 30,
+  "total_pages": 2,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 33,
+      "code": "AK-2100-MAT-ESP-0004",
+      "title": "Card 31 live",
+      "description": "",
+      "type": { "code": "ESP", "name": "Especificação Técnica" },
+      "discipline": { "code": "MAT", "name": "Materiais e Processos" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
+      "status": "PENDING",
+      "updated_at": "2026-09-18T21:30:04.000000+00:00"
+    }
+  ]
+}
+```
+
+`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
+
+### `POST /documents`
+
+Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
+
+Request (`application/json`):
+
+```json
+{
+  "temp_file_id": "53cf33ae-5588-4c2e-994a-132f31cf2a9e",
+  "title": "Desenho de conjunto da caverna 14",
+  "description": "Conjunto soldado da caverna 14",
+  "project_id": 1,
+  "discipline_id": 1,
+  "document_type": "DWG",
+  "confidentiality": "CONFIDENTIAL",
+  "responsible_id": 12,
+  "areas": ["EST", "QUA"]
+}
+```
+
+| Field | Required | Rule |
+|-------|----------|------|
+| `temp_file_id` | yes | UUID returned by the upload; the file must still be in temporary storage |
+| `title` | yes | up to 255 characters |
+| `description` | no | up to 500 characters |
+| `project_id` | yes | id of an active project (`GET /projects/`) |
+| `discipline_id` | yes | id of an active discipline that belongs to the project (`GET /disciplines/`) |
+| `document_type` | yes | code of an active document type (`DWG`, `MEM`, ...) |
+| `confidentiality` | yes | `PUBLIC`, `CONFIDENTIAL` or `SECRET` |
+| `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
+| `areas` | yes | at least one active area acronym; the "tags" of the form are the areas |
+
+**Ids are not stable across databases.** `manage.py seed` assigns whatever ids the sequences are at, so the numbers in the example above will differ on your machine. Get valid ones before calling the endpoint:
+
+```bash
+curl http://localhost:8000/projects/    # project id and the discipline_ids linked to it
+docker compose exec api python manage.py shell -c "from core.models import User; print(User.objects.get(email='beatriz.canuto@akaer.local').id)"
+```
+
+Document type codes (`DWG`, `MEM`, ...) and area acronyms (`EST`, `QUA`, ...) are stable; `GET /documents/simple-filters` lists them.
+
+Responses:
+
+- `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
+- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project) and `invalid_choice` (`confidentiality`).
+- `404` with `{"errors": {"temp_file_id": {"code": "not_found", ...}}}` when the temporary file no longer exists (upload it again).
+- `409` when the same file (by SHA-256) is already attached to a registered document.
+- `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
+
+**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the responsible, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
+
+Known limitations of the audit entry, all tied to the absence of authentication and of a production proxy:
+
+- **The IP is only as trustworthy as the proxy in front of the API.** `X-Forwarded-For` is sent by the client, so a caller reaching Django directly can forge it. In production the reverse proxy must overwrite (not append to) that header; until then treat `ip_address` as informative, not as evidence.
+- **The author is the declared responsible, not the caller.** There is no login yet and the endpoint is public, so `user` is the `responsible_id` of the payload and any caller can attribute the event to any active user. It becomes the session user once authentication exists.
+- **A failed write leaves only the server log.** This is deliberate: the card requires that auditing never aborts or reverts the publication. The failure is logged with `logger.exception` under `core.services.audit_service`, which is the hook for an alert when monitoring is in place.
+
+**Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
+
+### `GET /documents/<id>`
+
+Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
+
+Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED`) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
+
+`access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
+
+### `GET /files/<id>/view`
+
+Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). Other answers: `400 MissingUser` without `user_id`, `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
+
+### `POST /documents/<id>/request-access`
+
+Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access request and answers `201 {"id", "status": "PENDING", "created": true}`; a second call while the request is still pending answers `201` with `"created": false` and the same `id`. A viewer who can already read the document (responsible or approved grant) gets `409 {"error": "AlreadyHasAccess"}` and no row is created. `400 MissingUser`, `404 UserNotFound`, `404 DocumentNotFound`.
 
 ## Useful commands
 
@@ -148,6 +304,7 @@ docker compose up -d --build      # rebuild after changing requirements.txt/Dock
 docker compose exec api python manage.py migrate           # apply migrations
 docker compose exec api python manage.py makemigrations    # create migrations
 docker compose exec api python manage.py createsuperuser   # create an EXTRA admin user (the default one is automatic)
+docker compose exec api python manage.py seed              # load the demo dataset (idempotent, see below)
 docker compose exec api python manage.py shell             # Django shell
 docker compose exec api python manage.py test              # run tests
 
@@ -155,6 +312,27 @@ docker compose exec api python manage.py test              # run tests
 docker compose exec postgres psql -U api6_admin -d api6                                  # PostgreSQL shell
 docker compose exec mongodb mongosh -u api6_admin -p --authenticationDatabase admin api6 # MongoDB shell
 ```
+
+## Demo data
+
+`manage.py seed` fills the database with a fictional aerostructures dataset —
+areas, engineers, aircraft programs, technical documents with revisions and
+files, access requests and an audit trail. It covers all three confidentiality
+levels and every revision status, so the search, permission and approval flows
+have something realistic to run against.
+
+```bash
+docker compose exec api python manage.py seed
+```
+
+It is idempotent: rows are matched by their natural key, so running it twice
+creates nothing new and changes no password. `audit_log` is the exception —
+being append-only, it is written only while the table is still empty.
+
+Every seeded user gets the same password: `SEED_PASSWORD` from your `.env` if
+set, `--password` if you pass it, otherwise a random one printed once at the
+end. Log in with an **email** (e.g. `marina.duarte@akaer.local`, role `ADMIN`).
+The command refuses to run when `DEBUG` is off unless you pass `--force`.
 
 ## LGPD & security notes
 
@@ -181,6 +359,8 @@ This project handles personal data topics this semester, so the environment was 
 | CORS error in the browser console | The frontend origin is not allowed. Add it to `DJANGO_CORS_ALLOWED_ORIGINS` in `.env` and restart: `docker compose restart api`. |
 
 ## Project structure
+
+See [AGENTS.md](AGENTS.md) for the full layout and conventions. Summary:
 
 ```
 backend/

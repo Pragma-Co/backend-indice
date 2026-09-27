@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build da imagem Docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: backend-indice:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verificar sintaxe de todos os modulos
+        run: docker run --rm backend-indice:ci python -m compileall -q api6 core manage.py scripts
+
+      - name: Rodar o django check
+        run: docker run --rm backend-indice:ci python manage.py check

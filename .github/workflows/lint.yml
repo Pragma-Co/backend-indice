@@ -1,0 +1,38 @@
+name: Lint
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Ruff (lint + formatacao)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Instalar o ruff
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff check
+        run: ruff check --output-format=github .
+
+      # Roda mesmo se o check falhar, para o PR mostrar os dois problemas
+      # de uma vez em vez de um por execucao.
+      - name: Ruff format
+        if: '!cancelled()'
+        run: ruff format --check .

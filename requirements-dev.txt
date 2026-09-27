@@ -1,0 +1,7 @@
+# Ferramentas usadas apenas no desenvolvimento e no CI.
+# Nunca entram na imagem Docker (o Dockerfile so instala requirements.txt).
+#
+# Instalacao local:
+#   pip install -r requirements.txt -r requirements-dev.txt
+
+ruff==0.16.7
