@@ -81,21 +81,7 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
         .first()
     )
     if existing_file is not None:
-        if not force_new_revision:
-            raise DuplicateFileError(existing_file)
-
-        document, revision = create_new_revision(existing_file, uploaded_file, file_hash, file_type)
-        return {
-            "revision_created": True,
-            "document": {
-                "id": document.id,
-                "codigo_ra": document.code,
-                "titulo": document.title,
-                "version": revision.version,
-                "status": revision.status,
-            },
-            "sha256": file_hash,
-        }
+        raise DuplicateFileError(existing_file)
 
     temp_file_id = str(uuid.uuid4())
     temp_dir = Path(settings.TEMP_UPLOAD_DIR)

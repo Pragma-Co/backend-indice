@@ -1,5 +1,7 @@
 """Revisions and their stored files — the versioned side of a document."""
 
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.db.models.functions import Now
@@ -98,6 +100,8 @@ class File(models.Model):
     mime_type = models.CharField(max_length=127)
     size_bytes = models.BigIntegerField()
     sha256 = models.CharField(max_length=64)
+    file_group = models.UUIDField(default=uuid.uuid4, db_index=True, editable=False)
+    revision_changed = models.BooleanField(default=True, db_index=True)
     storage_path = models.CharField(max_length=500, unique=True)
     uploaded_at = models.DateTimeField(db_default=Now(), editable=False)
 

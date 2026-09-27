@@ -4,7 +4,8 @@ from core.services.document_code_service import revision_label
 
 def serialize_created_document(document: Document) -> dict:
     revision = document.revisions.order_by("-version").first()
-    file = revision.files.first() if revision is not None else None
+    files = list(revision.files.all()) if revision is not None else []
+    file = files[0] if files else None
     return {
         "id": document.id,
         "code": document.code,
@@ -52,5 +53,16 @@ def serialize_created_document(document: Document) -> dict:
             "sha256": file.sha256,
             "storage_path": file.storage_path,
         },
+        "files": [
+            {
+                "original_name": item.original_name,
+                "extension": item.extension,
+                "mime_type": item.mime_type,
+                "size_bytes": item.size_bytes,
+                "sha256": item.sha256,
+                "storage_path": item.storage_path,
+            }
+            for item in files
+        ],
         "created_at": document.created_at.isoformat(),
     }

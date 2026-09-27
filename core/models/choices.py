@@ -44,6 +44,7 @@ class AuditAction(models.TextChoices):
     DOC_UPLOAD_SUCCESS = "DOC_UPLOAD_SUCCESS", "Document upload succeeded"
     DOC_UPLOAD_DUPLICATE = "DOC_UPLOAD_DUPLICATE", "Duplicate document upload attempted"
     DOC_SUBMIT_SUCCESS = "DOC_SUBMIT_SUCCESS", "Document registration submitted"
+    DOC_REVISION_CREATED = "DOC_REVISION_CREATED", "Document revision created"
     DOC_CANCEL = "DOC_CANCEL", "Document registration cancelled"
     DOC_DOWNLOAD = "DOC_DOWNLOAD", "Document downloaded"
     DOC_ACCESS_REQUESTED = "DOC_ACCESS_REQUESTED", "Document access requested"

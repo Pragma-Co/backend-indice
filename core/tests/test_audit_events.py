@@ -122,6 +122,8 @@ class UploadDuplicateAuditTests(TestCase):
             discipline=discipline,
             document_type=document_type,
             responsible=self.user,
+            created_by=self.user,
+            updated_by=self.user,
         )
         revision = Revision.objects.create(
             document=self.document, version=1, status="PENDING", author=self.user

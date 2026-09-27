@@ -265,6 +265,83 @@ class DocumentCreationServiceTests(TestCase):
             {"temp_file_id": TEMP_FILE_ID}
         )
 
+    def test_should_attach_multiple_temp_files_to_the_same_revision(self, mongo):
+        first_path = self._temp_file()
+        second_id = "22222222-2222-4333-8444-555555555555"
+        second_path = self._temp_file(temp_file_id=second_id, content=b"%PDF-1.4 second file")
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "arquivo.pdf",
+            "inferred_type": "application/pdf",
+        }
+
+        document = service.create_document(self._payload(temp_file_ids=[TEMP_FILE_ID, second_id]))
+
+        revision = Revision.objects.get(document=document)
+        stored_files = list(File.objects.filter(revision=revision).order_by("id"))
+        self.assertEqual(len(stored_files), 2)
+        self.assertEqual(
+            stored_files[0].storage_path,
+            "documents/AK-2100-EST-DWG-0001/v1/ak-2100-est-dwg-0001.pdf",
+        )
+        self.assertEqual(
+            stored_files[1].storage_path,
+            "documents/AK-2100-EST-DWG-0001/v1/ak-2100-est-dwg-0001-2.pdf",
+        )
+        self.assertFalse(first_path.exists())
+        self.assertFalse(second_path.exists())
+
+    def test_should_create_a_revision_containing_only_the_new_files(self, mongo):
+        first_id = TEMP_FILE_ID
+        second_id = "22222222-2222-4333-8444-555555555555"
+        new_id = "33333333-2222-4333-8444-555555555555"
+        self._temp_file(first_id, b"%PDF-1.4 first")
+        self._temp_file(second_id, b"%PDF-1.4 second")
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "arquivo.pdf",
+            "inferred_type": "application/pdf",
+        }
+        document = service.create_document(self._payload(temp_file_ids=[first_id, second_id]))
+        original_revision = Revision.objects.get(document=document)
+        self._temp_file(new_id, b"%PDF-1.4 replacement")
+
+        revision = service.create_document_revision(document.id, [new_id])
+
+        self.assertEqual(revision.version, 2)
+        files = list(revision.files.order_by("id"))
+        self.assertEqual(len(files), 1)
+        original_hashes = set(original_revision.files.values_list("sha256", flat=True))
+        self.assertNotIn(files[0].sha256, original_hashes)
+
+    def test_should_create_a_revision_with_multiple_files_as_one_package(self, mongo):
+        self._temp_file()
+        document = service.create_document(self._payload())
+        second_id = "22222222-2222-4333-8444-555555555555"
+        third_id = "33333333-2222-4333-8444-555555555555"
+        self._temp_file(second_id, b"%PDF-1.4 second revision file")
+        self._temp_file(third_id, b"%PDF-1.4 third revision file")
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "revision.pdf",
+            "inferred_type": "application/pdf",
+        }
+
+        revision = service.create_document_revision(document.id, [second_id, third_id])
+
+        self.assertEqual(revision.version, 2)
+        self.assertEqual(revision.files.count(), 2)
+        self.assertEqual(Revision.objects.filter(document=document).count(), 2)
+
+    def test_should_reject_duplicate_content_within_a_revision_package(self, mongo):
+        self._temp_file()
+        document = service.create_document(self._payload())
+        second_id = "22222222-2222-4333-8444-555555555555"
+        third_id = "33333333-2222-4333-8444-555555555555"
+        duplicate_bytes = b"%PDF-1.4 repeated in this batch"
+        self._temp_file(second_id, duplicate_bytes)
+        self._temp_file(third_id, duplicate_bytes)
+
+        with self.assertRaises(service.DuplicateRevisionUploadError):
+            service.create_document_revision(document.id, [second_id, third_id])
+
     def test_should_increment_the_sequence_for_the_same_prefix(self, mongo):
         self._temp_file()
         service.create_document(self._payload())

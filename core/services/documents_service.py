@@ -328,13 +328,7 @@ def _get_document_or_none(document_id):
 
 
 def _get_current_revision(document):
-    revisions = list(document.revisions.all())
-    if not revisions:
-        return None
-    for revision in revisions:
-        if revision.status == RevisionStatus.APPROVED:
-            return revision
-    return revisions[0]
+    return next(iter(document.revisions.all()), None)
 
 
 def _compute_access_status(document, user):
@@ -414,7 +408,7 @@ def _serialize_revision(revision, can_read):
     }
     if can_read:
         serialized["change_description"] = revision.change_description
-        serialized["files"] = [_serialize_file(f) for f in revision.files.all()]
+        serialized["files"] = [_serialize_file(file) for file in revision.files.all()]
     return serialized
 
 
