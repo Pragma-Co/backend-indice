@@ -108,7 +108,14 @@ class DocumentRevisionSubmissionTests(TestCase):
         self.assertEqual(revision.change_description, CHANGE_DESCRIPTION)
         self.assertEqual(response.json()["change_description"], CHANGE_DESCRIPTION)
 
-    def test_should_attach_the_uploaded_file_to_the_new_revision(self, *mongo):
+    def test_should_attach_the_uploaded_file_to_the_new_revision(
+        self, upload_mongo, creation_mongo
+    ):
+        creation_mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "caverna-14.pdf",
+            "inferred_type": "application/pdf",
+        }
+
         response = self._post()
 
         stored = File.objects.get(revision_id=response.json()["id"])
