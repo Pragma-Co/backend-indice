@@ -28,9 +28,7 @@ class AuditLogAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Personal data deletion requested")
 
-        detail = self.client.get(
-            reverse("admin:core_auditlog_change", args=[self.audit_log.pk])
-        )
+        detail = self.client.get(reverse("admin:core_auditlog_change", args=[self.audit_log.pk]))
         self.assertEqual(detail.status_code, 200)
         self.assertContains(detail, "PERSONAL_DATA_DELETION_REQUESTED")
         self.assertNotContains(detail, 'name="_save"')

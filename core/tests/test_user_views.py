@@ -48,9 +48,7 @@ class UserMeViewTests(TestCase):
         self.assertEqual(audit.record["event"], "PERSONAL_DATA_UPDATED")
 
     def test_put_rejects_invalid_payloads_without_changing_the_user(self):
-        malformed = self.client.put(
-            "/users/me", data="{invalid", content_type="application/json"
-        )
+        malformed = self.client.put("/users/me", data="{invalid", content_type="application/json")
         self.assertEqual(malformed.status_code, 400)
         invalid_payloads = [
             [],
