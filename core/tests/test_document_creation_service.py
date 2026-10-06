@@ -1,3 +1,4 @@
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -304,7 +305,9 @@ class DocumentCreationServiceTests(TestCase):
         original_revision = Revision.objects.get(document=document)
         self._temp_file(new_id, b"%PDF-1.4 replacement")
 
-        revision = service.create_document_revision(document.id, [new_id])
+        revision = service.create_document_revision(
+            document.id, [new_id], "Substitui o desenho pela versão corrigida"
+        )
 
         self.assertEqual(revision.version, 2)
         files = list(revision.files.order_by("id"))
@@ -324,11 +327,121 @@ class DocumentCreationServiceTests(TestCase):
             "inferred_type": "application/pdf",
         }
 
-        revision = service.create_document_revision(document.id, [second_id, third_id])
+        revision = service.create_document_revision(
+            document.id, [second_id, third_id], "Pacote completo da revisão com os anexos"
+        )
 
         self.assertEqual(revision.version, 2)
         self.assertEqual(revision.files.count(), 2)
         self.assertEqual(Revision.objects.filter(document=document).count(), 2)
+
+    def _document_for_revision(self, mongo):
+        self._temp_file()
+        mongo.return_value.__getitem__.return_value.find_one.return_value = {
+            "original_name": "arquivo.pdf",
+            "inferred_type": "application/pdf",
+        }
+        document = service.create_document(self._payload())
+        new_id = "44444444-2222-4333-8444-555555555555"
+        self._temp_file(new_id, b"%PDF-1.4 revised content")
+        return document, new_id
+
+    def test_should_store_the_change_description_on_the_new_revision(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+
+        revision = service.create_document_revision(
+            document.id, [new_id], "  Corrige a furação da caverna 14 conforme ensaio  "
+        )
+
+        revision.refresh_from_db()
+        self.assertEqual(
+            revision.change_description, "Corrige a furação da caverna 14 conforme ensaio"
+        )
+        self.assertEqual(revision.version, 2)
+
+    def test_should_require_a_change_description(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+
+        for missing in (None, "", "   "):
+            with self.subTest(value=missing), self.assertRaises(DocumentValidationError) as ctx:
+                service.create_document_revision(document.id, [new_id], missing)
+            self.assertEqual(ctx.exception.errors["change_description"]["code"], "required")
+        self.assertEqual(Revision.objects.filter(document=document).count(), 1)
+
+    def test_should_reject_a_change_description_shorter_than_twenty_characters(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+
+        with self.assertRaises(DocumentValidationError) as ctx:
+            service.create_document_revision(document.id, [new_id], "Ajuste pequeno")
+
+        self.assertEqual(ctx.exception.errors["change_description"]["code"], "too_short")
+        self.assertEqual(Revision.objects.filter(document=document).count(), 1)
+
+    def test_should_reject_a_change_description_longer_than_the_column(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+
+        with self.assertRaises(DocumentValidationError) as ctx:
+            service.create_document_revision(document.id, [new_id], "x" * 256)
+
+        self.assertEqual(ctx.exception.errors["change_description"]["code"], "too_long")
+
+    def test_should_validate_the_description_before_touching_the_files(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+        temp_path = Path(self.temp_dir) / f"{new_id}.pdf"
+
+        with self.assertRaises(DocumentValidationError):
+            service.create_document_revision(document.id, [new_id], "curto")
+
+        self.assertTrue(temp_path.exists())
+
+    def _post_revision(self, document_id, payload):
+        return self.client.post(
+            f"/documents/{document_id}/revisions",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+    def test_should_answer_201_with_the_change_description(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+
+        response = self._post_revision(
+            document.id,
+            {"temp_file_ids": [new_id], "change_description": "Revisão após ensaio estrutural"},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["version"], 2)
+        self.assertEqual(body["status"], "PENDING")
+        self.assertEqual(body["change_description"], "Revisão após ensaio estrutural")
+
+    def test_should_answer_400_with_a_code_for_a_missing_or_short_description(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+
+        missing = self._post_revision(document.id, {"temp_file_ids": [new_id]})
+        short = self._post_revision(
+            document.id, {"temp_file_ids": [new_id], "change_description": "curto"}
+        )
+
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(missing.json()["errors"]["change_description"]["code"], "required")
+        self.assertEqual(short.status_code, 400)
+        self.assertEqual(short.json()["errors"]["change_description"]["code"], "too_short")
+        self.assertEqual(Revision.objects.filter(document=document).count(), 1)
+
+    def test_should_show_the_change_description_in_the_document_detail(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+        self._post_revision(
+            document.id,
+            {"temp_file_ids": [new_id], "change_description": "Revisão após ensaio estrutural"},
+        )
+
+        with self.settings(DEBUG=True):
+            response = self.client.get(f"/documents/{document.id}", {"user_id": self.user.id})
+
+        self.assertEqual(
+            response.json()["revision"]["change_description"], "Revisão após ensaio estrutural"
+        )
 
     def test_should_reject_duplicate_content_within_a_revision_package(self, mongo):
         self._temp_file()
@@ -340,7 +453,9 @@ class DocumentCreationServiceTests(TestCase):
         self._temp_file(third_id, duplicate_bytes)
 
         with self.assertRaises(service.DuplicateRevisionUploadError):
-            service.create_document_revision(document.id, [second_id, third_id])
+            service.create_document_revision(
+                document.id, [second_id, third_id], "Pacote completo da revisão com os anexos"
+            )
 
     def test_should_increment_the_sequence_for_the_same_prefix(self, mongo):
         self._temp_file()
