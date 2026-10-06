@@ -77,6 +77,7 @@ class User(AbstractBaseUser):
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
     # Users are deactivated, never deleted, so authorship and audit stay intact
     is_active = models.BooleanField(default=True, db_column="active")
+    deletion_requested_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(db_default=Now(), editable=False)
 
     objects = UserManager()
