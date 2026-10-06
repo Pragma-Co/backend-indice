@@ -362,7 +362,40 @@ def create_document(payload) -> Document:
     return document
 
 
-def create_document_revision(document_id, temp_file_ids) -> Revision:
+CHANGE_DESCRIPTION_MIN_LENGTH = 20
+CHANGE_DESCRIPTION_MAX_LENGTH = Revision._meta.get_field("change_description").max_length
+
+
+def validate_change_description(value) -> str:
+    text = _clean_text(value)
+    if not text:
+        raise DocumentValidationError(
+            {"change_description": _error(REQUIRED, "Change description is required.")}
+        )
+    if len(text) < CHANGE_DESCRIPTION_MIN_LENGTH:
+        raise DocumentValidationError(
+            {
+                "change_description": _error(
+                    "too_short",
+                    f"Change description must have at least "
+                    f"{CHANGE_DESCRIPTION_MIN_LENGTH} characters.",
+                )
+            }
+        )
+    if len(text) > CHANGE_DESCRIPTION_MAX_LENGTH:
+        raise DocumentValidationError(
+            {
+                "change_description": _error(
+                    TOO_LONG,
+                    f"Change description must have at most "
+                    f"{CHANGE_DESCRIPTION_MAX_LENGTH} characters.",
+                )
+            }
+        )
+    return text
+
+
+def create_document_revision(document_id, temp_file_ids, change_description=None) -> Revision:
     document = (
         Document.objects.select_related("responsible")
         .filter(pk=document_id, document_type__active=True)
@@ -370,6 +403,8 @@ def create_document_revision(document_id, temp_file_ids) -> Revision:
     )
     if document is None:
         raise DocumentNotFoundError()
+
+    change_description = validate_change_description(change_description)
 
     if isinstance(temp_file_ids, str):
         temp_file_ids = [temp_file_ids]
@@ -408,6 +443,7 @@ def create_document_revision(document_id, temp_file_ids) -> Revision:
             version=last_version + 1,
             status=RevisionStatus.PENDING,
             issue_date=timezone.localdate(),
+            change_description=change_description,
             author=document.responsible,
         )
         for file_index, temp_file in enumerate(temp_files):

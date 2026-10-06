@@ -125,7 +125,9 @@ def create_revision_view(request, document_id):
         temp_file_ids = payload.get("temp_file_ids")
         if temp_file_ids is None:
             temp_file_ids = payload.get("temp_file_id")
-        revision = create_document_revision(document_id, temp_file_ids)
+        revision = create_document_revision(
+            document_id, temp_file_ids, payload.get("change_description")
+        )
         audit_service.log_document_revision_created(request, revision, temp_file_ids)
         return JsonResponse(
             {
@@ -133,11 +135,14 @@ def create_revision_view(request, document_id):
                 "document_id": revision.document_id,
                 "version": revision.version,
                 "status": revision.status,
+                "change_description": revision.change_description,
             },
             status=201,
         )
     except (TypeError, ValueError, json.JSONDecodeError):
         return JsonResponse({"error": "InvalidJSON"}, status=400)
+    except DocumentValidationError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
     except TempFileNotFoundError:
@@ -163,6 +168,9 @@ def create_revision_view(request, document_id):
         )
     except DocumentStorageError:
         return JsonResponse({"error": "Failed to store the file."}, status=500)
+    except Exception as exc:
+        logger.exception("Failed to create document revision")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
 @require_GET
