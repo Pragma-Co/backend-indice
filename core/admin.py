@@ -165,10 +165,39 @@ class DocumentAccessAdmin(admin.ModelAdmin):
 class AuditLogAdmin(admin.ModelAdmin):
     """Read-only: the table is append-only at the database level."""
 
-    list_display = ("occurred_at", "user", "action", "entity", "entity_id", "ip_address")
+    list_display = (
+        "occurred_at",
+        "user",
+        "action",
+        "event_label",
+        "entity",
+        "entity_id",
+        "ip_address",
+    )
     list_filter = ("action", "entity")
     search_fields = ("entity", "entity_id", "user__email")
     date_hierarchy = "occurred_at"
+    readonly_fields = (
+        "occurred_at",
+        "user",
+        "action",
+        "entity",
+        "entity_id",
+        "record",
+        "ip_address",
+    )
+
+    @admin.display(description="Event")
+    def event_label(self, obj):
+        event = obj.record.get("event") if isinstance(obj.record, dict) else None
+        if event == "PERSONAL_DATA_DELETION_REQUESTED":
+            return "Personal data deletion requested"
+        if event == "PERSONAL_DATA_UPDATED":
+            return "Personal data updated"
+        return obj.get_action_display()
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_staff
 
     def has_add_permission(self, request):
         return False
