@@ -274,7 +274,12 @@ Known limitations of the audit entry, all tied to the absence of authentication 
 
 ### `POST /documents/<id>/revisions`
 
-Creates the next revision of an existing document from files already sent to `POST /documents/upload`. Body `{"temp_file_ids": ["<uuid>", ...], "change_description": "<text>"}` (`temp_file_id` with a single uuid is also accepted). `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
+Creates the next revision of an existing document with status `PENDING` (awaiting approval); the version is the latest one plus one and the current approved revision stays in the collection untouched. Two request formats are accepted:
+
+- `multipart/form-data` with the new binary in `file` (repeat the field for a package) and the justification in `change_description`. The document and the justification are validated before anything is stored; the file then goes through the same checks as `POST /documents/upload` (`400 MissingFile` / `InvalidFileType`, `413 FileTooLarge`, `409` when already registered).
+- JSON referencing files already sent to `POST /documents/upload`: `{"temp_file_ids": ["<uuid>", ...], "change_description": "<text>"}` (`temp_file_id` with a single uuid is also accepted).
+
+In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
 
 ### `GET /documents/<id>`
 

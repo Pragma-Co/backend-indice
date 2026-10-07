@@ -38,6 +38,8 @@ from core.services.document_exceptions import (
     TempFileNotFoundError,
 )
 from core.services.documents_exceptions import DocumentNotFoundError
+from core.services.temp_upload_service import store_uploaded_file
+from core.services.upload_exceptions import MissingFileError
 
 logger = logging.getLogger(__name__)
 
@@ -395,7 +397,7 @@ def validate_change_description(value) -> str:
     return text
 
 
-def create_document_revision(document_id, temp_file_ids, change_description=None) -> Revision:
+def _revisable_document(document_id) -> Document:
     document = (
         Document.objects.select_related("responsible")
         .filter(pk=document_id, document_type__active=True)
@@ -403,6 +405,24 @@ def create_document_revision(document_id, temp_file_ids, change_description=None
     )
     if document is None:
         raise DocumentNotFoundError()
+    return document
+
+
+def submit_document_revision(document_id, uploaded_files, change_description):
+    _revisable_document(document_id)
+    change_description = validate_change_description(change_description)
+    if not uploaded_files:
+        raise MissingFileError()
+
+    temp_file_ids = [
+        store_uploaded_file(uploaded_file)["temp_file_id"] for uploaded_file in uploaded_files
+    ]
+    revision = create_document_revision(document_id, temp_file_ids, change_description)
+    return revision, temp_file_ids
+
+
+def create_document_revision(document_id, temp_file_ids, change_description=None) -> Revision:
+    document = _revisable_document(document_id)
 
     change_description = validate_change_description(change_description)
 

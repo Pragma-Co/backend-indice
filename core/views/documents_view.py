@@ -8,7 +8,11 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from core.serializers.document_serializer import serialize_created_document
 from core.services import audit_service
-from core.services.document_creation_service import create_document, create_document_revision
+from core.services.document_creation_service import (
+    create_document,
+    create_document_revision,
+    submit_document_revision,
+)
 from core.services.document_exceptions import (
     DocumentCodeCollisionError,
     DocumentQueryError,
@@ -29,6 +33,13 @@ from core.services.documents_service import (
     get_documents,
     get_simple_filters,
     request_document_access,
+)
+from core.services.upload_exceptions import (
+    DuplicateFileError,
+    FileTooLargeError,
+    InvalidFileTypeError,
+    MissingFileError,
+    UploadStorageError,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,14 +131,21 @@ def simple_filters(request):
 @csrf_exempt
 @require_POST
 def create_revision_view(request, document_id):
+    payload = {}
     try:
-        payload = json.loads(request.body or "{}")
-        temp_file_ids = payload.get("temp_file_ids")
-        if temp_file_ids is None:
-            temp_file_ids = payload.get("temp_file_id")
-        revision = create_document_revision(
-            document_id, temp_file_ids, payload.get("change_description")
-        )
+        if request.content_type == "multipart/form-data":
+            payload = request.POST.dict()
+            revision, temp_file_ids = submit_document_revision(
+                document_id, request.FILES.getlist("file"), payload.get("change_description")
+            )
+        else:
+            payload = json.loads(request.body or "{}")
+            temp_file_ids = payload.get("temp_file_ids")
+            if temp_file_ids is None:
+                temp_file_ids = payload.get("temp_file_id")
+            revision = create_document_revision(
+                document_id, temp_file_ids, payload.get("change_description")
+            )
         audit_service.log_document_revision_created(request, revision, temp_file_ids)
         return JsonResponse(
             {
@@ -162,11 +180,34 @@ def create_revision_view(request, document_id):
             },
             status=409,
         )
+    except DuplicateFileError as exc:
+        audit_service.log_duplicate_attempt(
+            request,
+            exc.existing_file,
+            audit_service.STAGE_UPLOAD,
+            {"original_names": [file.name for file in request.FILES.getlist("file")]},
+            payload,
+        )
+        return JsonResponse(
+            {
+                "error": "This file is already registered.",
+                "document": {"id": exc.document_id, "code": exc.codigo_ra},
+            },
+            status=409,
+        )
     except DuplicateRevisionUploadError as exc:
         return JsonResponse(
             {"error": "DuplicateFileInRevision", "filename": exc.filename}, status=409
         )
-    except DocumentStorageError:
+    except MissingFileError:
+        return JsonResponse({"error": "MissingFile"}, status=400)
+    except InvalidFileTypeError:
+        return JsonResponse({"error": "InvalidFileType"}, status=400)
+    except FileTooLargeError as exc:
+        return JsonResponse(
+            {"error": "FileTooLarge", "max_size_bytes": exc.max_size_bytes}, status=413
+        )
+    except (DocumentStorageError, UploadStorageError):
         return JsonResponse({"error": "Failed to store the file."}, status=500)
     except Exception as exc:
         logger.exception("Failed to create document revision")
