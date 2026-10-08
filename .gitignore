@@ -2,6 +2,7 @@
 .env
 CREDENTIALS.txt
 tmp_uploads/
+training_export/
 
 # Python
 __pycache__/
