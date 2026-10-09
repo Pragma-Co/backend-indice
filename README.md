@@ -283,6 +283,19 @@ Creates the next revision of an existing document with status `PENDING` (awaitin
 
 In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
 
+### `GET /manager/pending-revisions`
+
+Approval queue of the technical manager. Requires a session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` for other roles. Lists every `PENDING` revision of documents with an active type, oldest first, paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `version`, `revision` (`REV02`), `status`, `change_description`, `issue_date`, `created_at`, `author`, `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`) and `files` (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `revision_changed`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
+
+### `POST /manager/revisions/<id>/decision`
+
+Records the manager's decision on a pending revision. Same permission rules as the queue. Body `{"decision": "APPROVED" | "REJECTED", "justification": "<text>"}`; the justification is required to reject, optional to approve, and when present must have 20 to 1000 characters. It is stored as the revision's `auditor_comment`, together with the manager as `auditor` and `audited_at`.
+
+- **Approval** makes the revision the official one: the previously approved revision of the document becomes `OBSOLETE` and the document's `updated_by` is set to the manager, all in one transaction.
+- **Rejection** marks the revision `REJECTED` and leaves the current approved revision untouched.
+
+Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
+
 ### `GET /documents/<id>`
 
 Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
