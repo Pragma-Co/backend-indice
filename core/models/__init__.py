@@ -21,6 +21,14 @@ from core.models.choices import (
     Role,
 )
 from core.models.document import Document, DocumentArea, DocumentTag
+from core.models.legal import (
+    LegalClause,
+    LegalDocument,
+    LegalDocumentStatus,
+    LegalDocumentVersion,
+    UserClauseConsent,
+    UserLegalAcceptance,
+)
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
 
@@ -39,6 +47,10 @@ __all__ = [
     "DocumentType",
     "File",
     "FileExtension",
+    "LegalClause",
+    "LegalDocument",
+    "LegalDocumentStatus",
+    "LegalDocumentVersion",
     "Project",
     "ProjectDiscipline",
     "Revision",
@@ -46,4 +58,6 @@ __all__ = [
     "Role",
     "Tag",
     "User",
+    "UserClauseConsent",
+    "UserLegalAcceptance",
 ]

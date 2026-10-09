@@ -809,3 +809,179 @@ DOCUMENT_ACCESS = [
     ),
     ("AK-3400-FER-PRO-0003", "patricia.lemos", "APPROVED", "bruno.kimura", None, 80, None),
 ]
+
+# -- Legal documents ---------------------------------------------------------
+
+LEGAL_DOCUMENT_SLUG = "termo-tratamento-dados"
+LEGAL_DOCUMENT_TITLE = "Termo de Adesão ao Tratamento de Dados Pessoais – Pragma Co"
+LEGAL_VERSION = 1
+LEGAL_VERSION_AUTHOR = "marina.duarte"
+LEGAL_VERSION_NOTES = "Versão inicial."
+LEGAL_VERSION_SUMMARY = (
+    "Declaração do Titular: Declaro que li e compreendi integralmente o presente Termo, "
+    "tendo-me sido esclarecidos os meus direitos nos termos da LGPD. Concordo com o "
+    "conteúdo deste Termo e concordo com o tratamento dos meus dados pessoais conforme "
+    "as finalidades descritas neste Termo."
+)
+
+# (code, title, is_required, body). Position is the index in the list.
+LEGAL_CLAUSES = [
+    (
+        "partes",
+        "Artigo 1º – Partes",
+        True,
+        "Titular dos Dados: Todo funcionário da Pragma Co que acessa este sistema "
+        '(doravante denominado "Titular").\n\n'
+        "Controlador: Pragma Co, com endereço em [endereço da empresa].\n\n"
+        "Encarregado de Proteção de Dados (DPO): Augusto de Moraes Piatto. "
+        "E-mail de contato: dpo@pragmaco.com",
+    ),
+    (
+        "objeto",
+        "Artigo 2º – Objeto do Termo",
+        True,
+        "Este Termo tem por objeto esclarecer ao Titular como seus dados pessoais são "
+        "coletados, utilizados, armazenados e compartilhados no sistema interno da "
+        "Pragma Co, bem como obter seu consentimento para o tratamento de dados "
+        "pessoais. Este Termo observa a Lei Geral de Proteção de Dados Pessoais do "
+        'Brasil (Lei nº 13.709/2018, "LGPD").',
+    ),
+    (
+        "dados-coletados",
+        "Artigo 3º – Âmbito dos Dados Pessoais Coletados",
+        True,
+        "A Pragma Co coletará e tratará os seguintes dados pessoais do Titular no "
+        "sistema interno:\n\n"
+        "1. Nome;\n2. E-mail corporativo;\n3. Número de matrícula;\n4. Departamento;\n5. Cargo.",
+    ),
+    (
+        "registros-de-acesso",
+        "Artigo 4º – Registros de Acesso",
+        True,
+        "Para garantir a segurança da informação e a conformidade das operações, o "
+        "sistema registrará automaticamente as atividades de login e acesso do Titular, "
+        "incluindo, mas não se limitando a: endereço IP, horário de acesso, dispositivo "
+        "utilizado e operações realizadas no sistema. Tais registros destinam-se "
+        "exclusivamente a auditoria de segurança e rastreabilidade de incidentes.",
+    ),
+    (
+        "finalidade",
+        "Artigo 5º – Finalidade do Tratamento",
+        True,
+        "Os dados pessoais coletados serão utilizados para as seguintes finalidades "
+        "específicas:\n\n"
+        "1. Controle de identidade e verificação de acesso ao sistema;\n"
+        "2. Controle de permissões de acesso a documentos técnicos;\n"
+        "3. Auditoria de segurança e rastreabilidade de operações;\n"
+        "4. Cumprimento de obrigações contratuais ou acordos de confidencialidade "
+        "decorrentes do contrato de trabalho.",
+    ),
+    (
+        "base-legal",
+        "Artigo 6º – Base Legal do Tratamento",
+        True,
+        "O tratamento de dados pessoais previsto neste Termo fundamenta-se no disposto "
+        'no artigo 7º, inciso V da LGPD, ou seja: "quando necessário para a execução '
+        "de contrato ou de procedimentos preliminares relacionados a contrato do qual "
+        'seja parte o titular, a pedido do titular dos dados", ou seja, o tratamento '
+        "de dados é necessário para a execução do contrato de trabalho entre o Titular "
+        "e a Pragma Co.",
+    ),
+    (
+        "transferencia-internacional",
+        "Artigo 7º – Transferência Internacional de Dados",
+        False,
+        "Considerando que a Pragma Co possui operações comerciais globais, os dados "
+        "pessoais do Titular podem ser transferidos para fora do território brasileiro "
+        "para as finalidades de gestão e administração de recursos humanos.\n\n"
+        "A Pragma Co compromete-se a adotar Cláusulas Contratuais Padrão "
+        "(Cláusulas-Padrão Contratuais) aprovadas pela Autoridade Nacional de Proteção "
+        "de Dados (ANPD) do Brasil como mecanismo de garantia para transferência "
+        "internacional de dados, assegurando que os dados pessoais recebam, no exterior, "
+        "nível de proteção equivalente ao da LGPD.",
+    ),
+    (
+        "retencao",
+        "Artigo 8º – Período de Retenção de Dados",
+        True,
+        "Os dados pessoais do Titular serão armazenados por um período de máximo 2 "
+        "(dois) anos, contados a partir da data de encerramento da relação laboral ou "
+        "da data de revogação deste Termo pelo Titular.\n\n"
+        "Após o término do período acima, a Pragma Co eliminará ou anonimizará os dados "
+        "pessoais, salvo quando a lei exigir prazo de retenção mais longo.",
+    ),
+    (
+        "direitos-do-titular",
+        "Artigo 9º – Direitos do Titular",
+        True,
+        "Nos termos do artigo 18º da LGPD, o Titular tem os seguintes direitos:\n\n"
+        "1. Direito de confirmação e acesso: Confirmar se a Pragma Co trata seus dados "
+        "pessoais e acessar os dados;\n"
+        "2. Direito de correção: Solicitar a correção de dados pessoais incompletos, "
+        "inexatos ou desatualizados;\n"
+        "3. Direito de anonimização, bloqueio ou eliminação: Solicitar a anonimização, "
+        "bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em "
+        "desconformidade com a LGPD;\n"
+        "4. Direito à portabilidade: Solicitar a portabilidade dos dados a outro "
+        "fornecedor de serviço ou produto;\n"
+        "5. Direito à eliminação: Solicitar a eliminação dos dados pessoais tratados "
+        "com base no consentimento do Titular;\n"
+        "6. Direito à informação: Obter informações sobre entidades públicas e privadas "
+        "com as quais a Pragma Co compartilhou seus dados.",
+    ),
+    (
+        "exercicio-dos-direitos",
+        "Artigo 10º – Forma de Exercício dos Direitos",
+        True,
+        "O Titular pode exercer os direitos previstos no artigo 9º entrando em contato "
+        "com o Encarregado de Proteção de Dados (DPO) através do e-mail: "
+        "dpo@pragmaco.com.",
+    ),
+    (
+        "medidas-de-seguranca",
+        "Artigo 11º – Medidas de Segurança",
+        True,
+        "A Pragma Co adotará as seguintes medidas técnicas e organizacionais para "
+        "proteger os dados pessoais:\n\n"
+        "1. Controle de acesso baseado em funções (RBAC);\n"
+        "2. Criptografia de dados;\n"
+        "3. Registro de logs de acesso e auditoria;\n"
+        "4. Treinamento periódico de conscientização sobre proteção de dados para "
+        "funcionários.",
+    ),
+    (
+        "limitacao-de-acesso",
+        "Artigo 12º – Limitação de Acesso a Documentos",
+        True,
+        "O Titular reconhece e concorda que os documentos acessados através do sistema "
+        "podem conter informações técnicas confidenciais. Os documentos são "
+        "configurados com restrições de visualização apenas, sendo proibido baixar, "
+        "copiar ou de qualquer forma exportar documentos para fora do sistema. O "
+        "Titular cumprirá as obrigações de confidencialidade previstas no contrato de "
+        "trabalho.",
+    ),
+    (
+        "revogacao",
+        "Artigo 13º – Revogação",
+        True,
+        "O Titular pode revogar este Termo a qualquer momento. No entanto, o Titular "
+        "reconhece que a revogação pode impedir seu acesso ao sistema, por meio do "
+        "qual a Pragma Co cumpre as obrigações de contrato de trabalho.",
+    ),
+    (
+        "vigencia",
+        "Artigo 14º – Vigência",
+        True,
+        "Este Termo entra em vigor na data de sua assinatura pelo Titular e permanece "
+        "válido enquanto durar a relação laboral entre o Titular e a Pragma Co, ou "
+        "conforme necessário para cumprir obrigações legais.",
+    ),
+    (
+        "legislacao-e-foro",
+        "Artigo 15º – Legislação Aplicável e Foro",
+        True,
+        "Este Termo rege-se pelas leis da República Federativa do Brasil. Eventuais "
+        "controvérsias serão resolvidas no foro competente da comarca de "
+        "[localização da empresa].",
+    ),
+]
