@@ -66,3 +66,12 @@ def serialize_created_document(document: Document) -> dict:
         ],
         "created_at": document.created_at.isoformat(),
     }
+
+
+def serialize_archived_document(document: Document) -> dict:
+    return {
+        "id": document.id,
+        "code": document.code,
+        "archived_at": document.archived_at.isoformat(),
+        "archived_by": {"id": document.archived_by.id, "name": document.archived_by.name},
+    }

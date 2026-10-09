@@ -8,7 +8,7 @@ from core.views.catalog_view import list_disciplines, list_document_types, list_
 from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.documents_view import (
     create_revision_view,
-    document_detail,
+    document_resource,
     documents_collection,
     request_access,
     simple_filters,
@@ -32,7 +32,7 @@ urlpatterns = [
     path("documents", documents_collection, name="document-list"),
     path("documents/upload", upload_document, name="document-upload"),
     path("documents/simple-filters", simple_filters, name="document-simple-filters"),
-    path("documents/<int:document_id>", document_detail, name="document-detail"),
+    path("documents/<int:document_id>", document_resource, name="document-detail"),
     path(
         "documents/<int:document_id>/revisions",
         create_revision_view,
