@@ -198,7 +198,7 @@ def _start_of_day(day):
 def filter_documents(query):
     latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
     queryset = (
-        Document.objects.filter(document_type__active=True)
+        Document.objects.filter(document_type__active=True, archived_at__isnull=True)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
         .annotate(
             status=Subquery(latest_revision.values("status")[:1]),
@@ -309,7 +309,7 @@ ACCESS_PENDING = "PENDING"
 
 def _get_document_or_none(document_id):
     return (
-        Document.objects.filter(document_type__active=True)
+        Document.objects.filter(document_type__active=True, archived_at__isnull=True)
         .select_related(
             "project", "discipline", "document_type", "responsible", "created_by", "updated_by"
         )
