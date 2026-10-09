@@ -111,9 +111,7 @@ class User(AbstractBaseUser):
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
-        should_check_email = (
-            self._state.adding or update_fields is None or "email" in update_fields
-        )
+        should_check_email = self._state.adding or update_fields is None or "email" in update_fields
         if should_check_email:
             using = kwargs.get("using") or self._state.db
             previous_email = None
