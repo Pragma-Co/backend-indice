@@ -3,6 +3,10 @@ import json
 from django.test import Client, TestCase
 
 from core.models import Area, AuditAction, AuditLog, User
+from core.services.excluded_identifier_service import (
+    is_identifier_excluded,
+    store_excluded_identifier,
+)
 
 
 class UserMeViewTests(TestCase):
@@ -87,6 +91,32 @@ class UserMeViewTests(TestCase):
         self.assertEqual(User.objects.filter(pk=self.user.pk).count(), 1)
         self.assertEqual(audit.action, AuditAction.UPDATE)
         self.assertEqual(audit.record["event"], "PERSONAL_DATA_DELETION_REQUESTED")
+        self.assertTrue(is_identifier_excluded("titular@example.com"))
+
+    def test_requested_deletion_blocks_recreation_after_user_row_is_removed(self):
+        response = self.client.post("/users/me/request-deletion")
+        self.assertEqual(response.status_code, 202)
+
+        self.user.delete()
+        with self.assertRaises(ValueError):
+            User.objects.create_user(
+                email="TITULAR@example.com",
+                password="secret",
+                name="Novo cadastro",
+                area=self.area,
+            )
+
+    def test_put_rejects_email_already_in_the_exclusion_table(self):
+        store_excluded_identifier("blocked@example.com")
+        response = self._put({"name": "Titular", "email": "blocked@example.com"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["errors"]["email"],
+            "This email address cannot be used for an account.",
+        )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "titular@example.com")
 
     def test_anonymous_requests_are_rejected_on_every_method(self):
         anonymous_client = Client()

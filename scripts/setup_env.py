@@ -54,6 +54,7 @@ Password: {DJANGO_SUPERUSER_PASSWORD}
 
 --- Django ---
 SECRET_KEY: {DJANGO_SECRET_KEY}
+Excluded-identifier HMAC key: {EXCLUDED_IDENTIFIER_HMAC_KEY}
 """
 
 
