@@ -72,6 +72,8 @@ docker run --rm -v "${PWD}:/app" -w /app python:3.12-slim python scripts/setup_e
 
 The script refuses to overwrite an existing `.env`. To regenerate everything, add `--force` — and note that already-initialized databases keep their old passwords, so a regeneration also requires `docker compose down -v` (which deletes all database data).
 
+If you already have a `.env` from before the excluded-identifier blacklist was added, add `EXCLUDED_IDENTIFIER_HMAC_KEY` manually with a stable random value (for example, `openssl rand -hex 32`). The setup script does not update an existing `.env` unless forced. Do not rotate this key: existing blacklist hashes cannot be checked with a different key.
+
 <details>
 <summary>Prefer to do it by hand?</summary>
 

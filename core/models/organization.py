@@ -41,6 +41,10 @@ class UserManager(BaseUserManager):
             raise ValueError("A user requires an email address.")
         if not extra_fields.get("area") and not extra_fields.get("area_id"):
             raise ValueError("A user requires an area.")
+
+        from core.services.excluded_identifier_service import ensure_identifier_is_available
+
+        ensure_identifier_is_available(email)
         user = self.model(email=self.normalize_email(email), **extra_fields)
         # set_password hashes with the configured Django hasher; the plain
         # password never reaches the database (LGPD)
@@ -108,33 +112,6 @@ class User(AbstractBaseUser):
 
     def __str__(self):
         return f"{self.name} <{self.email}>"
-
-    def save(self, *args, **kwargs):
-        update_fields = kwargs.get("update_fields")
-        should_check_email = self._state.adding or update_fields is None or "email" in update_fields
-        if should_check_email:
-            using = kwargs.get("using") or self._state.db
-            previous_email = None
-            if not self._state.adding and self.pk is not None:
-                previous_email = (
-                    type(self)
-                    ._base_manager.using(using)
-                    .filter(pk=self.pk)
-                    .values_list("email", flat=True)
-                    .first()
-                )
-
-            from core.services.excluded_identifier_service import (
-                ensure_identifier_is_available,
-                normalize_identifier,
-            )
-
-            if previous_email is None or normalize_identifier(previous_email) != (
-                normalize_identifier(self.email)
-            ):
-                ensure_identifier_is_available(self.email)
-
-        super().save(*args, **kwargs)
 
     @property
     def is_staff(self):

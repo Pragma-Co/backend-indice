@@ -95,9 +95,11 @@ class UserMeViewTests(TestCase):
 
     def test_requested_deletion_blocks_recreation_after_user_row_is_removed(self):
         response = self.client.post("/users/me/request-deletion")
+
         self.assertEqual(response.status_code, 202)
 
         self.user.delete()
+
         with self.assertRaises(ValueError):
             User.objects.create_user(
                 email="TITULAR@example.com",
@@ -108,6 +110,7 @@ class UserMeViewTests(TestCase):
 
     def test_put_rejects_email_already_in_the_exclusion_table(self):
         store_excluded_identifier("blocked@example.com")
+
         response = self._put({"name": "Titular", "email": "blocked@example.com"})
 
         self.assertEqual(response.status_code, 400)

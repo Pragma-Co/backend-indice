@@ -7,7 +7,7 @@ from core.models.excluded_identifier import ExcludedIdentifier
 
 
 class ExcludedIdentifierError(ValueError):
-    """Raised when an excluded identifier is submitted for account use."""
+    pass
 
 
 def normalize_identifier(identifier):

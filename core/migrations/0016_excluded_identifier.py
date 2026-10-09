@@ -1,4 +1,5 @@
 from django.db import migrations, models
+from django.db.models.functions import Now
 
 
 class Migration(migrations.Migration):
@@ -18,7 +19,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("identifier_hash", models.CharField(max_length=64, unique=True)),
-                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("created_at", models.DateTimeField(db_default=Now(), editable=False)),
             ],
             options={"db_table": "excluded_identifier"},
         ),
