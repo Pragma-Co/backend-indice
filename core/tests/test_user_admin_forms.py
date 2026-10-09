@@ -35,7 +35,6 @@ class UserAdminFormTests(TestCase):
             form.errors["email"],
         )
 
-
     def test_change_form_rejects_excluded_email(self):
         form = CoreUserChangeForm(
             data={
