@@ -18,7 +18,11 @@ from core.models import (
     Role,
     User,
 )
-from core.services.document_archive_service import archive_document, can_archive_document
+from core.services.document_archive_service import (
+    archive_document,
+    can_archive_document,
+    restore_document,
+)
 from core.services.documents_exceptions import ArchivePermissionDeniedError, DocumentNotFoundError
 
 
@@ -299,3 +303,190 @@ class ArchivedDocumentVisibilityTests(DocumentArchiveFixtureMixin, TestCase):
         self.assertEqual(access.json(), {"error": "DocumentNotFound"})
         self.assertEqual(view.status_code, 404)
         self.assertEqual(view.json(), {"error": "FileNotFound"})
+
+
+class ArchivedDocumentsListViewTests(DocumentArchiveFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("document-archived-list")
+        self.other_document = self._document("AK-2100-EST-DWG-0002", self.other_area)
+        archive_document(self.document.pk, self.manager)
+        archive_document(self.other_document.pk, self.other_manager)
+        self.document.refresh_from_db()
+
+    def test_should_list_only_the_archived_documents_of_the_managers_area(self):
+        self._document("AK-2100-EST-DWG-0003", self.area)
+        self.client.force_login(self.manager)
+
+        response = self.client.get(self.url)
+
+        body = response.json()
+        item = body["results"][0]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["count"], 1)
+        self.assertEqual([entry["code"] for entry in body["results"]], [self.document.code])
+        self.assertEqual(item["archived_at"], self.document.archived_at.isoformat())
+        self.assertEqual(item["archived_by"], {"id": self.manager.pk, "name": "Manager"})
+        self.assertEqual(item["status"], RevisionStatus.PENDING)
+
+    def test_should_accept_the_same_filters_as_the_general_listing(self):
+        self.client.force_login(self.manager)
+
+        matching = self.client.get(self.url, {"q": "0001"})
+        empty = self.client.get(self.url, {"tipo": "MEM"})
+        invalid = self.client.get(self.url, {"page": "0"})
+
+        self.assertEqual(
+            [entry["code"] for entry in matching.json()["results"]], [self.document.code]
+        )
+        self.assertEqual(empty.json()["count"], 0)
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("page", invalid.json()["errors"])
+
+    def test_should_require_authentication_and_the_manager_role(self):
+        anonymous = self.client.get(self.url)
+        self.client.force_login(self.author)
+        forbidden = self.client.get(self.url)
+
+        self.assertEqual(anonymous.status_code, 401)
+        self.assertEqual(anonymous.json(), {"error": "AuthenticationRequired"})
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(forbidden.json(), {"error": "PermissionDenied"})
+
+    def test_should_keep_archived_documents_out_of_the_general_listing(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse("document-list"))
+
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_should_only_accept_get(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 405)
+
+
+class RestoreDocumentServiceTests(DocumentArchiveFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        archive_document(self.document.pk, self.manager)
+
+    def test_should_restore_the_document_for_a_manager_of_one_of_its_areas(self):
+        document = restore_document(self.document.pk, self.admin)
+
+        self.document.refresh_from_db()
+        self.assertIsNone(document.archived_at)
+        self.assertIsNone(self.document.archived_at)
+        self.assertIsNone(self.document.archived_by)
+        self.assertEqual(self.document.updated_by, self.admin)
+
+    def test_should_refuse_managers_of_other_areas_and_users_without_manager_role(self):
+        for user in (self.other_manager, self.author):
+            with self.subTest(user=user.email), self.assertRaises(ArchivePermissionDeniedError):
+                restore_document(self.document.pk, user)
+
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.archived_by, self.manager)
+
+    def test_should_raise_not_found_for_unknown_or_active_documents(self):
+        active = self._document("AK-2100-EST-DWG-0002", self.area)
+
+        with self.assertRaises(DocumentNotFoundError):
+            restore_document(active.pk, self.manager)
+        with self.assertRaises(DocumentNotFoundError):
+            restore_document(999_999, self.manager)
+
+
+class RestoreDocumentViewTests(DocumentArchiveFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        archive_document(self.document.pk, self.manager)
+        self.url = reverse("document-restore", args=[self.document.pk])
+
+    def test_should_restore_and_record_the_audit_trail(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.post(self.url)
+
+        self.document.refresh_from_db()
+        audit = AuditLog.objects.get(entity="document")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "id": self.document.pk,
+                "code": self.document.code,
+                "archived_at": None,
+                "restored_by": {"id": self.manager.pk, "name": "Manager"},
+            },
+        )
+        self.assertIsNone(self.document.archived_at)
+        self.assertIsNone(self.document.archived_by)
+        self.assertEqual(audit.action, AuditAction.UPDATE)
+        self.assertEqual(audit.entity_id, self.document.pk)
+        self.assertEqual(audit.user, self.manager)
+        self.assertEqual(audit.record["event"], "DOCUMENT_RESTORED")
+        self.assertEqual(audit.record["areas"], ["EST"])
+
+    def test_should_bring_the_document_back_to_the_general_listing_and_detail(self):
+        self.client.force_login(self.manager)
+        self.client.post(self.url)
+
+        listing = self.client.get(reverse("document-list"))
+        detail = self.client.get(reverse("document-detail", args=[self.document.pk]))
+        archived = self.client.get(reverse("document-archived-list"))
+
+        self.assertEqual(
+            [entry["code"] for entry in listing.json()["results"]], [self.document.code]
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(archived.json()["count"], 0)
+
+    def test_should_require_authentication(self):
+        response = self.client.post(self.url)
+
+        self.document.refresh_from_db()
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
+        self.assertIsNotNone(self.document.archived_at)
+
+    def test_should_forbid_managers_of_other_areas_and_users_without_manager_role(self):
+        for user in (self.other_manager, self.author):
+            with self.subTest(user=user.email):
+                self.client.force_login(user)
+
+                response = self.client.post(self.url)
+
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json(), {"error": "PermissionDenied"})
+
+        self.document.refresh_from_db()
+        self.assertIsNotNone(self.document.archived_at)
+        self.assertEqual(AuditLog.objects.count(), 0)
+
+    def test_should_answer_not_found_for_active_and_unknown_documents(self):
+        self.client.force_login(self.manager)
+        self.client.post(self.url)
+
+        responses = (
+            self.client.post(self.url),
+            self.client.post(reverse("document-restore", args=[999_999])),
+        )
+
+        for response in responses:
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.json(), {"error": "DocumentNotFound"})
+
+    def test_should_require_a_csrf_token_and_reject_other_methods(self):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.manager)
+
+        without_token = client.post(self.url)
+        wrong_method = client.get(self.url)
+
+        self.document.refresh_from_db()
+        self.assertEqual(without_token.status_code, 403)
+        self.assertEqual(wrong_method.status_code, 405)
+        self.assertIsNotNone(self.document.archived_at)
