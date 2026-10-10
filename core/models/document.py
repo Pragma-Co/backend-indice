@@ -45,6 +45,14 @@ class Document(models.Model):
     )
     created_at = models.DateTimeField(db_default=Now(), editable=False)
     updated_at = models.DateTimeField(db_default=Now(), editable=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="archived_documents",
+        null=True,
+        blank=True,
+    )
 
     areas = models.ManyToManyField(Area, through="core.DocumentArea", related_name="documents")
     tags = models.ManyToManyField("core.Tag", through="core.DocumentTag", related_name="documents")
@@ -59,6 +67,13 @@ class Document(models.Model):
             models.CheckConstraint(
                 condition=models.Q(confidentiality_level__in=ConfidentialityLevel.values),
                 name="ck_document_confidentiality_level",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(archived_at__isnull=True, archived_by__isnull=True)
+                    | models.Q(archived_at__isnull=False, archived_by__isnull=False)
+                ),
+                name="ck_document_archived_consistency",
             ),
         ]
         indexes = [

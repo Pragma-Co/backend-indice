@@ -6,8 +6,19 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from core.serializers.document_serializer import serialize_created_document
+from core.models import AuditAction
+from core.serializers.document_serializer import (
+    serialize_archived_document,
+    serialize_created_document,
+    serialize_restored_document,
+)
 from core.services import audit_service
+from core.services.document_archive_service import (
+    archive_document,
+    is_manager,
+    list_archived_documents,
+    restore_document,
+)
 from core.services.document_creation_service import (
     create_document,
     create_document_revision,
@@ -24,6 +35,7 @@ from core.services.document_exceptions import (
 )
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
+    ArchivePermissionDeniedError,
     DocumentNotFoundError,
     MissingUserError,
     UserNotFoundError,
@@ -43,6 +55,8 @@ from core.services.upload_exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+ENTITY_DOCUMENT = "document"
 
 
 @require_GET
@@ -226,6 +240,100 @@ def document_detail(request, document_id):
     except Exception as exc:
         logger.exception("Failed to retrieve document detail")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+def _session_user(request):
+    user = request.user
+    if user.is_authenticated and user.is_active:
+        return user, None
+    return None, JsonResponse({"error": "AuthenticationRequired"}, status=401)
+
+
+def _document_areas(document):
+    return list(document.areas.order_by("acronym").values_list("acronym", flat=True))
+
+
+def archive_document_view(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
+    try:
+        document = archive_document(document_id, user)
+    except DocumentNotFoundError:
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except ArchivePermissionDeniedError:
+        return JsonResponse({"error": "PermissionDenied"}, status=403)
+    except Exception as exc:
+        logger.exception("Failed to archive document")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+    audit_service.log_event(
+        request,
+        AuditAction.DELETE,
+        ENTITY_DOCUMENT,
+        document.pk,
+        {
+            "event": "DOCUMENT_ARCHIVED",
+            "document_code": document.code,
+            "areas": _document_areas(document),
+        },
+    )
+    return JsonResponse(serialize_archived_document(document))
+
+
+@require_http_methods(["GET", "DELETE"])
+def document_resource(request, document_id):
+    if request.method == "DELETE":
+        return archive_document_view(request, document_id)
+    return document_detail(request, document_id)
+
+
+@require_GET
+def archived_documents_view(request):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+    if not is_manager(user):
+        return JsonResponse({"error": "PermissionDenied"}, status=403)
+
+    try:
+        return JsonResponse(list_archived_documents(user, request.GET))
+    except DocumentQueryError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
+    except Exception as exc:
+        logger.exception("Failed to list archived documents")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@require_POST
+def restore_document_view(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
+    try:
+        document = restore_document(document_id, user)
+    except DocumentNotFoundError:
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except ArchivePermissionDeniedError:
+        return JsonResponse({"error": "PermissionDenied"}, status=403)
+    except Exception as exc:
+        logger.exception("Failed to restore document")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+    audit_service.log_event(
+        request,
+        AuditAction.UPDATE,
+        ENTITY_DOCUMENT,
+        document.pk,
+        {
+            "event": "DOCUMENT_RESTORED",
+            "document_code": document.code,
+            "areas": _document_areas(document),
+        },
+    )
+    return JsonResponse(serialize_restored_document(document))
 
 
 @csrf_exempt

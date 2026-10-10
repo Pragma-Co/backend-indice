@@ -213,6 +213,8 @@ Response `200`, ordered by most recent first:
 
 `revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
 
+Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
+
 ### `POST /documents`
 
 Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
@@ -285,6 +287,8 @@ In both formats `change_description` is required, 20 to 255 characters, and is s
 
 Approval queue of the technical manager. Requires a session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` for other roles. Lists every `PENDING` revision of documents with an active type, oldest first, paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `version`, `revision` (`REV02`), `status`, `change_description`, `issue_date`, `created_at`, `author`, `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`) and `files` (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `revision_changed`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
 
+Revisions of archived documents are left out of the queue and cannot be decided.
+
 ### `POST /manager/revisions/<id>/decision`
 
 Records the manager's decision on a pending revision. Same permission rules as the queue. Body `{"decision": "APPROVED" | "REJECTED", "justification": "<text>"}`; the justification is required to reject, optional to approve, and when present must have 20 to 1000 characters. It is stored as the revision's `auditor_comment`, together with the manager as `auditor` and `audited_at`.
@@ -301,6 +305,20 @@ Detail of one document. Until authentication exists the viewer is identified by 
 Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED`) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
 
 `access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
+
+### `DELETE /documents/<id>`
+
+Logical archiving (soft delete) of a document. Requires the `csrftoken` cookie value in the `X-CSRFToken` header (without it the CSRF middleware answers `403` before the view, like `PUT /users/me`) and a session: `401 {"error": "AuthenticationRequired"}` without one. Only a technical manager of one of the document's areas may archive it: a user with role `AUDITOR` or `ADMIN` (the same roles that review revisions) whose area is one of the document's areas. Anyone else gets `403 {"error": "PermissionDenied"}` and nothing changes.
+
+The row is never deleted. The document receives `archived_at`, `archived_by` and `updated_by`, the action is written to `audit_log` (`action = DELETE`, `entity = "document"`, `record.event = "DOCUMENT_ARCHIVED"`, with the code and the areas) and the response is `200 {"id", "code", "archived_at", "archived_by": {"id", "name"}}`. From then on the document behaves as if it did not exist: `GET /documents`, `GET /documents/<id>`, `POST /documents/<id>/revisions`, `POST /documents/<id>/request-access`, `GET /files/<id>/view` and the manager's revision queue leave it out (`404 DocumentNotFound`, `404 FileNotFound`, `404 RevisionNotFound`), so archiving it twice also answers `404`. It stays visible in the Django admin (filter "archived at") and in `GET /documents/archived`, and `POST /documents/<id>/restore` brings it back. `GET` on the same URL keeps returning the detail; other methods answer `405`.
+
+### `GET /documents/archived`
+
+Archived documents of the manager's area, so they can be reviewed and restored. Same requirements as the manager's queue: a session user with role `AUDITOR` or `ADMIN` (`401 {"error": "AuthenticationRequired"}`, `403 {"error": "PermissionDenied"}`). Only documents classified under the manager's own area are listed, the ones they are allowed to restore. Accepts the same query parameters as `GET /documents` and answers the same paginated shape, with `archived_at` and `archived_by` (`id`, `name`) added to each item, most recently archived first. Archived documents never appear in `GET /documents`.
+
+### `POST /documents/<id>/restore`
+
+Undoes the archiving. Same rules as `DELETE /documents/<id>`: session, CSRF header, manager of one of the document's areas (`401`, `403 PermissionDenied`), `404 DocumentNotFound` when the document is unknown or not archived. Clears `archived_at` and `archived_by`, sets `updated_by`, writes `audit_log` (`action = UPDATE`, `entity = "document"`, `record.event = "DOCUMENT_RESTORED"`) and answers `200 {"id", "code", "archived_at": null, "restored_by": {"id", "name"}}`. The document is listed and readable again right away.
 
 ### `GET /files/<id>/view`
 

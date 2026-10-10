@@ -115,16 +115,18 @@ class DocumentAdmin(admin.ModelAdmin):
         "document_type",
         "confidentiality_level",
         "responsible",
+        "archived_at",
     )
     list_filter = (
         "confidentiality_level",
         "project",
         "discipline",
         "document_type",
+        ("archived_at", admin.EmptyFieldListFilter),
     )
     search_fields = ("code", "title", "description")
     autocomplete_fields = ("project", "discipline", "document_type", "responsible")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at", "archived_at", "archived_by")
     exclude = ("areas", "tags")
 
 
