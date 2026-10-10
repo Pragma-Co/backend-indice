@@ -41,6 +41,10 @@ class UserManager(BaseUserManager):
             raise ValueError("A user requires an email address.")
         if not extra_fields.get("area") and not extra_fields.get("area_id"):
             raise ValueError("A user requires an area.")
+
+        from core.services.excluded_identifier_service import ensure_identifier_is_available
+
+        ensure_identifier_is_available(email)
         user = self.model(email=self.normalize_email(email), **extra_fields)
         # set_password hashes with the configured Django hasher; the plain
         # password never reaches the database (LGPD)

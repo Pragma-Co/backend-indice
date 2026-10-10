@@ -11,6 +11,7 @@ use the API or the shell (`DocumentArea.objects.create(...)`).
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
+from django.core.exceptions import ValidationError
 
 from core.models import (
     Area,
@@ -25,15 +26,29 @@ from core.models import (
     Tag,
     User,
 )
+from core.services.excluded_identifier_service import (
+    ExcludedIdentifierError,
+    ensure_identifier_is_available,
+)
 
 
-class CoreUserCreationForm(AdminUserCreationForm):
+class ExcludedIdentifierValidationMixin:
+    def clean_email(self):
+        email = self.cleaned_data["email"]
+        try:
+            ensure_identifier_is_available(email)
+        except ExcludedIdentifierError as error:
+            raise ValidationError(str(error)) from error
+        return email
+
+
+class CoreUserCreationForm(ExcludedIdentifierValidationMixin, AdminUserCreationForm):
     class Meta(AdminUserCreationForm.Meta):
         model = User
         fields = ("email", "name", "role", "area")
 
 
-class CoreUserChangeForm(UserChangeForm):
+class CoreUserChangeForm(ExcludedIdentifierValidationMixin, UserChangeForm):
     class Meta(UserChangeForm.Meta):
         model = User
 
