@@ -7,10 +7,12 @@ from core.views.api_root_view import api_root
 from core.views.catalog_view import list_disciplines, list_document_types, list_projects
 from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.documents_view import (
+    archived_documents_view,
     create_revision_view,
     document_resource,
     documents_collection,
     request_access,
+    restore_document_view,
     simple_filters,
 )
 from core.views.file_view import document_file_view
@@ -32,7 +34,9 @@ urlpatterns = [
     path("documents", documents_collection, name="document-list"),
     path("documents/upload", upload_document, name="document-upload"),
     path("documents/simple-filters", simple_filters, name="document-simple-filters"),
+    path("documents/archived", archived_documents_view, name="document-archived-list"),
     path("documents/<int:document_id>", document_resource, name="document-detail"),
+    path("documents/<int:document_id>/restore", restore_document_view, name="document-restore"),
     path(
         "documents/<int:document_id>/revisions",
         create_revision_view,
