@@ -31,9 +31,7 @@ class LegalDocument(models.Model):
 
         with transaction.atomic():
             document = LegalDocument.objects.select_for_update().get(pk=self.pk)
-            latest_version = document.versions.aggregate(max_version=Max("version"))[
-                "max_version"
-            ]
+            latest_version = document.versions.aggregate(max_version=Max("version"))["max_version"]
             return LegalDocumentVersion.objects.create(
                 document=document,
                 version=(latest_version or 0) + 1,
@@ -45,9 +43,7 @@ class LegalDocument(models.Model):
     @property
     def current_published_version(self):
         return (
-            self.versions.filter(status=LegalDocumentStatus.PUBLISHED)
-            .order_by("-version")
-            .first()
+            self.versions.filter(status=LegalDocumentStatus.PUBLISHED).order_by("-version").first()
         )
 
 
