@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from core.models import Discipline, Project
+from core.models import Area, Discipline, Project
 
 
 class ListProjectsViewTests(TestCase):
@@ -189,6 +189,74 @@ class ListDisciplinesViewTests(TestCase):
         self.assertIn(internal_detail, "\n".join(logs.output))
 
 
+class ListAreasViewTests(TestCase):
+    def test_should_return_areas_ordered_by_name(self):
+        sistemas = Area.objects.create(acronym="SIS", name="Sistemas de Voo")
+        combustivel = Area.objects.create(acronym="COM", name="Sistemas de Combustível")
+        estrutural = Area.objects.create(acronym="EST", name="Estruturas Metálicas")
+
+        response = self.client.get(reverse("area-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(
+            response.json(),
+            [
+                {"id": estrutural.id, "acronym": "EST", "name": "Estruturas Metálicas"},
+                {"id": combustivel.id, "acronym": "COM", "name": "Sistemas de Combustível"},
+                {"id": sistemas.id, "acronym": "SIS", "name": "Sistemas de Voo"},
+            ],
+        )
+
+    def test_should_return_only_active_areas(self):
+        Area.objects.create(acronym="OLD", name="Área Antiga", active=False)
+        ativa = Area.objects.create(acronym="HID", name="Sistemas Hidráulicos")
+
+        response = self.client.get(reverse("area-list"))
+
+        self.assertEqual([a["id"] for a in response.json()], [ativa.id])
+
+    def test_should_return_empty_list_without_areas(self):
+        response = self.client.get(reverse("area-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_should_answer_405_for_disallowed_methods(self):
+        url = reverse("area-list")
+
+        for method in ("post", "put", "patch", "delete"):
+            with self.subTest(method=method):
+                response = getattr(self.client, method)(url)
+
+                self.assertEqual(response.status_code, 405)
+                self.assertEqual(response["Allow"], "GET")
+
+    def test_should_answer_405_even_with_csrf_checks_enforced(self):
+        client = Client(enforce_csrf_checks=True)
+
+        response = client.post(reverse("area-list"), {"name": "New"})
+
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response["Allow"], "GET")
+
+    def test_should_hide_internal_details_on_error(self):
+        internal_detail = "FATAL: password authentication failed for user api6_admin"
+        with (
+            patch(
+                "core.views.catalog_view.list_active_areas",
+                side_effect=RuntimeError(internal_detail),
+            ),
+            self.assertLogs("core.views.catalog_view", level="ERROR") as logs,
+        ):
+            response = self.client.get(reverse("area-list"))
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"error": "RuntimeError"})
+        self.assertNotIn("api6_admin", response.content.decode())
+        self.assertIn(internal_detail, "\n".join(logs.output))
+
+
 class ApiRootViewTests(TestCase):
     def test_should_list_catalog_routes(self):
         url = reverse("api-root")
@@ -199,3 +267,4 @@ class ApiRootViewTests(TestCase):
         endpoints = response.json()["endpoints"]
         self.assertEqual(endpoints["projects"], "/projects/")
         self.assertEqual(endpoints["disciplines"], "/disciplines/")
+        self.assertEqual(endpoints["areas"], "/areas/")

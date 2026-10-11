@@ -20,6 +20,9 @@ AREAS = [
     ("MFG", "Manufatura e Montagem", "joana.prado", True),
     ("QUA", "Qualidade e Inspeção", "thiago.serpa", True),
     ("CER", "Certificação e Aeronavegabilidade", "beatriz.canuto", True),
+    ("COM", "Sistemas de Combustível", None, True),
+    ("HID", "Sistemas Hidráulicos", None, True),
+    ("INT", "Integração de Sistemas", None, True),
 ]
 
 # --- users -------------------------------------------------------------------
@@ -54,6 +57,12 @@ DISCIPLINES = [
     ("FER", "Ferramental", True),
     ("PES", "Pesos e Balanceamento", True),
     ("ENS", "Ensaios Estruturais", True),
+    ("ARM", "Armamento", True),
+    ("MUN", "Munições e Pirotecnia", True),
+    ("OPT", "Óptica e Controle de Tiro", True),
+    ("NAV", "Sistemas Navais", True),
+    ("RFE", "Radiofrequência", True),
+    ("EMB", "Embalagens", True),
     # Kept only for the closed program below
     ("PNE", "Sistemas Pneumáticos", False),
 ]
@@ -68,6 +77,9 @@ DOCUMENT_TYPES = [
     ("REV", "Relatório de Verificação", True),
     ("PRO", "Procedimento de Fabricação", True),
     ("LDM", "Lista de Materiais", True),
+    ("GPR", "Guia de Projeto", True),
+    ("MMA", "Manual de Manutenção", True),
+    ("RTE", "Relatório Técnico", True),
 ]
 
 # --- projects ----------------------------------------------------------------
@@ -78,6 +90,16 @@ PROJECTS = [
     ("AK-3100", "Pilone de Motor", True, ["EST", "MAT", "HID", "ENS"]),
     ("AK-3400", "Carenagem do Trem de Pouso Principal", True, ["EST", "AER", "MAT", "FER"]),
     ("AK-4000", "Ferramental de Montagem Estrutural", True, ["FER", "MAT", "ELE"]),
+    ("AK-4100", "Armamentos e Munições", True, ["ARM", "MUN", "MAT", "ENS"]),
+    ("AK-4300", "Pontaria e Observação", True, ["OPT", "ELE"]),
+    ("AK-4400", "Equipamentos Auxiliares Navais", True, ["NAV", "ELE"]),
+    ("AK-4500", "Componentes Elétricos e Radiofrequência", True, ["ELE", "RFE"]),
+    ("AK-4600", "Embalagens Técnicas", True, ["EMB", "MAT"]),
+    ("AK-4700", "Materiais Têxteis e Auxiliares", True, ["MAT"]),
+    ("AK-5100", "Sistema de Combustível", True, ["HID", "MAT", "PES", "ENS"]),
+    ("AK-5200", "Sistema Hidráulico", True, ["HID", "ELE", "MAT", "ENS"]),
+    ("AK-5300", "Sistema de Controle de Voo", True, ["AER", "HID", "ELE", "PES"]),
+    ("AK-5400", "Trem de Pouso", True, ["EST", "HID", "MAT", "FER"]),
     ("AK-1500", "Nacele — Programa Encerrado", False, ["EST", "MAT", "PNE"]),
 ]
 

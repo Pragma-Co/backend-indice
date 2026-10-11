@@ -8,7 +8,7 @@ from core.views.access_request_view import (
     pending_access_requests_view,
 )
 from core.views.api_root_view import api_root
-from core.views.catalog_view import list_disciplines, list_document_types, list_projects
+from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
 from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.documents_view import (
     create_revision_view,
@@ -68,6 +68,7 @@ urlpatterns = [
     ),
     path("files/<int:file_id>/view", document_file_view, name="document-file-view"),
     path("projects/", list_projects, name="project-list"),
+    path("areas/", list_areas, name="area-list"),
     path("disciplines/", list_disciplines, name="discipline-list"),
     path("documents/types", list_document_types, name="document-type-list"),
 ]

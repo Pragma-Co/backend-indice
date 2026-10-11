@@ -168,6 +168,17 @@ Disciplines available in the **Disciplina** select. `code` is the discipline acr
 ]
 ```
 
+### `GET /areas/`
+
+Active areas available in the **Áreas** select. `acronym` is the value sent in `areas` when creating a document.
+
+```json
+[
+  { "id": 1, "acronym": "EST", "name": "Engenharia Estrutural" },
+  { "id": 3, "acronym": "AER", "name": "Aerodinâmica e Desempenho" }
+]
+```
+
 ### `GET /documents`
 
 Main listing of the document library: serves both the direct navigation ("Ver todos os documentos") and the searches fired from the home screen. All parameters are optional and combined with AND; without any of them the endpoint returns the whole collection.
