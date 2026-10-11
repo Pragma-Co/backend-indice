@@ -1,7 +1,8 @@
 """Versioned legal texts (terms of use, privacy) and per-user consent (LGPD)."""
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
+from django.db.models import Max
 from django.db.models.functions import Now
 
 
@@ -23,6 +24,27 @@ class LegalDocument(models.Model):
 
     def __str__(self):
         return self.title
+
+    def create_next_version(self, *, created_by, summary="", change_notes=""):
+        if self.pk is None:
+            raise ValueError("Save the legal document before creating a version.")
+
+        with transaction.atomic():
+            document = LegalDocument.objects.select_for_update().get(pk=self.pk)
+            latest_version = document.versions.aggregate(max_version=Max("version"))["max_version"]
+            return LegalDocumentVersion.objects.create(
+                document=document,
+                version=(latest_version or 0) + 1,
+                created_by=created_by,
+                summary=summary,
+                change_notes=change_notes,
+            )
+
+    @property
+    def current_published_version(self):
+        return (
+            self.versions.filter(status=LegalDocumentStatus.PUBLISHED).order_by("-version").first()
+        )
 
 
 class LegalDocumentVersion(models.Model):
