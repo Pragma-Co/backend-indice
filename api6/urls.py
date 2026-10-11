@@ -3,6 +3,10 @@
 from django.contrib import admin
 from django.urls import path
 
+from core.views.access_request_view import (
+    access_request_decision_view,
+    pending_access_requests_view,
+)
 from core.views.api_root_view import api_root
 from core.views.catalog_view import list_disciplines, list_document_types, list_projects
 from core.views.document_ai_view import suggest_document_metadata_view
@@ -51,6 +55,16 @@ urlpatterns = [
         "manager/revisions/<int:revision_id>/decision",
         revision_decision_view,
         name="manager-revision-decision",
+    ),
+    path(
+        "manager/pending-access-requests",
+        pending_access_requests_view,
+        name="manager-pending-access-requests",
+    ),
+    path(
+        "manager/access-requests/<int:access_id>/decision",
+        access_request_decision_view,
+        name="manager-access-request-decision",
     ),
     path("files/<int:file_id>/view", document_file_view, name="document-file-view"),
     path("projects/", list_projects, name="project-list"),
