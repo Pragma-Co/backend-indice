@@ -1,0 +1,5 @@
+{
+  "discipline": ["AER", "ELE", "ENS", "EST", "FER", "HID", "MAT", "PES"],
+  "document_type": ["DWG", "ESP", "LDM", "MEM", "NOR", "PRO", "REV"],
+  "area": ["ADM", "AER", "CER", "EST", "MFG", "QUA", "SIS"]
+}
