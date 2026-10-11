@@ -32,6 +32,10 @@ from core.models import (
     DocumentAccess,
     DocumentType,
     File,
+    LegalClause,
+    LegalDocument,
+    LegalDocumentStatus,
+    LegalDocumentVersion,
     Project,
     Revision,
     RevisionStatus,
@@ -84,6 +88,7 @@ class Command(BaseCommand):
         revisions = self._seed_revisions(documents, users)
         self._seed_files(documents, revisions)
         accesses = self._seed_document_access(documents, users)
+        self._seed_legal_documents(users)
         self._seed_audit_log(users, documents, revisions, accesses)
 
         self._report(generated_password, password)
@@ -354,6 +359,49 @@ class Command(BaseCommand):
             self._count("document_access", created)
             accesses.append(access)
         return accesses
+
+    # -- legal documents ------------------------------------------------------
+
+    def _seed_legal_documents(self, users):
+        """Publish the data-processing term. Published versions are never rewritten."""
+        document, created = LegalDocument.objects.get_or_create(
+            slug=data.LEGAL_DOCUMENT_SLUG, defaults={"title": data.LEGAL_DOCUMENT_TITLE}
+        )
+        self._count("legal_document", created)
+
+        content = "\n".join(
+            [data.LEGAL_VERSION_SUMMARY]
+            + [
+                f"{code}|{title}|{required}|{body}"
+                for code, title, required, body in data.LEGAL_CLAUSES
+            ]
+        )
+        version, created = LegalDocumentVersion.objects.get_or_create(
+            document=document,
+            version=data.LEGAL_VERSION,
+            defaults={
+                "status": LegalDocumentStatus.PUBLISHED,
+                "summary": data.LEGAL_VERSION_SUMMARY,
+                "change_notes": data.LEGAL_VERSION_NOTES,
+                "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+                "created_by": users[data.LEGAL_VERSION_AUTHOR],
+                "published_at": self.now,
+            },
+        )
+        self._count("legal_version", created)
+
+        for position, (code, title, required, body) in enumerate(data.LEGAL_CLAUSES, start=1):
+            _, created = LegalClause.objects.get_or_create(
+                version=version,
+                code=code,
+                defaults={
+                    "position": position,
+                    "title": title,
+                    "body": body,
+                    "is_required": required,
+                },
+            )
+            self._count("legal_clause", created)
 
     # -- audit trail ----------------------------------------------------------
 
