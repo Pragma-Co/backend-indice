@@ -15,6 +15,7 @@ from core.views.documents_view import (
 )
 from core.views.file_view import document_file_view
 from core.views.health_view import health_check
+from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
 
@@ -44,6 +45,12 @@ urlpatterns = [
         "documents/<str:temp_file_id>/suggestions",
         suggest_document_metadata_view,
         name="document-ai-suggestions",
+    ),
+    path("manager/pending-revisions", pending_revisions_view, name="manager-pending-revisions"),
+    path(
+        "manager/revisions/<int:revision_id>/decision",
+        revision_decision_view,
+        name="manager-revision-decision",
     ),
     path("files/<int:file_id>/view", document_file_view, name="document-file-view"),
     path("projects/", list_projects, name="project-list"),

@@ -12,6 +12,10 @@ from core.serializers.user_serializer import (
     validate_user_update,
 )
 from core.services import audit_service
+from core.services.excluded_identifier_service import (
+    ExcludedIdentifierError,
+    store_excluded_identifier,
+)
 
 
 def _unauthorized():
@@ -53,6 +57,8 @@ def user_me(request):
                 {"errors": {"email": "A user with this email address already exists."}},
                 status=400,
             )
+        except ExcludedIdentifierError as exc:
+            return JsonResponse({"errors": {"email": str(exc)}}, status=400)
 
         audit_service.log_event(
             request,
@@ -71,16 +77,18 @@ def request_user_deletion(request):
         return _unauthorized()
 
     requested_at = timezone.now()
-    user.is_active = False
-    user.deletion_requested_at = requested_at
-    user.save(update_fields=["is_active", "deletion_requested_at"])
-    audit_service.log_event(
-        request,
-        AuditAction.UPDATE,
-        "app_user",
-        user.pk,
-        {"event": "PERSONAL_DATA_DELETION_REQUESTED"},
-    )
+    with transaction.atomic():
+        store_excluded_identifier(user.email)
+        user.is_active = False
+        user.deletion_requested_at = requested_at
+        user.save(update_fields=["is_active", "deletion_requested_at"])
+        audit_service.log_event(
+            request,
+            AuditAction.UPDATE,
+            "app_user",
+            user.pk,
+            {"event": "PERSONAL_DATA_DELETION_REQUESTED"},
+        )
     return JsonResponse(
         {
             "message": "Personal data deletion request received.",

@@ -29,6 +29,7 @@ from core.models.legal import (
     UserClauseConsent,
     UserLegalAcceptance,
 )
+from core.models.excluded_identifier import ExcludedIdentifier
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
 
@@ -45,6 +46,7 @@ __all__ = [
     "DocumentArea",
     "DocumentTag",
     "DocumentType",
+    "ExcludedIdentifier",
     "File",
     "FileExtension",
     "LegalClause",
