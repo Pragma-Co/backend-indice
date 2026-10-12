@@ -49,5 +49,5 @@ __all__ = [
     "ANONYMOUS_NAME",
     "anonymize_user",
     "anonymized_email",
-    "is_anonymized"
+    "is_anonymized",
 ]
