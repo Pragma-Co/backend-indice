@@ -44,4 +44,10 @@ def is_anonymized(user):
     return user.email == anonymized_email(user.pk)
 
 
-__all__ = ["ANONYMIZED_FIELDS", "ANONYMOUS_NAME", "anonymize_user", "anonymized_email", "is_anonymized"]
+__all__ = [
+    "ANONYMIZED_FIELDS",
+    "ANONYMOUS_NAME",
+    "anonymize_user",
+    "anonymized_email",
+    "is_anonymized"
+]
