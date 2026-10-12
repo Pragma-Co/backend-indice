@@ -9,6 +9,7 @@ from core.views.access_request_view import (
 )
 from core.views.api_root_view import api_root
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
+from core.views.dev_login_view import dev_login_view
 from core.views.document_ai_view import suggest_document_metadata_view
 from core.views.documents_view import (
     archived_documents_view,
@@ -29,6 +30,7 @@ urlpatterns = [
     path("", api_root, name="api-root"),
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
+    path("dev/login", dev_login_view, name="dev-login"),
     path("users/me", user_me, name="user-me"),
     path(
         "users/me/request-deletion",
