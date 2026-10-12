@@ -12,10 +12,8 @@ from core.serializers.user_serializer import (
     validate_user_update,
 )
 from core.services import audit_service
-from core.services.excluded_identifier_service import (
-    ExcludedIdentifierError,
-    store_excluded_identifier,
-)
+from core.services.excluded_identifier_service import ExcludedIdentifierError
+from core.services.user_anonymization_service import anonymize_user
 
 
 def _unauthorized():
@@ -78,16 +76,13 @@ def request_user_deletion(request):
 
     requested_at = timezone.now()
     with transaction.atomic():
-        store_excluded_identifier(user.email)
-        user.is_active = False
-        user.deletion_requested_at = requested_at
-        user.save(update_fields=["is_active", "deletion_requested_at"])
+        summary = anonymize_user(user, requested_at=requested_at)
         audit_service.log_event(
             request,
             AuditAction.UPDATE,
             "app_user",
             user.pk,
-            {"event": "PERSONAL_DATA_DELETION_REQUESTED"},
+            {"event": "PERSONAL_DATA_DELETION_REQUESTED", **summary},
         )
     return JsonResponse(
         {
