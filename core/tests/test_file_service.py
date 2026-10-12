@@ -16,6 +16,7 @@ from core.models import (
     Project,
     Revision,
     RevisionStatus,
+    Role,
     User,
 )
 from core.services.documents_exceptions import (
@@ -29,7 +30,7 @@ from core.services.file_service import get_document_file_for_view
 PDF_BYTES = b"%PDF-1.4 file service"
 
 
-class GetDocumentFileForViewTests(TestCase):
+class StoredFileFixtureMixin:
     def setUp(self):
         self.storage_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.storage_dir, ignore_errors=True)
@@ -86,6 +87,8 @@ class GetDocumentFileForViewTests(TestCase):
             decided_at=timezone.now(),
         )
 
+
+class GetDocumentFileForViewTests(StoredFileFixtureMixin, TestCase):
     def test_should_return_the_file_and_its_path_to_the_responsible(self):
         file_obj, path = get_document_file_for_view(self.stored_file.id, self.owner.id)
 
@@ -122,3 +125,56 @@ class GetDocumentFileForViewTests(TestCase):
 
         with self.assertRaises(DocumentFileNotFoundError):
             get_document_file_for_view(self.stored_file.id, self.owner.id)
+
+
+class ReviewerFileAccessTests(StoredFileFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        area = Area.objects.get(acronym="EST")
+        self.reviewer = User.objects.create_user(
+            email="reviewer@example.com",
+            password="pw",
+            name="Reviewer",
+            area=area,
+            role=Role.AUDITOR,
+        )
+        pending_revision = Revision.objects.create(
+            document=self.document,
+            version=2,
+            status=RevisionStatus.PENDING,
+            author=self.owner,
+        )
+        pending_path = "documents/AK-2100-EST-DWG-0001/v2/ak-2100-est-dwg-0001.pdf"
+        full_path = Path(self.storage_dir) / pending_path
+        full_path.parent.mkdir(parents=True)
+        full_path.write_bytes(PDF_BYTES)
+        self.pending_file = File.objects.create(
+            revision=pending_revision,
+            original_name="desenho-rev02.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(PDF_BYTES),
+            sha256="c" * 64,
+            storage_path=pending_path,
+        )
+
+    def test_should_return_the_file_of_a_pending_revision_to_a_reviewer(self):
+        file_obj, path = get_document_file_for_view(self.pending_file.id, self.reviewer.id)
+
+        self.assertEqual(file_obj, self.pending_file)
+        self.assertEqual(path.read_bytes(), PDF_BYTES)
+
+    def test_should_deny_the_file_of_a_pending_revision_to_a_user_who_is_not_a_reviewer(self):
+        with self.assertRaises(AccessDeniedError):
+            get_document_file_for_view(self.pending_file.id, self.stranger.id)
+
+    def test_should_deny_a_reviewer_without_a_grant_once_the_revision_is_no_longer_pending(self):
+        with self.assertRaises(AccessDeniedError):
+            get_document_file_for_view(self.stored_file.id, self.reviewer.id)
+
+    def test_should_deny_an_inactive_reviewer(self):
+        self.reviewer.is_active = False
+        self.reviewer.save(update_fields=["is_active"])
+
+        with self.assertRaises(AccessDeniedError):
+            get_document_file_for_view(self.pending_file.id, self.reviewer.id)
