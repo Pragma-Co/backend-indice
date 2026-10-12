@@ -53,7 +53,11 @@ def parse_pending_query(params) -> dict:
 
 def pending_revisions():
     return (
-        Revision.objects.filter(status=RevisionStatus.PENDING, document__document_type__active=True)
+        Revision.objects.filter(
+            status=RevisionStatus.PENDING,
+            document__document_type__active=True,
+            document__archived_at__isnull=True,
+        )
         .select_related(
             "author",
             "document__project",
@@ -127,7 +131,11 @@ def decide_revision(revision_id, reviewer, payload) -> tuple[Revision, Revision 
 
     with transaction.atomic():
         document_id = (
-            Revision.objects.filter(pk=revision_id, document__document_type__active=True)
+            Revision.objects.filter(
+                pk=revision_id,
+                document__document_type__active=True,
+                document__archived_at__isnull=True,
+            )
             .values_list("document_id", flat=True)
             .first()
         )

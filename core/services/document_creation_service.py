@@ -400,7 +400,7 @@ def validate_change_description(value) -> str:
 def _revisable_document(document_id) -> Document:
     document = (
         Document.objects.select_related("responsible")
-        .filter(pk=document_id, document_type__active=True)
+        .filter(pk=document_id, document_type__active=True, archived_at__isnull=True)
         .first()
     )
     if document is None:

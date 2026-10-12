@@ -10,7 +10,7 @@ from core.services.documents_service import can_view_document, resolve_user
 
 def _get_document_for_file(file_obj):
     return (
-        Document.objects.filter(document_type__active=True)
+        Document.objects.filter(document_type__active=True, archived_at__isnull=True)
         .select_related("responsible")
         .prefetch_related("revisions")
         .filter(pk=file_obj.revision.document_id)
