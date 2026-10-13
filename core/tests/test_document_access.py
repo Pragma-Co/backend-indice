@@ -19,6 +19,7 @@ from core.models import (
     Project,
     Revision,
     RevisionStatus,
+    Role,
     User,
 )
 from core.services.documents_service import can_view_document
@@ -96,10 +97,32 @@ class DocumentAccessTestCase(TestCase):
     def _file(self, user=None, file_id=None, user_id=None, **headers):
         query = {}
         if user is not None:
-            query["user_id"] = user.id
+            self.client.force_login(user)
         if user_id is not None:
             query["user_id"] = user_id
         return self.client.get(f"/files/{file_id or self.stored_file.id}/view", query, **headers)
+
+    def _add_pending_revision_file(self):
+        pending_revision = Revision.objects.create(
+            document=self.document,
+            version=2,
+            status=RevisionStatus.PENDING,
+            change_description="Ajuste de furação",
+            author=self.owner,
+        )
+        storage_path = "documents/AK-2100-EST-DWG-0001/v2/ak-2100-est-dwg-0001.pdf"
+        full_path = Path(self.storage_dir) / storage_path
+        full_path.parent.mkdir(parents=True)
+        full_path.write_bytes(PDF_BYTES)
+        return File.objects.create(
+            revision=pending_revision,
+            original_name="caverna-14-rev02.pdf",
+            extension="pdf",
+            mime_type="application/pdf",
+            size_bytes=len(PDF_BYTES),
+            sha256="b" * 64,
+            storage_path=storage_path,
+        )
 
     def _request_access(self, user_id, justification="Preciso revisar"):
         return self.client.post(
@@ -284,6 +307,7 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"error": "MissingUser"})
 
+    @override_settings(DEBUG=True)
     def test_should_answer_404_in_json_for_an_unknown_user_or_file(self):
         unknown_user = self._file(user_id=999999)
         unknown_file = self._file(self.owner, file_id=999999)
@@ -314,6 +338,63 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         response = self.client.post(f"/files/{self.stored_file.id}/view")
 
         self.assertEqual(response.status_code, 405)
+
+    @override_settings(DEBUG=False)
+    def test_should_not_trust_query_user_id_outside_debug_mode(self):
+        response = self._file(user_id=self.owner.id)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "MissingUser"})
+        self.assertNotIn(PDF_BYTES, response.content)
+
+    @override_settings(DEBUG=True)
+    def test_should_accept_query_user_id_only_as_a_debug_fallback(self):
+        response = self._file(user_id=self.owner.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), PDF_BYTES)
+
+    @override_settings(DEBUG=True)
+    def test_should_prefer_the_session_user_over_query_user_id(self):
+        response = self._file(self.stranger, user_id=self.owner.id)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AuditLog.objects.get().user, self.stranger)
+
+    def test_should_serve_the_file_of_a_pending_revision_to_a_signed_in_reviewer(self):
+        pending_file = self._add_pending_revision_file()
+        self.manager.role = Role.AUDITOR
+        self.manager.save(update_fields=["role"])
+
+        response = self._file(self.manager, file_id=pending_file.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), PDF_BYTES)
+        self.assertEqual(AuditLog.objects.count(), 0)
+
+    def test_should_deny_the_file_of_a_pending_revision_to_a_signed_in_viewer(self):
+        pending_file = self._add_pending_revision_file()
+
+        response = self._file(self.stranger, file_id=pending_file.id)
+
+        entry = AuditLog.objects.get()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": "AccessDenied"})
+        self.assertNotIn(PDF_BYTES, response.content)
+        self.assertEqual(entry.user, self.stranger)
+        self.assertEqual(entry.record["event"], "DOCUMENT_ACCESS_DENIED")
+
+    @override_settings(DEBUG=False)
+    def test_should_not_serve_a_pending_file_for_a_reviewer_id_without_a_session(self):
+        pending_file = self._add_pending_revision_file()
+        self.manager.role = Role.AUDITOR
+        self.manager.save(update_fields=["role"])
+
+        response = self._file(file_id=pending_file.id, user_id=self.manager.id)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "MissingUser"})
+        self.assertNotIn(PDF_BYTES, response.content)
 
 
 class RequestAccessTests(DocumentAccessTestCase):

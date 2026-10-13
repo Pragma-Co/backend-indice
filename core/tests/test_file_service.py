@@ -169,6 +169,16 @@ class ReviewerFileAccessTests(StoredFileFixtureMixin, TestCase):
             get_document_file_for_view(self.pending_file.id, self.stranger.id)
 
     def test_should_deny_a_reviewer_without_a_grant_once_the_revision_is_no_longer_pending(self):
+        revision = self.pending_file.revision
+        revision.status = RevisionStatus.REJECTED
+        revision.auditor = self.reviewer
+        revision.audited_at = timezone.now()
+        revision.save(update_fields=["status", "auditor", "audited_at"])
+
+        with self.assertRaises(AccessDeniedError):
+            get_document_file_for_view(self.pending_file.id, self.reviewer.id)
+
+    def test_should_deny_a_reviewer_without_a_grant_on_an_already_approved_revision(self):
         with self.assertRaises(AccessDeniedError):
             get_document_file_for_view(self.stored_file.id, self.reviewer.id)
 
