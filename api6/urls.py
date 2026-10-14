@@ -22,6 +22,7 @@ from core.views.documents_view import (
 )
 from core.views.file_view import document_file_view
 from core.views.health_view import health_check
+from core.views.legal_consent_view import current_legal_version_view, legal_acceptances_view
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
@@ -36,6 +37,12 @@ urlpatterns = [
         "users/me/request-deletion",
         request_user_deletion,
         name="user-deletion-request",
+    ),
+    path("users/me/legal-acceptances", legal_acceptances_view, name="user-legal-acceptances"),
+    path(
+        "legal-documents/<slug:slug>/current",
+        current_legal_version_view,
+        name="legal-document-current",
     ),
     path("documents", documents_collection, name="document-list"),
     path("documents/upload", upload_document, name="document-upload"),
