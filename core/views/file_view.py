@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET
@@ -16,11 +17,19 @@ from core.services.file_service import get_document_file_for_view
 logger = logging.getLogger(__name__)
 
 
+def _viewer_id(request):
+    if request.user.is_authenticated:
+        return request.user.id
+    if settings.DEBUG:
+        return request.GET.get("user_id")
+    return None
+
+
 @require_GET
 @xframe_options_exempt
 def document_file_view(request, file_id):
     try:
-        file_obj, path = get_document_file_for_view(file_id, request.GET.get("user_id"))
+        file_obj, path = get_document_file_for_view(file_id, _viewer_id(request))
     except DocumentFileNotFoundError:
         return JsonResponse({"error": "FileNotFound"}, status=404)
     except MissingUserError:
