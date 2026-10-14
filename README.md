@@ -339,7 +339,7 @@ Undoes the archiving. Same rules as `DELETE /documents/<id>`: session, CSRF head
 
 ### `GET /files/<id>/view`
 
-Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). Other answers: `400 MissingUser` without `user_id`, `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
+Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document, or to a revision reviewer (role `AUDITOR` or `ADMIN`) while the revision of the file is still `PENDING`, so the file can be inspected before the decision. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). The viewer is the user of the session; the `user_id` query parameter is only read as a fallback while `DJANGO_DEBUG` is on and there is no session. Other answers: `400 MissingUser` without a session (or, in debug, without `user_id`), `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
 
 ### `POST /documents/<id>/request-access`
 
