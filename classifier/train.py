@@ -3,6 +3,7 @@ import sys
 
 from classifier.catalog import DEFAULT_CATALOG_PATH, CatalogError, load_catalog
 from classifier.dataset import DatasetValidationError, load_dataset
+from classifier.evaluation import evaluate_all, format_evaluation
 from classifier.training import TrainingError, train_all
 
 
@@ -39,8 +40,9 @@ def main(argv=None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    for name, field in trained.items():
-        print(f"{name}: trained on {field.train_size}, held out {len(field.test_texts)}")
+    for name, evaluation in evaluate_all(trained).items():
+        print()
+        print(format_evaluation(evaluation, trained[name].train_size))
     return 0
 
 
