@@ -8,6 +8,7 @@ from core.views.access_request_view import (
     pending_access_requests_view,
 )
 from core.views.api_root_view import api_root
+from core.views.auth_view import logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
 from core.views.dev_login_view import dev_login_view
 from core.views.document_ai_view import suggest_document_metadata_view
@@ -32,6 +33,7 @@ urlpatterns = [
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     path("dev/login", dev_login_view, name="dev-login"),
+    path("auth/logout", logout_view, name="auth-logout"),
     path("users/me", user_me, name="user-me"),
     path(
         "users/me/request-deletion",
