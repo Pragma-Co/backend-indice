@@ -300,6 +300,14 @@ In both formats `change_description` is required, 20 to 255 characters, and is s
 
 Provisional sign in, used by the frontend while the real authentication does not exist. JSON body `{"user_id": <int>}`; opens a Django session for that active user and answers `200` with the same payload as `GET /users/me`. Signing in again replaces the session user. `400 {"error": "MissingUser"}` when `user_id` is missing or not an integer, `400 {"error": "InvalidJSON"}`, `404 {"error": "UserNotFound"}` for an unknown or inactive user. It asks for no credentials, so it only exists while `DJANGO_DEBUG` is on: with it off every call answers `404 {"error": "NotFound"}`. Remove it when the real login lands.
 
+### `POST /auth/logout`
+
+Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
+
+### `POST /users/me/legal-acceptances/<id>/revoke`
+
+Withdraws one of the caller's term acceptances. Requires a session (`401 {"error": "AuthenticationRequired"}`) and the CSRF header. The acceptance is never deleted: it receives `revoked_at` and stays in `GET /users/me/legal-acceptances` as evidence; `terms_accepted_at` of the user moves to the most recent acceptance still in force (or `null`). The action is written to `audit_log` (`action = UPDATE`, `entity = "user_legal_acceptance"`, `record.event = "LEGAL_TERMS_REVOKED"`). Answers `200` with the acceptance, `404 {"error": "LegalAcceptanceNotFound"}` when it does not exist or belongs to another user, and `409 {"error": "LegalAcceptanceAlreadyRevoked"}`. A revoked version cannot be accepted again by the same user (`409 LegalVersionAlreadyAccepted`).
+
 ### `GET /manager/pending-revisions`
 
 Approval queue of the technical manager. Requires a session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` for other roles. Lists every `PENDING` revision of documents with an active type, oldest first, paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `version`, `revision` (`REV02`), `status`, `change_description`, `issue_date`, `created_at`, `author`, `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`) and `files` (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `revision_changed`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
