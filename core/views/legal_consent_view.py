@@ -1,6 +1,7 @@
 import json
 import logging
 
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
 
@@ -62,12 +63,29 @@ def _create_acceptance(request, user):
         return JsonResponse({"error": "InvalidJSON"}, status=400)
 
     try:
-        acceptance = record_acceptance(
-            user,
-            payload,
-            ip_address=audit_service.client_ip(request),
-            user_agent=audit_service.client_user_agent(request),
-        )
+        with transaction.atomic():
+            acceptance = record_acceptance(
+                user,
+                payload,
+                ip_address=audit_service.client_ip(request),
+                user_agent=audit_service.client_user_agent(request),
+            )
+            audit_service.log_event_required(
+                request,
+                AuditAction.CREATE,
+                ENTITY_LEGAL_ACCEPTANCE,
+                acceptance.pk,
+                {
+                    "event": "LEGAL_TERMS_ACCEPTED",
+                    "document": acceptance.version.document.slug,
+                    "version": acceptance.version.version,
+                    "declined_clauses": [
+                        consent.clause.code
+                        for consent in acceptance.clause_consents.all()
+                        if not consent.accepted
+                    ],
+                },
+            )
     except LegalConsentValidationError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except LegalVersionNotFoundError:
@@ -79,24 +97,9 @@ def _create_acceptance(request, user):
             {"error": "OutdatedLegalVersion", "current_version_id": exc.current_version_id},
             status=409,
         )
+    except audit_service.AuditLogWriteError:
+        return JsonResponse({"error": "AuditUnavailable"}, status=503)
     except Exception as exc:
         logger.exception("Failed to record legal acceptance")
         return JsonResponse({"error": type(exc).__name__}, status=500)
-
-    audit_service.log_event(
-        request,
-        AuditAction.CREATE,
-        ENTITY_LEGAL_ACCEPTANCE,
-        acceptance.pk,
-        {
-            "event": "LEGAL_TERMS_ACCEPTED",
-            "document": acceptance.version.document.slug,
-            "version": acceptance.version.version,
-            "declined_clauses": [
-                consent.clause.code
-                for consent in acceptance.clause_consents.all()
-                if not consent.accepted
-            ],
-        },
-    )
     return JsonResponse(serialize_acceptance(acceptance), status=201)
