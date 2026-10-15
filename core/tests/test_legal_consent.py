@@ -1,5 +1,6 @@
 import json
 
+from django.db import IntegrityError, transaction
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -17,6 +18,8 @@ from core.models import (
     UserLegalAcceptance,
 )
 from core.services.legal_consent_exceptions import (
+    LegalAcceptanceAlreadyRevokedError,
+    LegalAcceptanceNotFoundError,
     LegalConsentValidationError,
     LegalDocumentNotFoundError,
     LegalVersionAlreadyAcceptedError,
@@ -26,6 +29,7 @@ from core.services.legal_consent_exceptions import (
 from core.services.legal_consent_service import (
     current_legal_version,
     record_acceptance,
+    revoke_acceptance,
     user_acceptances,
 )
 
@@ -423,5 +427,268 @@ class LegalAcceptancesViewTests(LegalConsentFixtureMixin, TestCase):
         self.client.force_login(self.user)
 
         response = self.client.delete(reverse("user-legal-acceptances"))
+
+        self.assertEqual(response.status_code, 405)
+
+
+class RevokeAcceptanceTests(LegalConsentFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.acceptance = record_acceptance(self.user, self._payload())
+
+    def _revoke(self, acceptance_id=None, client=None):
+        return (client or self.client).post(
+            reverse(
+                "user-legal-acceptance-revoke",
+                kwargs={"acceptance_id": acceptance_id or self.acceptance.pk},
+            )
+        )
+
+    def test_should_mark_the_acceptance_as_revoked_and_keep_it_in_the_history(self):
+        revoked = revoke_acceptance(self.user, self.acceptance.pk)
+
+        self.user.refresh_from_db()
+        self.assertIsNotNone(revoked.revoked_at)
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(UserClauseConsent.objects.filter(acceptance=revoked).count(), 2)
+        self.assertIsNone(self.user.terms_accepted_at)
+
+    def test_should_keep_the_date_of_another_acceptance_still_in_force(self):
+        other_document = LegalDocument.objects.create(slug="politica", title="Política")
+        other_version = LegalDocumentVersion.objects.create(
+            document=other_document,
+            version=1,
+            status=LegalDocumentStatus.PUBLISHED,
+            content_hash="b" * 64,
+            created_by=self.user,
+            published_at=timezone.now(),
+        )
+        clause = LegalClause.objects.create(
+            version=other_version, code="aceite", position=1, title="Artigo 1", body="Texto."
+        )
+        other = record_acceptance(
+            self.user,
+            {
+                "version_id": other_version.pk,
+                "consents": [{"clause_id": clause.pk, "accepted": True}],
+            },
+        )
+
+        revoke_acceptance(self.user, self.acceptance.pk)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.terms_accepted_at, other.accepted_at)
+
+    def test_should_not_revoke_twice(self):
+        revoke_acceptance(self.user, self.acceptance.pk)
+
+        with self.assertRaises(LegalAcceptanceAlreadyRevokedError):
+            revoke_acceptance(self.user, self.acceptance.pk)
+
+    def test_should_not_revoke_the_acceptance_of_another_user(self):
+        with self.assertRaises(LegalAcceptanceNotFoundError):
+            revoke_acceptance(self.other_user, self.acceptance.pk)
+
+        self.acceptance.refresh_from_db()
+        self.assertIsNone(self.acceptance.revoked_at)
+
+    def test_should_let_the_user_accept_the_same_version_again_after_revoking(self):
+        revoked = revoke_acceptance(self.user, self.acceptance.pk)
+
+        renewed = record_acceptance(self.user, self._payload(optional_accepted=True))
+
+        self.user.refresh_from_db()
+        revoked.refresh_from_db()
+        self.assertNotEqual(renewed.pk, revoked.pk)
+        self.assertIsNone(renewed.revoked_at)
+        self.assertIsNotNone(revoked.revoked_at)
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 2)
+        self.assertEqual(self.user.terms_accepted_at, renewed.accepted_at)
+        self.assertEqual(list(user_acceptances(self.user)), [renewed, revoked])
+
+    def test_should_still_refuse_a_new_acceptance_while_one_is_in_force(self):
+        revoke_acceptance(self.user, self.acceptance.pk)
+        record_acceptance(self.user, self._payload())
+
+        with self.assertRaises(LegalVersionAlreadyAcceptedError):
+            record_acceptance(self.user, self._payload())
+
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 2)
+
+    def test_database_should_allow_only_one_acceptance_in_force_per_version(self):
+        revoke_acceptance(self.user, self.acceptance.pk)
+        UserLegalAcceptance.objects.create(user=self.user, version=self.version)
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            UserLegalAcceptance.objects.create(user=self.user, version=self.version)
+
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 2)
+
+    def test_endpoint_should_revoke_and_write_an_audit_entry(self):
+        self.client.force_login(self.user)
+
+        response = self._revoke()
+
+        body = response.json()
+        audit = AuditLog.objects.get(action=AuditAction.UPDATE, entity="user_legal_acceptance")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], self.acceptance.pk)
+        self.assertIsNotNone(body["revoked_at"])
+        self.assertEqual(audit.entity_id, self.acceptance.pk)
+        self.assertEqual(audit.user, self.user)
+        self.assertEqual(audit.record["event"], "LEGAL_TERMS_REVOKED")
+        self.assertEqual(audit.record["document"], "termo-tratamento-dados")
+
+    def test_endpoint_should_answer_409_for_an_acceptance_already_revoked(self):
+        self.client.force_login(self.user)
+        self._revoke()
+
+        response = self._revoke()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {"error": "LegalAcceptanceAlreadyRevoked"})
+
+    def test_endpoint_should_answer_404_for_another_user_or_an_unknown_acceptance(self):
+        self.client.force_login(self.other_user)
+
+        foreign = self._revoke()
+        unknown = self._revoke(acceptance_id=999999)
+
+        self.assertEqual(foreign.status_code, 404)
+        self.assertEqual(foreign.json(), {"error": "LegalAcceptanceNotFound"})
+        self.assertEqual(unknown.status_code, 404)
+
+    def test_endpoint_should_accept_the_version_again_after_revoking(self):
+        self.client.force_login(self.user)
+        self._revoke()
+
+        response = self.client.post(
+            reverse("user-legal-acceptances"),
+            data=json.dumps(self._payload()),
+            content_type="application/json",
+        )
+        history = self.client.get(reverse("user-legal-acceptances")).json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotEqual(response.json()["id"], self.acceptance.pk)
+        self.assertEqual(history["count"], 2)
+        self.assertEqual([item["revoked_at"] is None for item in history["results"]], [True, False])
+
+    def test_endpoint_should_require_a_session(self):
+        response = self._revoke(client=Client())
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
+
+    def test_endpoint_should_only_accept_post(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("user-legal-acceptance-revoke", kwargs={"acceptance_id": self.acceptance.pk})
+        )
+
+        self.assertEqual(response.status_code, 405)
+
+
+class LegalVersionViewTests(LegalConsentFixtureMixin, TestCase):
+    def _get(self, version_id):
+        return self.client.get(reverse("legal-version-detail", kwargs={"version_id": version_id}))
+
+    def test_should_return_a_published_version_with_its_clauses_in_order(self):
+        response = self._get(self.version.pk)
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], self.version.pk)
+        self.assertEqual(
+            body["document"], {"slug": self.document.slug, "title": self.document.title}
+        )
+        self.assertEqual([clause["code"] for clause in body["clauses"]], ["objeto", "comunicados"])
+        self.assertEqual(body["clauses"][0]["body"], "Texto da cláusula objeto.")
+        self.assertEqual(body["summary"], "Declaração do Titular.")
+
+    def test_should_return_a_retired_version_that_someone_may_have_accepted(self):
+        retired = self._version(2, LegalDocumentStatus.RETIRED)
+
+        response = self._get(retired.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["version"], 2)
+
+    def test_should_answer_not_found_for_draft_and_unknown_versions(self):
+        draft = self._version(3, LegalDocumentStatus.DRAFT)
+
+        responses = (self._get(draft.pk), self._get(999999))
+
+        for response in responses:
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.json(), {"error": "LegalVersionNotFound"})
+
+    def test_should_reject_methods_other_than_get(self):
+        response = self.client.post(
+            reverse("legal-version-detail", kwargs={"version_id": self.version.pk})
+        )
+
+        self.assertEqual(response.status_code, 405)
+
+
+class LegalDocumentsViewTests(LegalConsentFixtureMixin, TestCase):
+    def test_should_list_documents_with_their_current_published_version_ordered_by_title(self):
+        newer = self._version(2, LegalDocumentStatus.PUBLISHED)
+        self._clause(newer, "objeto", 1, is_required=True)
+        self._version(3, LegalDocumentStatus.DRAFT)
+        policy = LegalDocument.objects.create(
+            slug="politica-privacidade", title="Política de Privacidade"
+        )
+        policy_version = LegalDocumentVersion.objects.create(
+            document=policy,
+            version=1,
+            status=LegalDocumentStatus.PUBLISHED,
+            content_hash="c" * 64,
+            created_by=self.user,
+            published_at=timezone.now(),
+        )
+        self._clause(policy_version, "aceite", 1, is_required=False)
+        LegalDocument.objects.create(slug="sem-versao", title="Documento sem versão")
+
+        response = self.client.get(reverse("legal-document-list"))
+
+        body = response.json()
+        term = body["results"][1]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["count"], 2)
+        self.assertEqual(
+            [item["slug"] for item in body["results"]],
+            ["politica-privacidade", "termo-tratamento-dados"],
+        )
+        self.assertEqual(term["title"], self.document.title)
+        self.assertEqual(term["current_version"]["id"], newer.pk)
+        self.assertEqual(term["current_version"]["version"], 2)
+        self.assertEqual(
+            term["current_version"]["clauses"],
+            [
+                {
+                    "id": newer.clauses.get().pk,
+                    "code": "objeto",
+                    "position": 1,
+                    "title": "Artigo 1",
+                    "is_required": True,
+                }
+            ],
+        )
+        self.assertFalse(body["results"][0]["current_version"]["clauses"][0]["is_required"])
+
+    def test_should_leave_out_documents_without_a_published_version(self):
+        self.version.status = LegalDocumentStatus.RETIRED
+        self.version.save(update_fields=["status"])
+        self._version(2, LegalDocumentStatus.DRAFT)
+
+        response = self.client.get(reverse("legal-document-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"count": 0, "results": []})
+
+    def test_should_reject_methods_other_than_get(self):
+        response = self.client.post(reverse("legal-document-list"))
 
         self.assertEqual(response.status_code, 405)
