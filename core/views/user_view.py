@@ -1,5 +1,6 @@
 import json
 
+from django.contrib.auth import logout
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.utils import timezone
@@ -89,6 +90,7 @@ def request_user_deletion(request):
             user.pk,
             {"event": "PERSONAL_DATA_DELETION_REQUESTED"},
         )
+    logout(request)
     return JsonResponse(
         {
             "message": "Personal data deletion request received.",

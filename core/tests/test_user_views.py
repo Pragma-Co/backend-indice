@@ -1,5 +1,6 @@
 import json
 
+from django.contrib.sessions.models import Session
 from django.test import Client, TestCase
 
 from core.models import Area, AuditAction, AuditLog, User
@@ -7,7 +8,6 @@ from core.services.excluded_identifier_service import (
     is_identifier_excluded,
     store_excluded_identifier,
 )
-
 
 class UserMeViewTests(TestCase):
     def setUp(self):
@@ -92,6 +92,17 @@ class UserMeViewTests(TestCase):
         self.assertEqual(audit.action, AuditAction.UPDATE)
         self.assertEqual(audit.record["event"], "PERSONAL_DATA_DELETION_REQUESTED")
         self.assertTrue(is_identifier_excluded("titular@example.com"))
+
+    def test_requested_deletion_ends_the_session_and_clears_its_cookie(self):
+        session_key = self.client.session.session_key
+
+        response = self.client.post("/users/me/request-deletion")
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.cookies["sessionid"].value, "")
+        self.assertEqual(response.cookies["sessionid"]["max-age"], 0)
+        self.assertFalse(Session.objects.filter(session_key=session_key).exists())
+        self.assertEqual(self.client.get("/users/me").status_code, 401)
 
     def test_requested_deletion_blocks_recreation_after_user_row_is_removed(self):
         response = self.client.post("/users/me/request-deletion")
