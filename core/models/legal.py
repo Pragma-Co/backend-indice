@@ -153,7 +153,11 @@ class UserLegalAcceptance(models.Model):
     class Meta:
         db_table = "user_legal_acceptance"
         constraints = [
-            models.UniqueConstraint(fields=["user", "version"], name="uq_user_legal_acceptance"),
+            models.UniqueConstraint(
+                fields=["user", "version"],
+                condition=models.Q(revoked_at__isnull=True),
+                name="uq_user_legal_acceptance_in_force",
+            ),
             models.CheckConstraint(
                 condition=models.Q(revoked_at__isnull=True)
                 | models.Q(revoked_at__gte=models.F("accepted_at")),

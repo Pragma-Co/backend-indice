@@ -167,7 +167,9 @@ def record_acceptance(user, payload, *, ip_address=None, user_agent="") -> UserL
         )
         if version is None:
             raise LegalVersionNotFoundError()
-        if UserLegalAcceptance.objects.filter(user=user, version=version).exists():
+        if UserLegalAcceptance.objects.filter(
+            user=user, version=version, revoked_at__isnull=True
+        ).exists():
             raise LegalVersionAlreadyAcceptedError()
         current_version_id = (
             _published_versions()

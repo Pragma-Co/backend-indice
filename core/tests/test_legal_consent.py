@@ -1,5 +1,6 @@
 import json
 
+from django.db import IntegrityError, transaction
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -491,11 +492,37 @@ class RevokeAcceptanceTests(LegalConsentFixtureMixin, TestCase):
         self.acceptance.refresh_from_db()
         self.assertIsNone(self.acceptance.revoked_at)
 
-    def test_should_not_accept_the_same_version_again_after_revoking(self):
+    def test_should_let_the_user_accept_the_same_version_again_after_revoking(self):
+        revoked = revoke_acceptance(self.user, self.acceptance.pk)
+
+        renewed = record_acceptance(self.user, self._payload(optional_accepted=True))
+
+        self.user.refresh_from_db()
+        revoked.refresh_from_db()
+        self.assertNotEqual(renewed.pk, revoked.pk)
+        self.assertIsNone(renewed.revoked_at)
+        self.assertIsNotNone(revoked.revoked_at)
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 2)
+        self.assertEqual(self.user.terms_accepted_at, renewed.accepted_at)
+        self.assertEqual(list(user_acceptances(self.user)), [renewed, revoked])
+
+    def test_should_still_refuse_a_new_acceptance_while_one_is_in_force(self):
         revoke_acceptance(self.user, self.acceptance.pk)
+        record_acceptance(self.user, self._payload())
 
         with self.assertRaises(LegalVersionAlreadyAcceptedError):
             record_acceptance(self.user, self._payload())
+
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 2)
+
+    def test_database_should_allow_only_one_acceptance_in_force_per_version(self):
+        revoke_acceptance(self.user, self.acceptance.pk)
+        UserLegalAcceptance.objects.create(user=self.user, version=self.version)
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            UserLegalAcceptance.objects.create(user=self.user, version=self.version)
+
+        self.assertEqual(UserLegalAcceptance.objects.filter(user=self.user).count(), 2)
 
     def test_endpoint_should_revoke_and_write_an_audit_entry(self):
         self.client.force_login(self.user)
@@ -530,6 +557,22 @@ class RevokeAcceptanceTests(LegalConsentFixtureMixin, TestCase):
         self.assertEqual(foreign.status_code, 404)
         self.assertEqual(foreign.json(), {"error": "LegalAcceptanceNotFound"})
         self.assertEqual(unknown.status_code, 404)
+
+    def test_endpoint_should_accept_the_version_again_after_revoking(self):
+        self.client.force_login(self.user)
+        self._revoke()
+
+        response = self.client.post(
+            reverse("user-legal-acceptances"),
+            data=json.dumps(self._payload()),
+            content_type="application/json",
+        )
+        history = self.client.get(reverse("user-legal-acceptances")).json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotEqual(response.json()["id"], self.acceptance.pk)
+        self.assertEqual(history["count"], 2)
+        self.assertEqual([item["revoked_at"] is None for item in history["results"]], [True, False])
 
     def test_endpoint_should_require_a_session(self):
         response = self._revoke(client=Client())
