@@ -23,7 +23,11 @@ from core.views.documents_view import (
 )
 from core.views.file_view import document_file_view
 from core.views.health_view import health_check
-from core.views.legal_consent_view import current_legal_version_view, legal_acceptances_view
+from core.views.legal_consent_view import (
+    current_legal_version_view,
+    legal_acceptances_view,
+    revoke_legal_acceptance_view,
+)
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
@@ -41,6 +45,11 @@ urlpatterns = [
         name="user-deletion-request",
     ),
     path("users/me/legal-acceptances", legal_acceptances_view, name="user-legal-acceptances"),
+    path(
+        "users/me/legal-acceptances/<int:acceptance_id>/revoke",
+        revoke_legal_acceptance_view,
+        name="user-legal-acceptance-revoke",
+    ),
     path(
         "legal-documents/<slug:slug>/current",
         current_legal_version_view,

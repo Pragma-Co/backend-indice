@@ -2,7 +2,7 @@ import json
 import logging
 
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.models import AuditAction
 from core.serializers.legal_consent_serializer import (
@@ -12,6 +12,8 @@ from core.serializers.legal_consent_serializer import (
 )
 from core.services import audit_service
 from core.services.legal_consent_exceptions import (
+    LegalAcceptanceAlreadyRevokedError,
+    LegalAcceptanceNotFoundError,
     LegalConsentValidationError,
     LegalDocumentNotFoundError,
     LegalVersionAlreadyAcceptedError,
@@ -21,6 +23,7 @@ from core.services.legal_consent_exceptions import (
 from core.services.legal_consent_service import (
     current_legal_version,
     record_acceptance,
+    revoke_acceptance,
     user_acceptances,
 )
 
@@ -100,3 +103,32 @@ def _create_acceptance(request, user):
         },
     )
     return JsonResponse(serialize_acceptance(acceptance), status=201)
+
+
+@require_POST
+def revoke_legal_acceptance_view(request, acceptance_id):
+    user = request.user
+    if not (user.is_authenticated and user.is_active):
+        return JsonResponse({"error": "AuthenticationRequired"}, status=401)
+    try:
+        acceptance = revoke_acceptance(user, acceptance_id)
+    except LegalAcceptanceNotFoundError:
+        return JsonResponse({"error": "LegalAcceptanceNotFound"}, status=404)
+    except LegalAcceptanceAlreadyRevokedError:
+        return JsonResponse({"error": "LegalAcceptanceAlreadyRevoked"}, status=409)
+    except Exception as exc:
+        logger.exception("Failed to revoke legal acceptance")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+    audit_service.log_event(
+        request,
+        AuditAction.UPDATE,
+        ENTITY_LEGAL_ACCEPTANCE,
+        acceptance.pk,
+        {
+            "event": "LEGAL_TERMS_REVOKED",
+            "document": acceptance.version.document.slug,
+            "version": acceptance.version.version,
+        },
+    )
+    return JsonResponse(serialize_acceptance(acceptance))

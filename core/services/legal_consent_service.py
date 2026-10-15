@@ -1,5 +1,6 @@
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
+from django.utils import timezone
 
 from core.models import (
     LegalClause,
@@ -9,6 +10,8 @@ from core.models import (
     UserLegalAcceptance,
 )
 from core.services.legal_consent_exceptions import (
+    LegalAcceptanceAlreadyRevokedError,
+    LegalAcceptanceNotFoundError,
     LegalConsentValidationError,
     LegalDocumentNotFoundError,
     LegalVersionAlreadyAcceptedError,
@@ -195,6 +198,31 @@ def record_acceptance(user, payload, *, ip_address=None, user_agent="") -> UserL
             for clause_id, accepted in decisions.items()
         )
         user.terms_accepted_at = acceptance.accepted_at
+        user.save(update_fields=["terms_accepted_at"])
+
+    return user_acceptances(user).get(pk=acceptance.pk)
+
+
+def revoke_acceptance(user, acceptance_id) -> UserLegalAcceptance:
+    with transaction.atomic():
+        acceptance = (
+            UserLegalAcceptance.objects.select_for_update()
+            .filter(pk=acceptance_id, user=user)
+            .first()
+        )
+        if acceptance is None:
+            raise LegalAcceptanceNotFoundError()
+        if acceptance.revoked_at is not None:
+            raise LegalAcceptanceAlreadyRevokedError()
+
+        acceptance.revoked_at = timezone.now()
+        acceptance.save(update_fields=["revoked_at"])
+        user.terms_accepted_at = (
+            UserLegalAcceptance.objects.filter(user=user, revoked_at__isnull=True)
+            .order_by("-accepted_at")
+            .values_list("accepted_at", flat=True)
+            .first()
+        )
         user.save(update_fields=["terms_accepted_at"])
 
     return user_acceptances(user).get(pk=acceptance.pk)
