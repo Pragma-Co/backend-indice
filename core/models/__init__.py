@@ -32,6 +32,7 @@ from core.models.legal import (
 )
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
+from core.models.search import DocumentContent
 
 __all__ = [
     "MAX_FILE_SIZE_BYTES",
@@ -44,6 +45,7 @@ __all__ = [
     "Document",
     "DocumentAccess",
     "DocumentArea",
+    "DocumentContent",
     "DocumentTag",
     "DocumentType",
     "ExcludedIdentifier",
