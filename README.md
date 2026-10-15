@@ -228,6 +228,46 @@ Response `200`, ordered by most recent first:
 
 Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
 
+### `GET /documents/search`
+
+Full-text search for the document library. Takes a free-text query in `q` (required, up to 200 characters) and matches it against the title, code, description, manual tags, the thematic tags generated from the content and the normalized content of the latest revision. Matching uses PostgreSQL full-text search with the `portuguese_unaccent` configuration (Portuguese stemming, accents ignored), so `calculo viga` finds `Memorial de Cálculo das Vigas`. Query words are alternatives (OR): documents matching more words, or matching them in the title and tags, rank higher.
+
+Content is confidential: a match inside the content (and its snippets) only counts for the responsible user or a user with an approved access grant, identified by the session. Everyone else finds documents through their metadata only, as in the listing.
+
+Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `discipline`, `status`, `tags`, dates, `page`, `page_size`) is accepted and narrows the search. Response `200`, ordered by relevance:
+
+```json
+{
+  "query": "fadiga",
+  "count": 1,
+  "total_pages": 1,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 3,
+      "code": "AK-2100-EST-MEM-0002",
+      "title": "Memorial de cálculo do revestimento inferior",
+      "...": "same fields as GET /documents",
+      "score": 0.6687,
+      "tags": ["fadiga", "junção estrutural"],
+      "thematic_tags": ["revestimento", "tensões"],
+      "matched_tags": ["fadiga"],
+      "content_match": true,
+      "highlights": {
+        "title": "Memorial de cálculo do revestimento inferior",
+        "description": "Verificação de tensões e vida em <mark>fadiga</mark> do revestimento inferior",
+        "content": ["… ensaio de <mark>fadiga</mark> em escala de painel …"]
+      }
+    }
+  ]
+}
+```
+
+`highlights` are HTML-escaped, with the matched words wrapped in `<mark>`; `content` holds up to three fragments and is empty when the content did not match or the user cannot read it. `thematic_tags` are the most frequent meaningful words of the content (Portuguese and English stopwords removed). Invalid parameters answer `400` with `{"errors": {"q": {"code": "required" | "too_long" | "invalid", ...}}}` plus the listing errors.
+
+The index lives in the `document_content` table and is refreshed whenever a document or a new revision is created. Documents created before it existed are indexed with `manage.py index_documents` (`--missing-only` skips those already indexed).
+
 ### `POST /documents`
 
 Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
@@ -362,6 +402,7 @@ docker compose exec api python manage.py migrate           # apply migrations
 docker compose exec api python manage.py makemigrations    # create migrations
 docker compose exec api python manage.py createsuperuser   # create an EXTRA admin user (the default one is automatic)
 docker compose exec api python manage.py seed              # load the demo dataset (idempotent, see below)
+docker compose exec api python manage.py index_documents   # (re)build the full-text search index
 docker compose exec api python manage.py shell             # Django shell
 docker compose exec api python manage.py test              # run tests
 
