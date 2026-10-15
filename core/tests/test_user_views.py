@@ -111,9 +111,7 @@ class UserMeViewTests(TestCase):
         self.assertEqual(AuditLog.objects.count(), 0)
 
     def test_post_records_request_deactivates_but_does_not_delete_user(self):
-        response = self.client.post(
-            "/users/me/request-deletion", REMOTE_ADDR="203.0.113.7"
-        )
+        response = self.client.post("/users/me/request-deletion", REMOTE_ADDR="203.0.113.7")
 
         self.user.refresh_from_db()
         audit = AuditLog.objects.get()
