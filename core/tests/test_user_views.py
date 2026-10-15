@@ -9,6 +9,9 @@ from core.services.excluded_identifier_service import (
     store_excluded_identifier,
 )
 
+CSRF_TOKEN = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+
+
 class UserMeViewTests(TestCase):
     def setUp(self):
         self.client = Client()
@@ -103,6 +106,31 @@ class UserMeViewTests(TestCase):
         self.assertEqual(response.cookies["sessionid"]["max-age"], 0)
         self.assertFalse(Session.objects.filter(session_key=session_key).exists())
         self.assertEqual(self.client.get("/users/me").status_code, 401)
+
+    def _browser_put(self, origin):
+        browser = Client(enforce_csrf_checks=True)
+        browser.force_login(self.user)
+        browser.cookies["csrftoken"] = CSRF_TOKEN
+        return browser.put(
+            "/users/me",
+            data=json.dumps({"name": "Titular Atualizado", "email": "titular@example.com"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=CSRF_TOKEN,
+            HTTP_ORIGIN=origin,
+        )
+
+    def test_frontend_origin_can_update_the_profile_with_the_csrf_token(self):
+        response = self._browser_put("http://localhost:5173")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Titular Atualizado")
+
+    def test_unknown_origin_cannot_update_the_profile(self):
+        response = self._browser_put("http://evil.example.com")
+
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.user.name, "Titular")
 
     def test_requested_deletion_blocks_recreation_after_user_row_is_removed(self):
         response = self.client.post("/users/me/request-deletion")
