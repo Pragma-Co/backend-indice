@@ -304,6 +304,26 @@ Provisional sign in, used by the frontend while the real authentication does not
 
 Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
 
+### `GET /legal-documents/<slug>/current`
+
+Latest published version of a legal document (for the seeded term the slug is `termo-tratamento-dados`), with its clauses and their ids: `{"id", "version", "document": {"slug", "title"}, "summary", "content_hash", "published_at", "clauses": [{"id", "code", "position", "title", "body", "is_required"}]}`, clauses ordered by `position`. No session needed. `404 {"error": "LegalDocumentNotFound"}` for an unknown slug or a document without a published version.
+
+### `GET /legal-documents`
+
+Legal documents that have a published version, ordered by title, each with its current version: `{"count", "results": [{"slug", "title", "current_version": {"id", "version", "published_at", "clauses": [{"id", "code", "position", "title", "is_required"}]}}]}`. Clause bodies are left out; read them through `GET /legal-documents/versions/<id>`. No session needed. The profile screen uses it to list the terms the user has not accepted yet.
+
+### `GET /legal-documents/versions/<id>`
+
+Full text of one specific version, same payload as `GET /legal-documents/<slug>/current`, so the history can show exactly the version the user accepted even after a newer one was published. Serves `PUBLISHED` and `RETIRED` versions; `404 {"error": "LegalVersionNotFound"}` for unknown ids and drafts. No session needed.
+
+### `POST /users/me/legal-acceptances`
+
+Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, required clauses must be accepted, and only the current published version can be accepted. Answers `201` with the acceptance (`id`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes `audit_log` (`CREATE`, `user_legal_acceptance`, `LEGAL_TERMS_ACCEPTED`) and sets the user's `terms_accepted_at`. Errors: `400 {"errors": ...}` with codes such as `required_clause_declined`, `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
+
+### `GET /users/me/legal-acceptances`
+
+History of the caller's acceptances, newest first, revoked ones included: `{"count", "results": [acceptance, ...]}` with the same acceptance payload as the `POST`. Requires a session; IP address and user agent are never exposed.
+
 ### `POST /users/me/legal-acceptances/<id>/revoke`
 
 Withdraws one of the caller's term acceptances. Requires a session (`401 {"error": "AuthenticationRequired"}`) and the CSRF header. The acceptance is never deleted: it receives `revoked_at` and stays in `GET /users/me/legal-acceptances` as evidence; `terms_accepted_at` of the user moves to the most recent acceptance still in force (or `null`). The action is written to `audit_log` (`action = UPDATE`, `entity = "user_legal_acceptance"`, `record.event = "LEGAL_TERMS_REVOKED"`). Answers `200` with the acceptance, `404 {"error": "LegalAcceptanceNotFound"}` when it does not exist or belongs to another user, and `409 {"error": "LegalAcceptanceAlreadyRevoked"}`. The user may accept the same version again afterwards through `POST /users/me/legal-acceptances`: the new acceptance is a new row, the revoked one stays in the history, and only one acceptance per version can be in force at a time.

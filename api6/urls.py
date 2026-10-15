@@ -26,6 +26,8 @@ from core.views.health_view import health_check
 from core.views.legal_consent_view import (
     current_legal_version_view,
     legal_acceptances_view,
+    legal_documents_view,
+    legal_version_view,
     revoke_legal_acceptance_view,
 )
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
@@ -49,6 +51,12 @@ urlpatterns = [
         "users/me/legal-acceptances/<int:acceptance_id>/revoke",
         revoke_legal_acceptance_view,
         name="user-legal-acceptance-revoke",
+    ),
+    path("legal-documents", legal_documents_view, name="legal-document-list"),
+    path(
+        "legal-documents/versions/<int:version_id>",
+        legal_version_view,
+        name="legal-version-detail",
     ),
     path(
         "legal-documents/<slug:slug>/current",

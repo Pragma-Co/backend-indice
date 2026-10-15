@@ -588,3 +588,107 @@ class RevokeAcceptanceTests(LegalConsentFixtureMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 405)
+
+
+class LegalVersionViewTests(LegalConsentFixtureMixin, TestCase):
+    def _get(self, version_id):
+        return self.client.get(reverse("legal-version-detail", kwargs={"version_id": version_id}))
+
+    def test_should_return_a_published_version_with_its_clauses_in_order(self):
+        response = self._get(self.version.pk)
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["id"], self.version.pk)
+        self.assertEqual(
+            body["document"], {"slug": self.document.slug, "title": self.document.title}
+        )
+        self.assertEqual([clause["code"] for clause in body["clauses"]], ["objeto", "comunicados"])
+        self.assertEqual(body["clauses"][0]["body"], "Texto da cláusula objeto.")
+        self.assertEqual(body["summary"], "Declaração do Titular.")
+
+    def test_should_return_a_retired_version_that_someone_may_have_accepted(self):
+        retired = self._version(2, LegalDocumentStatus.RETIRED)
+
+        response = self._get(retired.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["version"], 2)
+
+    def test_should_answer_not_found_for_draft_and_unknown_versions(self):
+        draft = self._version(3, LegalDocumentStatus.DRAFT)
+
+        responses = (self._get(draft.pk), self._get(999999))
+
+        for response in responses:
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.json(), {"error": "LegalVersionNotFound"})
+
+    def test_should_reject_methods_other_than_get(self):
+        response = self.client.post(
+            reverse("legal-version-detail", kwargs={"version_id": self.version.pk})
+        )
+
+        self.assertEqual(response.status_code, 405)
+
+
+class LegalDocumentsViewTests(LegalConsentFixtureMixin, TestCase):
+    def test_should_list_documents_with_their_current_published_version_ordered_by_title(self):
+        newer = self._version(2, LegalDocumentStatus.PUBLISHED)
+        self._clause(newer, "objeto", 1, is_required=True)
+        self._version(3, LegalDocumentStatus.DRAFT)
+        policy = LegalDocument.objects.create(
+            slug="politica-privacidade", title="Política de Privacidade"
+        )
+        policy_version = LegalDocumentVersion.objects.create(
+            document=policy,
+            version=1,
+            status=LegalDocumentStatus.PUBLISHED,
+            content_hash="c" * 64,
+            created_by=self.user,
+            published_at=timezone.now(),
+        )
+        self._clause(policy_version, "aceite", 1, is_required=False)
+        LegalDocument.objects.create(slug="sem-versao", title="Documento sem versão")
+
+        response = self.client.get(reverse("legal-document-list"))
+
+        body = response.json()
+        term = body["results"][1]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["count"], 2)
+        self.assertEqual(
+            [item["slug"] for item in body["results"]],
+            ["politica-privacidade", "termo-tratamento-dados"],
+        )
+        self.assertEqual(term["title"], self.document.title)
+        self.assertEqual(term["current_version"]["id"], newer.pk)
+        self.assertEqual(term["current_version"]["version"], 2)
+        self.assertEqual(
+            term["current_version"]["clauses"],
+            [
+                {
+                    "id": newer.clauses.get().pk,
+                    "code": "objeto",
+                    "position": 1,
+                    "title": "Artigo 1",
+                    "is_required": True,
+                }
+            ],
+        )
+        self.assertFalse(body["results"][0]["current_version"]["clauses"][0]["is_required"])
+
+    def test_should_leave_out_documents_without_a_published_version(self):
+        self.version.status = LegalDocumentStatus.RETIRED
+        self.version.save(update_fields=["status"])
+        self._version(2, LegalDocumentStatus.DRAFT)
+
+        response = self.client.get(reverse("legal-document-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"count": 0, "results": []})
+
+    def test_should_reject_methods_other_than_get(self):
+        response = self.client.post(reverse("legal-document-list"))
+
+        self.assertEqual(response.status_code, 405)

@@ -8,6 +8,7 @@ from core.models import AuditAction
 from core.serializers.legal_consent_serializer import (
     serialize_acceptance,
     serialize_acceptance_history,
+    serialize_legal_documents,
     serialize_legal_version,
 )
 from core.services import audit_service
@@ -22,6 +23,8 @@ from core.services.legal_consent_exceptions import (
 )
 from core.services.legal_consent_service import (
     current_legal_version,
+    legal_documents,
+    legal_version,
     record_acceptance,
     revoke_acceptance,
     user_acceptances,
@@ -41,6 +44,26 @@ def current_legal_version_view(request, slug):
         return JsonResponse({"error": "LegalDocumentNotFound"}, status=404)
     except Exception as exc:
         logger.exception("Failed to load the current legal version")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@require_GET
+def legal_version_view(request, version_id):
+    try:
+        return JsonResponse(serialize_legal_version(legal_version(version_id)))
+    except LegalVersionNotFoundError:
+        return JsonResponse({"error": "LegalVersionNotFound"}, status=404)
+    except Exception as exc:
+        logger.exception("Failed to load the legal version")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@require_GET
+def legal_documents_view(request):
+    try:
+        return JsonResponse(serialize_legal_documents(legal_documents()))
+    except Exception as exc:
+        logger.exception("Failed to list the legal documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 

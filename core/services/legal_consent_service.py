@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from core.models import (
     LegalClause,
+    LegalDocument,
     LegalDocumentStatus,
     LegalDocumentVersion,
     UserClauseConsent,
@@ -31,22 +32,47 @@ def _is_positive_int(value):
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+READABLE_STATUSES = (LegalDocumentStatus.PUBLISHED, LegalDocumentStatus.RETIRED)
+
+
 def _published_versions():
     return LegalDocumentVersion.objects.filter(status=LegalDocumentStatus.PUBLISHED)
 
 
+def _with_clauses(queryset):
+    return queryset.select_related("document").prefetch_related(
+        Prefetch("clauses", queryset=LegalClause.objects.order_by("position"))
+    )
+
+
 def current_legal_version(slug) -> LegalDocumentVersion:
     version = (
-        _published_versions()
-        .filter(document__slug=slug)
-        .select_related("document")
-        .prefetch_related(Prefetch("clauses", queryset=LegalClause.objects.order_by("position")))
+        _with_clauses(_published_versions().filter(document__slug=slug))
         .order_by("-version")
         .first()
     )
     if version is None:
         raise LegalDocumentNotFoundError()
     return version
+
+
+def legal_version(version_id) -> LegalDocumentVersion:
+    version = _with_clauses(
+        LegalDocumentVersion.objects.filter(pk=version_id, status__in=READABLE_STATUSES)
+    ).first()
+    if version is None:
+        raise LegalVersionNotFoundError()
+    return version
+
+
+def legal_documents() -> list[tuple[LegalDocument, LegalDocumentVersion]]:
+    current_versions = {}
+    for version in _with_clauses(_published_versions()).order_by("document_id", "-version"):
+        current_versions.setdefault(version.document_id, version)
+    return sorted(
+        ((version.document, version) for version in current_versions.values()),
+        key=lambda item: (item[0].title, item[0].slug),
+    )
 
 
 def user_acceptances(user):
