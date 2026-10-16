@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from django.contrib.auth.models import AnonymousUser
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
@@ -212,6 +212,21 @@ class AuditServiceTests(TestCase):
         entry = AuditLog.objects.get()
 
         self.assertIsNone(entry.user)
+        self.assertEqual(entry.record["actor"]["name"], "Ana")
+
+    def test_should_reject_updates_and_deletes_of_audit_records(self):
+        request = self._request(self.user)
+        audit_service.log_event(request, AuditAction.DOC_DOWNLOAD, "document", 3)
+        entry = AuditLog.objects.get()
+
+        with self.assertRaises(DatabaseError):
+            with transaction.atomic():
+                AuditLog.objects.filter(pk=entry.pk).update(record={"tampered": True})
+        with self.assertRaises(DatabaseError):
+            with transaction.atomic():
+                AuditLog.objects.filter(pk=entry.pk).delete()
+
+        entry.refresh_from_db()
         self.assertEqual(entry.record["actor"]["name"], "Ana")
 
     def test_should_store_occurred_at_in_utc(self):
