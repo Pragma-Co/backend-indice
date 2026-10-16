@@ -196,6 +196,24 @@ class DocumentIndexServiceTests(DocumentSearchTestCase):
         self.assertEqual(indexed.content, BRIDGE_TEXT)
         self.assertEqual(indexed.thematic_tags, ["ponte", "fundação"])
 
+    @mock.patch("core.services.document_creation_service.get_mongo_db")
+    def test_should_reindex_the_document_content_when_a_revision_is_created(self, mongo):
+        document = self._document("MEM-001", "Memorial", content="Texto antigo")
+        temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, temp_dir, ignore_errors=True)
+        temp_file_id = "11111111-2222-4333-8444-666666666666"
+        self._write_docx(Path(temp_dir) / f"{temp_file_id}.docx", [BRIDGE_TEXT])
+
+        with override_settings(TEMP_UPLOAD_DIR=temp_dir):
+            revision = document_creation_service.create_document_revision(
+                document.id, [temp_file_id], "Atualiza o memorial da ponte"
+            )
+
+        indexed = DocumentContent.objects.get(pk=document.pk)
+        self.assertEqual(indexed.revision, revision)
+        self.assertEqual(indexed.content, BRIDGE_TEXT)
+        self.assertEqual(indexed.thematic_tags, ["ponte", "fundação"])
+
 
 class DocumentSearchViewTests(DocumentSearchTestCase):
     def test_should_return_content_matches_with_highlighted_snippets_to_the_owner(self):
@@ -255,6 +273,7 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
 
     def test_should_find_documents_by_generated_thematic_tags(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
+        self.client.force_login(self.owner)
 
         response = self._search(q="fundação")
 
@@ -262,6 +281,31 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         self.assertEqual(result["code"], "MEM-001")
         self.assertEqual(result["thematic_tags"], ["ponte", "fundação"])
         self.assertEqual(result["matched_tags"], ["fundação"])
+
+    def test_should_not_match_thematic_tags_for_users_without_access(self):
+        self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
+        self.client.force_login(self.reader)
+
+        response = self._search(q="fundação")
+
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_should_not_match_thematic_tags_for_anonymous_users(self):
+        self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
+
+        response = self._search(q="fundação")
+
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_should_not_expose_thematic_tags_to_users_without_access(self):
+        self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)
+        self.client.force_login(self.reader)
+
+        response = self._search(q="ponte")
+
+        result = response.json()["results"][0]
+        self.assertEqual(result["thematic_tags"], [])
+        self.assertEqual(result["matched_tags"], [])
 
     def test_should_find_documents_by_manual_tags(self):
         document = self._document("MEM-001", "Memorial descritivo")

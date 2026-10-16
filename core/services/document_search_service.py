@@ -14,7 +14,6 @@ from django.db.models import (
     ExpressionWrapper,
     F,
     FloatField,
-    Func,
     OuterRef,
     Q,
     Subquery,
@@ -35,6 +34,7 @@ from core.serializers.document_search_serializer import (
     serialize_search_highlights,
 )
 from core.services.document_exceptions import DocumentQueryError
+from core.services.document_index_service import thematic_tag_names
 from core.services.documents_service import (
     filter_documents,
     paginate_documents,
@@ -100,22 +100,11 @@ def _tag_names(separator=" "):
     return Coalesce(names, Value(""), output_field=TextField())
 
 
-def _thematic_tag_names(separator=" "):
-    names = Func(
-        F("indexed_content__thematic_tags"),
-        Value(separator),
-        function="array_to_string",
-        output_field=TextField(),
-    )
-    return Coalesce(names, Value(""), output_field=TextField())
-
-
 def _metadata_vector():
     return (
         SearchVector("title", weight="A", config=SEARCH_CONFIG)
         + SearchVector("code", weight="A", config=SEARCH_CONFIG)
         + SearchVector(_tag_names(), weight="A", config=SEARCH_CONFIG)
-        + SearchVector(_thematic_tag_names(), weight="A", config=SEARCH_CONFIG)
         + SearchVector("description", weight="B", config=SEARCH_CONFIG)
     )
 
@@ -187,7 +176,16 @@ def fetch_highlights(document_ids, content_match_ids, search_query):
                 Concat(
                     _tag_names(TAG_SEPARATOR),
                     Value(TAG_SEPARATOR),
-                    _thematic_tag_names(TAG_SEPARATOR),
+                    Case(
+                        When(
+                            pk__in=content_match_ids,
+                            then=thematic_tag_names(
+                                "indexed_content__thematic_tags", TAG_SEPARATOR
+                            ),
+                        ),
+                        default=Value(""),
+                        output_field=TextField(),
+                    ),
                     output_field=TextField(),
                 ),
                 search_query,
@@ -225,7 +223,7 @@ def _serialize_result(document):
         **serialize_document(document),
         "score": round(document.score, SCORE_DECIMALS),
         "tags": [tag.name for tag in document.tags.all()],
-        "thematic_tags": list(document.thematic_tags or []),
+        "thematic_tags": list(document.thematic_tags or []) if document.can_read else [],
         "content_match": document.content_match,
     }
 

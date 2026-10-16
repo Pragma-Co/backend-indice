@@ -5,6 +5,8 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.postgres.search import SearchVector
+from django.db.models import F, Func, TextField, Value
+from django.db.models.functions import Coalesce
 
 from core.models import Document, DocumentContent, Revision
 from core.models.search import SEARCH_CONFIG, THEMATIC_TAG_MAX_LENGTH
@@ -22,6 +24,11 @@ THEMATIC_TAG_LIMIT = 8
 THEMATIC_TAG_MIN_LENGTH = 4
 THEMATIC_TAG_MIN_OCCURRENCES = 2
 WORD_PATTERN = re.compile(r"[^\W\d_]+")
+
+
+def thematic_tag_names(field="thematic_tags", separator=" "):
+    names = Func(F(field), Value(separator), function="array_to_string", output_field=TextField())
+    return Coalesce(names, Value(""), output_field=TextField())
 
 
 def generate_thematic_tags(content: str) -> list[str]:
@@ -51,7 +58,8 @@ def save_document_content(
         },
     )
     DocumentContent.objects.filter(pk=indexed.pk).update(
-        search_vector=SearchVector("content", weight="C", config=SEARCH_CONFIG)
+        search_vector=SearchVector(thematic_tag_names(), weight="B", config=SEARCH_CONFIG)
+        + SearchVector("content", weight="C", config=SEARCH_CONFIG)
     )
     return indexed
 
