@@ -4,7 +4,6 @@ from django.utils import timezone
 from core.models import (
     AccessStatus,
     Area,
-    AuditAction,
     AuditLog,
     Discipline,
     Document,
@@ -19,10 +18,11 @@ from core.models import (
 )
 from core.services.excluded_identifier_service import is_identifier_excluded
 from core.services.user_anonymization_service import (
-    ANONYMIZED_FIELDS,
     ANONYMOUS_NAME,
+    NoReplacementManagerError,
     anonymize_user,
     anonymized_email,
+    delete_user_account,
     is_anonymized,
 )
 
@@ -86,102 +86,129 @@ class UserAnonymizationTests(TestCase):
             requested_at=timezone.now(),
         )
         self.original_email = self.author.email
+        self.area.manager = self.manager
+        self.area.save()
 
     def _anonymize(self):
-        anonymize_user(self.author, requested_at=timezone.now())
+        anonymize_user(self.author)
         self.author.refresh_from_db()
 
-    def test_personal_data_is_removed_from_the_user(self):
+    def test_soft_delete_clears_contact_data_and_deactivates(self):
         self._anonymize()
 
         self.assertEqual(self.author.name, ANONYMOUS_NAME)
         self.assertEqual(self.author.email, anonymized_email(self.author.pk))
-        self.assertNotIn("maria", self.author.email)
         self.assertFalse(self.author.has_usable_password())
         self.assertIsNone(self.author.terms_accepted_at)
         self.assertFalse(self.author.is_active)
-        self.assertIsNotNone(self.author.deletion_requested_at)
         self.assertTrue(is_anonymized(self.author))
+        self.assertTrue(is_identifier_excluded(self.original_email))
 
-    def test_documents_revisions_and_files_are_preserved_with_anonymous_authorship(self):
+    def test_soft_delete_keeps_the_archive_and_authorship(self):
         self._anonymize()
 
-        self.document.refresh_from_db()
         self.revision.refresh_from_db()
         self.assertEqual(Document.objects.count(), 1)
-        self.assertEqual(Revision.objects.count(), 1)
         self.assertEqual(File.objects.filter(pk=self.file.pk).count(), 1)
-        self.assertEqual(self.document.created_by_id, self.author.pk)
-        self.assertEqual(self.document.responsible_id, self.author.pk)
-        self.assertEqual(self.document.updated_by_id, self.author.pk)
         self.assertEqual(self.revision.author_id, self.author.pk)
-        self.assertEqual(self.document.created_by.name, ANONYMOUS_NAME)
-        self.assertEqual(self.revision.author.name, ANONYMOUS_NAME)
+
+    def test_soft_delete_discards_pending_requests_so_they_cannot_be_approved(self):
+        summary = anonymize_user(self.author)
+
+        self.assertFalse(DocumentAccess.objects.filter(status=AccessStatus.PENDING).exists())
+        self.assertEqual(summary["removed"], {"document_access(pending)": 1})
+
+    def test_soft_delete_hands_manager_work_to_another_manager(self):
+        other = User.objects.create_user(
+            email="outro.gestor@example.com",
+            password="senha-forte-123",
+            name="Outro Gestor",
+            role=Role.AUDITOR,
+            area=self.area,
+        )
+        pending = Revision.objects.create(
+            document=self.document,
+            version=2,
+            status=RevisionStatus.PENDING,
+            change_description="Segunda",
+            author=self.author,
+            auditor=self.manager,
+        )
+
+        anonymize_user(self.manager)
+
+        pending.refresh_from_db()
+        self.area.refresh_from_db()
+        self.assertEqual(pending.auditor_id, other.pk)
+        self.assertEqual(self.area.manager_id, other.pk)
+        self.revision.refresh_from_db()
+        self.assertEqual(self.revision.auditor_id, self.manager.pk)
+
+    def test_soft_delete_is_refused_without_another_manager(self):
+        with self.assertRaises(NoReplacementManagerError):
+            anonymize_user(self.manager)
+
+        self.manager.refresh_from_db()
+        self.assertTrue(self.manager.is_active)
 
     def test_other_users_are_left_untouched(self):
         self._anonymize()
 
         self.manager.refresh_from_db()
         self.assertEqual(self.manager.name, "Gestor")
-        self.assertEqual(self.manager.email, "gestor@example.com")
         self.assertTrue(self.manager.is_active)
 
-    def test_original_email_is_blocked_from_reuse(self):
-        self._anonymize()
+    def test_hard_delete_removes_the_user_and_reassigns_relations(self):
+        summary = delete_user_account(self.author)
 
+        self.assertFalse(User.objects.filter(pk=self.author.pk).exists())
+        self.assertFalse(DocumentAccess.objects.exists())
+        self.document.refresh_from_db()
+        self.revision.refresh_from_db()
+        for value in (
+            self.document.created_by_id,
+            self.document.responsible_id,
+            self.document.updated_by_id,
+            self.revision.author_id,
+        ):
+            self.assertEqual(value, self.manager.pk)
+        self.assertEqual(summary["reassigned_to"], self.manager.pk)
         self.assertTrue(is_identifier_excluded(self.original_email))
 
-    def test_free_text_written_by_the_user_is_cleared_but_the_access_row_is_kept(self):
-        self._anonymize()
-
-        self.access.refresh_from_db()
-        self.assertEqual(self.access.justification, "")
-        self.assertEqual(self.access.user_id, self.author.pk)
-
-    def test_returns_a_summary_without_personal_data(self):
-        summary = anonymize_user(self.author, requested_at=timezone.now())
-
-        self.assertEqual(summary["fields"], list(ANONYMIZED_FIELDS))
-        self.assertEqual(summary["cleared"], {"document_access.justification": 1})
-        self.assertNotIn("maria", str(summary).lower())
-
-    def test_anonymizing_twice_is_harmless(self):
-        self._anonymize()
-        self._anonymize()
-
-        self.assertEqual(self.author.email, anonymized_email(self.author.pk))
-        self.assertEqual(Document.objects.count(), 1)
-
-    def test_two_anonymized_users_do_not_collide_on_the_unique_email(self):
+    def test_hard_delete_of_a_manager_moves_reviews_to_another_manager(self):
         other = User.objects.create_user(
-            email="outro@example.com",
-            password="Sup3r-secret-pass",
-            name="Outro",
+            email="outro.gestor@example.com",
+            password="senha-forte-123",
+            name="Outro Gestor",
+            role=Role.AUDITOR,
             area=self.area,
         )
 
-        self._anonymize()
-        anonymize_user(other, requested_at=timezone.now())
+        delete_user_account(self.manager)
 
-        self.assertEqual(User.objects.filter(name=ANONYMOUS_NAME).count(), 2)
+        self.revision.refresh_from_db()
+        self.area.refresh_from_db()
+        self.assertEqual(self.revision.auditor_id, other.pk)
+        self.assertEqual(self.area.manager_id, other.pk)
 
-    def test_deletion_endpoint_anonymizes_and_keeps_the_archive(self):
+    def test_hard_delete_is_refused_without_another_manager(self):
+        with self.assertRaises(NoReplacementManagerError):
+            delete_user_account(self.manager)
+
+        self.assertTrue(User.objects.filter(pk=self.manager.pk).exists())
+
+    def test_deletion_endpoint_anonymizes_and_discards_pending_requests(self):
         client = Client()
         client.force_login(self.author)
 
         response = client.post("/users/me/request-deletion")
 
         self.author.refresh_from_db()
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(self.author.name, ANONYMOUS_NAME)
+        self.assertEqual(response.status_code, 200)
         self.assertTrue(is_anonymized(self.author))
+        self.assertFalse(DocumentAccess.objects.filter(status=AccessStatus.PENDING).exists())
         self.assertEqual(Document.objects.count(), 1)
-        self.assertEqual(Revision.objects.count(), 1)
-        audit = AuditLog.objects.get(action=AuditAction.UPDATE, entity="app_user")
+        audit = AuditLog.objects.get(entity="app_user")
         self.assertEqual(audit.entity_id, self.author.pk)
-        self.assertEqual(audit.user_id, self.author.pk)
-        self.assertNotIn("maria", str(audit.record).lower())
-        self.assertEqual(audit.record["event"], "PERSONAL_DATA_DELETION_REQUESTED")
-        self.assertIs(audit.record["anonymized"], True)
-        self.assertEqual(audit.record["fields"], list(ANONYMIZED_FIELDS))
-        self.assertEqual(audit.record["cleared"], {"document_access.justification": 1})
+        self.assertEqual(audit.record["event"], "ACCOUNT_ANONYMIZED")
+        self.assertEqual(audit.record["actor"]["name"], "Maria Silva")
