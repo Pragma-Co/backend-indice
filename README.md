@@ -345,6 +345,20 @@ Streams one file of a revision inline (stored MIME type, original file name, `Ca
 
 Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access request and answers `201 {"id", "status": "PENDING", "created": true}`; a second call while the request is still pending answers `201` with `"created": false` and the same `id`. A viewer who can already read the document (responsible or approved grant) gets `409 {"error": "AlreadyHasAccess"}` and no row is created. `400 MissingUser`, `404 UserNotFound`, `404 DocumentNotFound`.
 
+### `POST /users/me/request-deletion`
+
+Immediate, irreversible account removal requested by the logged-in user (`401` without a session). It is a **soft delete**: the `app_user` row is kept but deactivated and anonymized (name, email, password and terms acceptance cleared), and the session is closed. Answers `200 {"message": "Account deactivated and anonymized."}`; there is no pending "request" state.
+
+- Pending access requests of the user are deleted, so they never reach the managers' panel and cannot be approved. Justifications of the remaining ones are cleared.
+- Manager work is handed over to another active manager: the area manager, otherwise another `AUDITOR` of the same area, otherwise an `ADMIN`. This covers pending revisions, documents the user was responsible for and the area's `manager`. Historical authorship stays on the anonymized row.
+- If no other manager exists, nothing is changed and the answer is `409 {"error": "..."}`.
+- The event is written to `audit_log` (`action = UPDATE`, `entity = "app_user"`, `record.event = "ACCOUNT_ANONYMIZED"`) with the user's name in `record.actor.name`, for traceability.
+- The original email is kept only as an HMAC hash to block re-registration.
+
+### `python manage.py delete_user <email>`
+
+Hard delete, run by an operator (not an HTTP endpoint). The row is removed from the database and everything that referenced it is reassigned to another active manager (documents, revisions, access approvals, legal versions, area `manager`); the user's own access requests and legal acceptances are deleted. Audit rows keep the name in `record.actor.name`, with `audit_log.user_id` set to `NULL`. Fails without changes if no other manager exists.
+
 ## Useful commands
 
 ```bash

@@ -4,7 +4,6 @@ from django.test import Client, TestCase
 
 from core.models import Area, AuditAction, AuditLog, User
 from core.services.excluded_identifier_service import (
-    is_identifier_excluded,
     store_excluded_identifier,
 )
 
@@ -76,34 +75,47 @@ class UserMeViewTests(TestCase):
         self.assertEqual(self.user.email, "titular@example.com")
         self.assertEqual(AuditLog.objects.count(), 0)
 
-    def test_post_records_request_deactivates_but_does_not_delete_user(self):
-        response = self.client.post("/users/me/request-deletion")
-
-        self.user.refresh_from_db()
-        audit = AuditLog.objects.get()
-        self.assertEqual(response.status_code, 202)
-        self.assertFalse(self.user.is_active)
-        self.assertIsNotNone(self.user.deletion_requested_at)
-        self.assertEqual(
-            response.json()["deletion_requested_at"],
-            self.user.deletion_requested_at.isoformat(),
+    def _add_manager(self):
+        return User.objects.create_user(
+            email="gestor@example.com",
+            password="senha-forte-123",
+            name="Gestor",
+            role="AUDITOR",
+            area=self.area,
         )
-        self.assertEqual(User.objects.filter(pk=self.user.pk).count(), 1)
-        self.assertEqual(audit.action, AuditAction.UPDATE)
-        self.assertEqual(audit.record["event"], "PERSONAL_DATA_DELETION_REQUESTED")
-        self.assertTrue(is_identifier_excluded("titular@example.com"))
 
-    def test_requested_deletion_blocks_recreation_after_user_row_is_removed(self):
+    def test_post_soft_deletes_and_anonymizes_the_user_and_logs_the_name(self):
+        self._add_manager()
+
         response = self.client.post("/users/me/request-deletion")
 
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("request received", response.json()["message"])
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertEqual(self.user.name, "Usuário removido")
+        self.assertNotEqual(self.user.email, "titular@example.com")
+        audit = AuditLog.objects.get(entity="app_user")
+        self.assertEqual(audit.action, AuditAction.UPDATE)
+        self.assertEqual(audit.record["event"], "ACCOUNT_ANONYMIZED")
+        self.assertEqual(audit.record["actor"]["name"], "Titular")
+        self.assertEqual(self.client.get("/users/me").status_code, 401)
 
-        self.user.delete()
+    def test_post_is_refused_when_there_is_no_other_manager(self):
+        response = self.client.post("/users/me/request-deletion")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertEqual(AuditLog.objects.count(), 0)
+
+    def test_anonymized_email_cannot_be_registered_again(self):
+        self._add_manager()
+        self.client.post("/users/me/request-deletion")
 
         with self.assertRaises(ValueError):
             User.objects.create_user(
                 email="TITULAR@example.com",
-                password="secret",
+                password="senha-forte-123",
                 name="Novo cadastro",
                 area=self.area,
             )

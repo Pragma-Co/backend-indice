@@ -1,8 +1,8 @@
 import json
 
+from django.contrib.auth import logout
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
-from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from core.models import AuditAction
@@ -12,9 +12,10 @@ from core.serializers.user_serializer import (
     validate_user_update,
 )
 from core.services import audit_service
-from core.services.excluded_identifier_service import (
-    ExcludedIdentifierError,
-    store_excluded_identifier,
+from core.services.excluded_identifier_service import ExcludedIdentifierError
+from core.services.user_anonymization_service import (
+    NoReplacementManagerError,
+    anonymize_user,
 )
 
 
@@ -76,23 +77,19 @@ def request_user_deletion(request):
     if user is None:
         return _unauthorized()
 
-    requested_at = timezone.now()
-    with transaction.atomic():
-        store_excluded_identifier(user.email)
-        user.is_active = False
-        user.deletion_requested_at = requested_at
-        user.save(update_fields=["is_active", "deletion_requested_at"])
-        audit_service.log_event(
-            request,
-            AuditAction.UPDATE,
-            "app_user",
-            user.pk,
-            {"event": "PERSONAL_DATA_DELETION_REQUESTED"},
-        )
-    return JsonResponse(
-        {
-            "message": "Personal data deletion request received.",
-            "deletion_requested_at": requested_at.isoformat(),
-        },
-        status=202,
-    )
+    try:
+        with transaction.atomic():
+            # Logged first: the actor name is recorded before it is anonymized
+            audit_service.log_event(
+                request,
+                AuditAction.UPDATE,
+                "app_user",
+                user.pk,
+                {"event": "ACCOUNT_ANONYMIZED"},
+            )
+            anonymize_user(user)
+    except NoReplacementManagerError as exc:
+        return JsonResponse({"error": str(exc)}, status=409)
+
+    logout(request)
+    return JsonResponse({"message": "Account deactivated and anonymized."})
