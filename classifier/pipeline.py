@@ -21,6 +21,6 @@ def build_pipeline() -> Pipeline:
                     sublinear_tf=True,
                 ),
             ),
-            ("classifier", LogisticRegression(max_iter=MAX_ITERATIONS)),
+            ("classifier", LogisticRegression(max_iter=MAX_ITERATIONS, class_weight="balanced")),
         ]
     )
