@@ -31,6 +31,7 @@ SPAN_PATTERN = re.compile(r'<span id="([^"]+)"[^>]*>(.*?)</span>', re.S)
 PART_ROW_PATTERN = re.compile(r"<tr[^>]*>(?:(?!</tr>).)*ImageRedirector(?:(?!</tr>).)*</tr>", re.S)
 DATE_FORMAT = "%d-%b-%Y"
 DIST_STATEMENT_A = "A"
+PDF_SIGNATURE = b"%PDF"
 
 
 @dataclass
@@ -193,6 +194,14 @@ class QuickSearchClient:
     def fetch_details(self, ident_number: int) -> DocumentDetails:
         page = self.request(f"{DETAILS_URL}{ident_number}").decode("utf-8", "replace")
         return parse_details(page, ident_number)
+
+    def download_part(self, ident_number: int, token: str) -> bytes:
+        self.request(f"{DETAILS_URL}{ident_number}")
+        self.request(f"{BASE_URL}ImageRedirector.aspx?token={token}")
+        data = self.request(f"{BASE_URL}WMX/Default.aspx?token={token.split('.')[0]}")
+        if not data.startswith(PDF_SIGNATURE):
+            raise ValueError("response is not a PDF")
+        return data
 
     def search_active(self, fsc: str | None = None, terms: str = ""):
         form_page = self.request(SEARCH_URL).decode("utf-8", "replace")
