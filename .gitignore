@@ -2,6 +2,8 @@
 .env
 CREDENTIALS.txt
 tmp_uploads/
+training_export/
+classifier_artifacts/
 
 # Python
 __pycache__/
