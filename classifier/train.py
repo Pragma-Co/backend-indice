@@ -4,6 +4,7 @@ import sys
 from classifier.catalog import DEFAULT_CATALOG_PATH, CatalogError, load_catalog
 from classifier.dataset import DatasetValidationError, load_dataset
 from classifier.evaluation import evaluate_all, format_evaluation
+from classifier.persistence import DEFAULT_OUTPUT_DIR, save_models
 from classifier.training import TrainingError, train_all
 
 
@@ -14,6 +15,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--catalog",
         default=str(DEFAULT_CATALOG_PATH),
         help="JSON file with the valid labels per field.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory that receives the trained models and metadata.json.",
     )
     return parser
 
@@ -40,9 +46,13 @@ def main(argv=None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    for name, evaluation in evaluate_all(trained).items():
+    evaluations = evaluate_all(trained)
+    for name, evaluation in evaluations.items():
         print()
         print(format_evaluation(evaluation, trained[name].train_size))
+
+    directory = save_models(trained, evaluations, arguments.output_dir, arguments.csv, catalog)
+    print(f"\nmodels saved to {directory}")
     return 0
 
 
