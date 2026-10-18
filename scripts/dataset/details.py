@@ -12,7 +12,10 @@ from scripts.dataset.quicksearch import REQUEST_DELAY_SECONDS, QuickSearchClient
 DEFAULT_LISTING = "training_export/quicksearch/listing.jsonl"
 DEFAULT_OUTPUT = "training_export/quicksearch/metadata.jsonl"
 SELECTED_FSC_GROUPS = ("59", "53", "47", "61", "95", "80", "68", "16", "91", "31")
-EXCLUDED_ID_PATTERN = re.compile(r"^(?:QPL|MS\d)")
+EXCLUDED_ID_PATTERN = re.compile(
+    r"^(?:QPL|MS\d|ASTM|SAE|ISO|ANSI|NEMA|NAS|NASM|IEC|ASME|AMS|STANAG|AIA|API|IPC|UL|EIA|DIN|BS)"
+)
+PUBLIC_ID_PATTERN = re.compile(r"^(?:MIL-|A-A-|DOD-|[A-Z]{1,3}-[A-Z]{1,2}-\d)")
 ID_PREFIX_PATTERN = re.compile(r"^[A-Z]+(?:-[A-Z]+)?")
 FSC_PATTERN = re.compile(r"^\d{4}$")
 SAMPLE_SEED = 42
@@ -31,6 +34,8 @@ def sample_rows(rows: list[dict], per_group: int, seed: int = SAMPLE_SEED) -> li
         if not FSC_PATTERN.match(row["fsc"]) or row["fsc"][:2] not in SELECTED_FSC_GROUPS:
             continue
         if EXCLUDED_ID_PATTERN.match(row["document_id"]):
+            continue
+        if not PUBLIC_ID_PATTERN.match(row["document_id"]):
             continue
         by_group[row["fsc"][:2]][id_prefix(row["document_id"])].append(row)
 
