@@ -1,5 +1,6 @@
 import json
 
+from django.contrib.auth import logout
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.utils import timezone
@@ -94,6 +95,7 @@ def request_user_deletion(request):
             )
     except audit_service.AuditLogWriteError:
         return JsonResponse({"error": "AuditUnavailable"}, status=503)
+    logout(request)
     return JsonResponse(
         {
             "message": "Personal data deletion request received.",

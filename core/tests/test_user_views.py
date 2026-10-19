@@ -1,6 +1,7 @@
 import json
 from unittest import mock
 
+from django.contrib.sessions.models import Session
 from django.db import DatabaseError
 from django.test import Client, TestCase
 
@@ -9,6 +10,8 @@ from core.services.excluded_identifier_service import (
     is_identifier_excluded,
     store_excluded_identifier,
 )
+
+CSRF_TOKEN = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
 
 class UserMeViewTests(TestCase):
@@ -129,6 +132,42 @@ class UserMeViewTests(TestCase):
         self.assertIsNotNone(audit.occurred_at)
         self.assertEqual(audit.record["event"], "PERSONAL_DATA_DELETION_REQUESTED")
         self.assertTrue(is_identifier_excluded("titular@example.com"))
+
+    def test_requested_deletion_ends_the_session_and_clears_its_cookie(self):
+        session_key = self.client.session.session_key
+
+        response = self.client.post("/users/me/request-deletion")
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.cookies["sessionid"].value, "")
+        self.assertEqual(response.cookies["sessionid"]["max-age"], 0)
+        self.assertFalse(Session.objects.filter(session_key=session_key).exists())
+        self.assertEqual(self.client.get("/users/me").status_code, 401)
+
+    def _browser_put(self, origin):
+        browser = Client(enforce_csrf_checks=True)
+        browser.force_login(self.user)
+        browser.cookies["csrftoken"] = CSRF_TOKEN
+        return browser.put(
+            "/users/me",
+            data=json.dumps({"name": "Titular Atualizado", "email": "titular@example.com"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=CSRF_TOKEN,
+            HTTP_ORIGIN=origin,
+        )
+
+    def test_frontend_origin_can_update_the_profile_with_the_csrf_token(self):
+        response = self._browser_put("http://localhost:5173")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Titular Atualizado")
+
+    def test_unknown_origin_cannot_update_the_profile(self):
+        response = self._browser_put("http://evil.example.com")
+
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.user.name, "Titular")
 
     def test_deletion_request_rolls_back_when_the_audit_write_fails(self):
         with (

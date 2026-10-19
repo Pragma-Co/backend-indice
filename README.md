@@ -300,6 +300,34 @@ In both formats `change_description` is required, 20 to 255 characters, and is s
 
 Provisional sign in, used by the frontend while the real authentication does not exist. JSON body `{"user_id": <int>}`; opens a Django session for that active user and answers `200` with the same payload as `GET /users/me`. Signing in again replaces the session user. `400 {"error": "MissingUser"}` when `user_id` is missing or not an integer, `400 {"error": "InvalidJSON"}`, `404 {"error": "UserNotFound"}` for an unknown or inactive user. It asks for no credentials, so it only exists while `DJANGO_DEBUG` is on: with it off every call answers `404 {"error": "NotFound"}`. Remove it when the real login lands.
 
+### `POST /auth/logout`
+
+Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
+
+### `GET /legal-documents/<slug>/current`
+
+Latest published version of a legal document (for the seeded term the slug is `termo-tratamento-dados`), with its clauses and their ids: `{"id", "version", "document": {"slug", "title"}, "summary", "content_hash", "published_at", "clauses": [{"id", "code", "position", "title", "body", "is_required"}]}`, clauses ordered by `position`. No session needed. `404 {"error": "LegalDocumentNotFound"}` for an unknown slug or a document without a published version.
+
+### `GET /legal-documents`
+
+Legal documents that have a published version, ordered by title, each with its current version: `{"count", "results": [{"slug", "title", "current_version": {"id", "version", "published_at", "clauses": [{"id", "code", "position", "title", "is_required"}]}}]}`. Clause bodies are left out; read them through `GET /legal-documents/versions/<id>`. No session needed. The profile screen uses it to list the terms the user has not accepted yet.
+
+### `GET /legal-documents/versions/<id>`
+
+Full text of one specific version, same payload as `GET /legal-documents/<slug>/current`, so the history can show exactly the version the user accepted even after a newer one was published. Serves `PUBLISHED` and `RETIRED` versions; `404 {"error": "LegalVersionNotFound"}` for unknown ids and drafts. No session needed.
+
+### `POST /users/me/legal-acceptances`
+
+Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, required clauses must be accepted, and only the current published version can be accepted. Answers `201` with the acceptance (`id`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes `audit_log` (`CREATE`, `user_legal_acceptance`, `LEGAL_TERMS_ACCEPTED`) and sets the user's `terms_accepted_at`. Errors: `400 {"errors": ...}` with codes such as `required_clause_declined`, `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
+
+### `GET /users/me/legal-acceptances`
+
+History of the caller's acceptances, newest first, revoked ones included: `{"count", "results": [acceptance, ...]}` with the same acceptance payload as the `POST`. Requires a session; IP address and user agent are never exposed.
+
+### `POST /users/me/legal-acceptances/<id>/revoke`
+
+Withdraws one of the caller's term acceptances. Requires a session (`401 {"error": "AuthenticationRequired"}`) and the CSRF header. The acceptance is never deleted: it receives `revoked_at` and stays in `GET /users/me/legal-acceptances` as evidence; `terms_accepted_at` of the user moves to the most recent acceptance still in force (or `null`). The action is written to `audit_log` (`action = UPDATE`, `entity = "user_legal_acceptance"`, `record.event = "LEGAL_TERMS_REVOKED"`). Answers `200` with the acceptance, `404 {"error": "LegalAcceptanceNotFound"}` when it does not exist or belongs to another user, `409 {"error": "LegalAcceptanceAlreadyRevoked"}`, and `503 {"error": "AuditUnavailable"}` with nothing changed when the audit entry cannot be written. The user may accept the same version again afterwards through `POST /users/me/legal-acceptances`: the new acceptance is a new row, the revoked one stays in the history, and only one acceptance per version can be in force at a time.
+
 ### `GET /manager/pending-revisions`
 
 Approval queue of the technical manager. Requires a session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` for other roles. Lists every `PENDING` revision of documents with an active type, oldest first, paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `version`, `revision` (`REV02`), `status`, `change_description`, `issue_date`, `created_at`, `author`, `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`) and `files` (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `revision_changed`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
