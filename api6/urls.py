@@ -30,6 +30,7 @@ from core.views.legal_consent_view import (
     legal_version_view,
     revoke_legal_acceptance_view,
 )
+from core.views.manager_activity_view import manager_activities_view
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
@@ -82,6 +83,7 @@ urlpatterns = [
         suggest_document_metadata_view,
         name="document-ai-suggestions",
     ),
+    path("manager/activities", manager_activities_view, name="manager-activities"),
     path("manager/pending-revisions", pending_revisions_view, name="manager-pending-revisions"),
     path(
         "manager/revisions/<int:revision_id>/decision",
