@@ -3,7 +3,7 @@ import json
 from django.conf import settings
 from django.contrib.auth import login
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
 from core.models import User
@@ -11,6 +11,7 @@ from core.serializers.user_serializer import serialize_user
 
 
 @csrf_exempt
+@ensure_csrf_cookie
 @require_POST
 def dev_login_view(request):
     """Provisional sign in used while the real authentication does not exist.

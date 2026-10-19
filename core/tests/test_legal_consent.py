@@ -1,6 +1,7 @@
 import json
+from unittest import mock
 
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -304,17 +305,18 @@ class CurrentLegalVersionViewTests(LegalConsentFixtureMixin, TestCase):
 
 
 class LegalAcceptancesViewTests(LegalConsentFixtureMixin, TestCase):
-    def _post(self, payload, client=None):
+    def _post(self, payload, client=None, **extra):
         return (client or self.client).post(
             reverse("user-legal-acceptances"),
             data=json.dumps(payload),
             content_type="application/json",
+            **extra,
         )
 
     def test_should_record_the_acceptance_and_write_an_audit_entry(self):
         self.client.force_login(self.user)
 
-        response = self._post(self._payload())
+        response = self._post(self._payload(), REMOTE_ADDR="203.0.113.9")
 
         body = response.json()
         audit = AuditLog.objects.get(entity="user_legal_acceptance", entity_id=body["id"])
@@ -325,9 +327,38 @@ class LegalAcceptancesViewTests(LegalConsentFixtureMixin, TestCase):
             [("objeto", True), ("comunicados", False)],
         )
         self.assertEqual(audit.action, AuditAction.CREATE)
+        self.assertEqual(audit.entity, "user_legal_acceptance")
+        self.assertEqual(audit.entity_id, body["id"])
         self.assertEqual(audit.user, self.user)
-        self.assertEqual(audit.record["event"], "LEGAL_TERMS_ACCEPTED")
-        self.assertEqual(audit.record["declined_clauses"], ["comunicados"])
+        self.assertEqual(audit.ip_address, "203.0.113.9")
+        self.assertIsNotNone(audit.occurred_at)
+        self.assertEqual(
+            audit.record,
+            {
+                "event": "LEGAL_TERMS_ACCEPTED",
+                "document": self.document.slug,
+                "version": self.version.version,
+                "declined_clauses": ["comunicados"],
+                "actor": {
+                    "id": self.user.pk,
+                    "name": self.user.name,
+                    "authenticated": True,
+                },
+            },
+        )
+
+    def test_should_roll_back_acceptance_when_the_audit_write_fails(self):
+        self.client.force_login(self.user)
+
+        with (
+            mock.patch.object(AuditLog.objects, "create", side_effect=DatabaseError("db down")),
+            self.assertLogs("core.services.audit_service", level="ERROR"),
+        ):
+            response = self._post(self._payload())
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(UserLegalAcceptance.objects.exists())
+        self.assertFalse(AuditLog.objects.exists())
 
     def test_should_record_the_acceptance_for_the_authenticated_user_only(self):
         self.client.force_login(self.user)

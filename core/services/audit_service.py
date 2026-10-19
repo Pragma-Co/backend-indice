@@ -19,6 +19,10 @@ STAGE_SUBMIT = "submit"
 USER_AGENT_MAX_LENGTH = 512
 
 
+class AuditLogWriteError(Exception):
+    """Raised when a required audit event could not be persisted."""
+
+
 def never_raises(function):
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
@@ -91,6 +95,23 @@ def log_event(request, action, entity, entity_id=None, details=None, body=None, 
             record=record,
             ip_address=client_ip(request),
         )
+
+
+def log_event_required(
+    request, action, entity, entity_id=None, details=None, body=None, fallback_user=None
+):
+    entry = log_event(
+        request,
+        action,
+        entity,
+        entity_id=entity_id,
+        details=details,
+        body=body,
+        fallback_user=fallback_user,
+    )
+    if entry is None:
+        raise AuditLogWriteError
+    return entry
 
 
 @never_raises
