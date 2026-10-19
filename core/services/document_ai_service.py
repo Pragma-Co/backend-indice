@@ -29,6 +29,14 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {"pdf", "docx"}
 SUGGESTION_FIELDS = ("title", "description", "project", "discipline", "document_type", "area")
+CLASSIFICATION_SUCCESS = "SUCCESS"
+CLASSIFICATION_SKIPPED = "SKIPPED"
+CLASSIFICATION_FAILURE = "FAILURE"
+
+
+def _classification(status: str, detail: str | None) -> dict:
+    return {"status": status, "detail": detail}
+
 
 SYSTEM_PROMPT = (
     "Você é um especialista em gestão documental de engenharia. Classifique documentos "
@@ -149,7 +157,7 @@ def _build_user_prompt(llm_text: str, projects: list, document_types: list, area
     )
 
 
-def suggest_document_metadata(temp_file_id: str) -> dict:
+def classify_document_metadata(temp_file_id: str) -> tuple[dict, dict]:
     path = _locate_temp_file(temp_file_id)
     extension = path.suffix.lstrip(".").lower()
     if extension not in SUPPORTED_EXTENSIONS:
@@ -160,7 +168,9 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
     if not llm_text:
         empty_suggestion = dict.fromkeys(SUGGESTION_FIELDS)
         _save_suggestion_to_temp_upload(temp_file_id, empty_suggestion)
-        return empty_suggestion
+        return empty_suggestion, _classification(
+            CLASSIFICATION_SKIPPED, "No extracted text to classify."
+        )
 
     projects = list(list_active_projects())
     document_types = list(list_active_document_types())
@@ -171,8 +181,12 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
             SYSTEM_PROMPT, _build_user_prompt(llm_text, projects, document_types, areas)
         )
         data = _parse_json_answer(answer)
-    except AISuggestionError:
+        classification = _classification(CLASSIFICATION_SUCCESS, None)
+    except AISuggestionError as exc:
         data = {}
+        classification = _classification(
+            CLASSIFICATION_FAILURE, f"AI classification failed: {type(exc).__name__}."
+        )
 
     project = _match_catalog_name(data.get("project"), projects)
     matched_project = (
@@ -193,4 +207,9 @@ def suggest_document_metadata(temp_file_id: str) -> dict:
         "area": _match_catalog_name(data.get("area"), areas),
     }
     _save_suggestion_to_temp_upload(temp_file_id, suggestion)
+    return suggestion, classification
+
+
+def suggest_document_metadata(temp_file_id: str) -> dict:
+    suggestion, _classification_outcome = classify_document_metadata(temp_file_id)
     return suggestion

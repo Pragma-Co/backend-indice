@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 ENTITY_DOCUMENT = "document"
 ENTITY_TEMP_UPLOAD = "temp_upload"
 
+EVENT_AI_CLASSIFICATION = "AI_CLASSIFICATION"
 STAGE_UPLOAD = "upload"
 STAGE_SUBMIT = "submit"
 
@@ -130,15 +131,28 @@ def log_temp_upload(request, result):
             },
         )
         return
+    details = {
+        "temp_file_id": result["temp_file_id"],
+        "original_name": result["original_name"],
+        "sha256": result["sha256"],
+    }
+    if result.get("ingestion"):
+        details["ingestion"] = result["ingestion"]
+    log_event(request, AuditAction.DOC_UPLOAD_SUCCESS, ENTITY_TEMP_UPLOAD, None, details)
+
+
+@never_raises
+def log_ai_classification(request, temp_file_id, outcome):
     log_event(
         request,
-        AuditAction.DOC_UPLOAD_SUCCESS,
+        AuditAction.UPDATE,
         ENTITY_TEMP_UPLOAD,
         None,
         {
-            "temp_file_id": result["temp_file_id"],
-            "original_name": result["original_name"],
-            "sha256": result["sha256"],
+            "event": EVENT_AI_CLASSIFICATION,
+            "temp_file_id": temp_file_id,
+            "status": outcome["status"],
+            "detail": outcome["detail"],
         },
     )
 
