@@ -570,6 +570,23 @@ class RevokeAcceptanceTests(LegalConsentFixtureMixin, TestCase):
         self.assertEqual(audit.record["event"], "LEGAL_TERMS_REVOKED")
         self.assertEqual(audit.record["document"], "termo-tratamento-dados")
 
+    def test_endpoint_should_roll_back_the_revocation_when_the_audit_write_fails(self):
+        self.client.force_login(self.user)
+
+        with (
+            mock.patch.object(AuditLog.objects, "create", side_effect=DatabaseError("db down")),
+            self.assertLogs("core.services.audit_service", level="ERROR"),
+        ):
+            response = self._revoke()
+
+        self.acceptance.refresh_from_db()
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"error": "AuditUnavailable"})
+        self.assertIsNone(self.acceptance.revoked_at)
+        self.assertEqual(self.user.terms_accepted_at, self.acceptance.accepted_at)
+        self.assertFalse(AuditLog.objects.exists())
+
     def test_endpoint_should_answer_409_for_an_acceptance_already_revoked(self):
         self.client.force_login(self.user)
         self._revoke()
