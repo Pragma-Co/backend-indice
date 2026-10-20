@@ -211,10 +211,9 @@ class SubmissionAuditTests(TestCase):
         response = self._post(self._payload(), self.user)
 
         document = Document.objects.get()
-        entry = AuditLog.objects.get()
+        entry = AuditLog.objects.get(action=AuditAction.DOC_SUBMIT_SUCCESS)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(entry.user, self.user)
-        self.assertEqual(entry.action, AuditAction.DOC_SUBMIT_SUCCESS)
         self.assertEqual(entry.entity, "document")
         self.assertEqual(entry.entity_id, document.id)
         self.assertEqual(entry.record["document_code"], document.code)

@@ -10,6 +10,7 @@ from django.db.models.functions import Coalesce
 
 from core.models import Document, DocumentContent, Revision
 from core.models.search import SEARCH_CONFIG, THEMATIC_TAG_MAX_LENGTH
+from core.services import audit_service
 from core.services.document_text_service import (
     AI_TEXT_EXTENSIONS,
     extract_raw_text,
@@ -82,8 +83,11 @@ def index_document(document: Document) -> DocumentContent:
     return save_document_content(document, revision, content)
 
 
-def index_document_safely(document: Document) -> None:
+def index_document_safely(document: Document, actor=None) -> None:
     try:
-        index_document(document)
-    except Exception:
+        indexed = index_document(document)
+    except Exception as exc:
         logger.exception("Failed to index document %s for search", document.pk)
+        audit_service.record_document_indexed(document, actor=actor, failure=exc)
+        return
+    audit_service.record_document_indexed(document, actor=actor, indexed=indexed)

@@ -151,7 +151,8 @@ class StoreUploadedFileTests(TestCase):
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     @mock.patch(
-        "core.services.temp_upload_service.extract_text_for_ai", return_value="texto extraido"
+        "core.services.temp_upload_service.ingest_text",
+        return_value={"text": "texto extraido", "extraction": "SUCCESS", "detail": None},
     )
     def test_given_valid_pdf_when_stored_then_extracts_text_for_ai_upfront(
         self, mock_extract, mock_mongo
