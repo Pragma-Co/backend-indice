@@ -19,6 +19,7 @@ from core.views.documents_view import (
     documents_collection,
     request_access,
     restore_document_view,
+    search_documents_view,
     simple_filters,
 )
 from core.views.file_view import document_file_view
@@ -66,6 +67,7 @@ urlpatterns = [
     path("documents", documents_collection, name="document-list"),
     path("documents/upload", upload_document, name="document-upload"),
     path("documents/simple-filters", simple_filters, name="document-simple-filters"),
+    path("documents/search", search_documents_view, name="document-search"),
     path("documents/archived", archived_documents_view, name="document-archived-list"),
     path("documents/<int:document_id>", document_resource, name="document-detail"),
     path("documents/<int:document_id>/restore", restore_document_view, name="document-restore"),

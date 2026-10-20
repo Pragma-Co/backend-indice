@@ -33,6 +33,7 @@ from core.services.document_exceptions import (
     DuplicateRevisionUploadError,
     TempFileNotFoundError,
 )
+from core.services.document_search_service import search_documents
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
     ArchivePermissionDeniedError,
@@ -131,6 +132,18 @@ def documents_collection(request):
     if request.method == "POST":
         return create_document_view(request)
     return documents(request)
+
+
+@require_GET
+def search_documents_view(request):
+    user = request.user if request.user.is_authenticated and request.user.is_active else None
+    try:
+        return JsonResponse(search_documents(request.GET, user))
+    except DocumentQueryError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
+    except Exception as exc:
+        logger.exception("Failed to search documents")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
 @require_GET
