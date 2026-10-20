@@ -14,6 +14,9 @@ ENTITY_DOCUMENT = "document"
 ENTITY_TEMP_UPLOAD = "temp_upload"
 
 EVENT_AI_CLASSIFICATION = "AI_CLASSIFICATION"
+EVENT_CONTENT_INDEXED = "CONTENT_INDEXED"
+STATUS_SUCCESS = "SUCCESS"
+STATUS_FAILURE = "FAILURE"
 STAGE_UPLOAD = "upload"
 STAGE_SUBMIT = "submit"
 
@@ -272,6 +275,40 @@ def record_document_created(document, request):
     except Exception:
         logger.exception("Audit log write failed for DOCUMENT_CREATED")
         return None
+
+
+def _indexing_outcome(indexed, failure):
+    if failure is not None:
+        return STATUS_FAILURE, f"Content indexing failed: {type(failure).__name__}."
+    if indexed is None or not indexed.content:
+        return STATUS_SUCCESS, "Content indexed: no text found in the files."
+    return STATUS_SUCCESS, (
+        f"Content indexed: {len(indexed.content)} characters, "
+        f"{len(indexed.thematic_tags)} thematic tags."
+    )
+
+
+@never_raises
+def record_document_indexed(document, actor=None, indexed=None, failure=None):
+    status, detail = _indexing_outcome(indexed, failure)
+    version = getattr(getattr(indexed, "revision", None), "version", None)
+    with transaction.atomic():
+        return AuditLog.objects.create(
+            user=actor or document.responsible,
+            action=AuditAction.UPDATE,
+            entity=ENTITY_DOCUMENT,
+            entity_id=document.id,
+            record={
+                "event": EVENT_CONTENT_INDEXED,
+                "status": status,
+                "detail": detail,
+                "document_code": document.code,
+                "version": version,
+                "revision": revision_label(version) if version is not None else None,
+                "content_chars": len(indexed.content) if indexed is not None else 0,
+                "thematic_tag_count": len(indexed.thematic_tags) if indexed is not None else 0,
+            },
+        )
 
 
 @never_raises

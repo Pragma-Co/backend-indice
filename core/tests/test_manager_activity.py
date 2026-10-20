@@ -10,6 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from docx import Document as DocxDocument
 
 from core.models import (
     AccessStatus,
@@ -26,6 +27,7 @@ from core.models import (
     Role,
     User,
 )
+from core.services import document_creation_service
 from core.services.manager_activity_exceptions import ActivityQueryError
 from core.services.manager_activity_service import (
     ACCESS,
@@ -278,6 +280,39 @@ class ActivityClassificationTests(ManagerActivityFixtureMixin, TestCase):
                 INGESTION_FAILURE,
                 FAILURE,
                 "AI_CLASSIFICATION_FAILED",
+            ),
+            "content_indexed": (
+                self._entry(
+                    AuditAction.UPDATE,
+                    "document",
+                    self.document.pk,
+                    {
+                        "event": "CONTENT_INDEXED",
+                        "status": "SUCCESS",
+                        "detail": "Content indexed: 120 characters, 2 thematic tags.",
+                        "document_code": self.document.code,
+                        "version": 1,
+                    },
+                ),
+                UPLOAD,
+                SUCCESS,
+                "CONTENT_INDEXED",
+            ),
+            "content_indexing_failed": (
+                self._entry(
+                    AuditAction.UPDATE,
+                    "document",
+                    self.document.pk,
+                    {
+                        "event": "CONTENT_INDEXED",
+                        "status": "FAILURE",
+                        "detail": "Content indexing failed: RuntimeError.",
+                        "document_code": self.document.code,
+                    },
+                ),
+                INGESTION_FAILURE,
+                FAILURE,
+                "CONTENT_INDEXING_FAILED",
             ),
             "registered": (
                 self._entry(
@@ -703,3 +738,69 @@ class ClassificationOutcomeTests(ManagerActivityFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(entry.record["status"], "SKIPPED")
         groq.return_value.chat.completions.create.assert_not_called()
+
+
+@mock.patch("core.services.document_creation_service.get_mongo_db")
+class ContentIndexingOutcomeTests(ManagerActivityFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.project.disciplines.add(self.discipline)
+        self.temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
+        self.storage_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.storage_dir, ignore_errors=True)
+        self.settings_override = override_settings(
+            TEMP_UPLOAD_DIR=self.temp_dir, DOCUMENT_STORAGE_DIR=self.storage_dir
+        )
+        self.settings_override.enable()
+        self.addCleanup(self.settings_override.disable)
+        docx = DocxDocument()
+        docx.add_paragraph("A fundação da ponte usa estacas. A ponte e a fundação foram revisadas.")
+        docx.save(Path(self.temp_dir) / f"{TEMP_FILE_ID}.docx")
+        self.payload = {
+            "temp_file_id": TEMP_FILE_ID,
+            "title": "Memorial da ponte",
+            "project_id": self.project.id,
+            "discipline_id": self.discipline.id,
+            "document_type": self.document_type.id,
+            "confidentiality": "CONFIDENTIAL",
+            "responsible_id": self.author.id,
+            "user_id": self.author.id,
+            "areas": ["EST"],
+        }
+
+    def _indexing_entry(self):
+        return AuditLog.objects.get(record__event="CONTENT_INDEXED")
+
+    def test_should_record_the_indexing_of_a_created_document_for_its_area(self, mongo):
+        document = document_creation_service.create_document(self.payload)
+
+        entry = self._indexing_entry()
+        self.client.force_login(self.manager)
+        feed = self.client.get(reverse("manager-activities"), {"type": "UPLOAD"}).json()
+        item = next(item for item in feed["results"] if item["event"] == "CONTENT_INDEXED")
+        self.assertEqual(entry.entity_id, document.pk)
+        self.assertEqual(entry.user, self.author)
+        self.assertEqual(entry.record["status"], "SUCCESS")
+        self.assertEqual(entry.record["thematic_tag_count"], 2)
+        self.assertGreater(entry.record["content_chars"], 0)
+        self.assertEqual(item["document"]["code"], document.code)
+        self.assertEqual(item["revision"], "REV01")
+        self.assertEqual(item["status"], SUCCESS)
+
+    def test_should_record_a_failed_indexing_without_blocking_the_registration(self, mongo):
+        with mock.patch(
+            "core.services.document_index_service.index_document",
+            side_effect=RuntimeError("boom"),
+        ):
+            document = document_creation_service.create_document(self.payload)
+
+        entry = self._indexing_entry()
+        self.client.force_login(self.manager)
+        feed = self.client.get(reverse("manager-activities"), {"type": "INGESTION_FAILURE"}).json()
+        self.assertEqual(Document.objects.filter(pk=document.pk).count(), 1)
+        self.assertEqual(entry.record["status"], "FAILURE")
+        self.assertEqual(entry.record["detail"], "Content indexing failed: RuntimeError.")
+        self.assertEqual(feed["count"], 1)
+        self.assertEqual(feed["results"][0]["event"], "CONTENT_INDEXING_FAILED")
+        self.assertEqual(feed["results"][0]["document"]["id"], document.pk)

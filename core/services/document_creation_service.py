@@ -362,7 +362,7 @@ def create_document(payload) -> Document:
 
     for temp_file_id in cleaned["temp_file_ids"]:
         _discard_temp_record(temp_file_id)
-    index_document_safely(document)
+    index_document_safely(document, actor=document.created_by)
     return document
 
 
@@ -485,5 +485,5 @@ def create_document_revision(document_id, temp_file_ids, change_description=None
 
     for temp_file_id in temp_file_ids:
         _discard_temp_record(temp_file_id)
-    index_document_safely(document)
+    index_document_safely(document, actor=revision.author)
     return revision

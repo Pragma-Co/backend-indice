@@ -7,6 +7,7 @@ from core.services.audit_service import (
     ENTITY_DOCUMENT,
     ENTITY_TEMP_UPLOAD,
     EVENT_AI_CLASSIFICATION,
+    EVENT_CONTENT_INDEXED,
 )
 from core.services.document_code_service import revision_label
 from core.services.document_text_service import (
@@ -62,6 +63,7 @@ TYPE_FILTERS = {
             record__event=EVENT_AI_CLASSIFICATION,
             record__status__in=COMPLETED_CLASSIFICATIONS,
         )
+        | Q(record__event=EVENT_CONTENT_INDEXED, record__status=SUCCESS)
     ),
     REVISION: (
         Q(action=AuditAction.DOC_REVISION_CREATED)
@@ -72,6 +74,7 @@ TYPE_FILTERS = {
         | Q(
             entity=ENTITY_TEMP_UPLOAD, record__event=EVENT_AI_CLASSIFICATION, record__status=FAILURE
         )
+        | Q(record__event=EVENT_CONTENT_INDEXED, record__status=FAILURE)
     ),
     MODERATION: (
         Q(record__event__in=MODERATION_EVENTS)
@@ -269,6 +272,14 @@ def describe_entry(entry, references) -> dict:
             )
         detail = record.get("detail") or "AI classification skipped."
         return _description(UPLOAD, SUCCESS, "AI_CLASSIFICATION_SKIPPED", detail)
+    if event == EVENT_CONTENT_INDEXED:
+        if record.get("status") == FAILURE:
+            detail = record.get("detail") or "Content indexing failed."
+            return _description(
+                INGESTION_FAILURE, FAILURE, "CONTENT_INDEXING_FAILED", detail, **refs
+            )
+        detail = record.get("detail") or "Content indexed."
+        return _description(UPLOAD, SUCCESS, "CONTENT_INDEXED", detail, **refs)
     if action == AuditAction.DOC_SUBMIT_SUCCESS or (
         action == AuditAction.CREATE and entry.entity == ENTITY_DOCUMENT
     ):

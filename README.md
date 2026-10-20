@@ -376,13 +376,13 @@ Query parameters: `type` (one or more of `UPLOAD`, `REVISION`, `INGESTION_FAILUR
 
 | `event_type` | `event` | `status` | Source |
 |---|---|---|---|
-| `UPLOAD` | `FILE_UPLOADED`, `DUPLICATE_FILE_REFUSED`, `DOCUMENT_REGISTERED`, `AI_CLASSIFICATION_DONE`, `AI_CLASSIFICATION_SKIPPED` | `SUCCESS` (`FAILURE` for a refused duplicate) | `POST /documents/upload`, `POST /documents`, `POST /documents/<temp_file_id>/suggestions` |
+| `UPLOAD` | `FILE_UPLOADED`, `DUPLICATE_FILE_REFUSED`, `DOCUMENT_REGISTERED`, `AI_CLASSIFICATION_DONE`, `AI_CLASSIFICATION_SKIPPED`, `CONTENT_INDEXED` | `SUCCESS` (`FAILURE` for a refused duplicate) | `POST /documents/upload`, `POST /documents`, `POST /documents/<temp_file_id>/suggestions`, the content indexing run after a registration or a new revision |
 | `REVISION` | `REVISION_SUBMITTED` | `SUCCESS` | `POST /documents/<id>/revisions` |
-| `INGESTION_FAILURE` | `TEXT_EXTRACTION_FAILED`, `AI_CLASSIFICATION_FAILED` | `FAILURE` | the upload event records the text extraction outcome (`record.ingestion`); the AI suggestion records the classification outcome |
+| `INGESTION_FAILURE` | `TEXT_EXTRACTION_FAILED`, `AI_CLASSIFICATION_FAILED`, `CONTENT_INDEXING_FAILED` | `FAILURE` | the upload event records the text extraction outcome (`record.ingestion`); the AI suggestion records the classification outcome; the content indexing (normalization and thematic tags, `document_content`) records a `CONTENT_INDEXED` event with its status |
 | `MODERATION` | `REVISION_APPROVED`, `REVISION_REJECTED`, `ACCESS_APPROVED`, `ACCESS_REJECTED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_RESTORED` | `SUCCESS` | manager decisions and archiving |
 | `ACCESS` | `ACCESS_REQUESTED`, `DOCUMENT_ACCESS_DENIED`, `DOCUMENT_VIEWED`, `DOCUMENT_DOWNLOADED` | `SUCCESS` (`FAILURE` for a denied access) | access requests and file views |
 
-Rows written by the seed without an `event` are classified by their action and entity. Login and personal-data events are not part of the feed. `PROCESSING` is reserved for the asynchronous classification pipeline (card 65); today every ingestion step runs synchronously, so an event is either `SUCCESS` or `FAILURE`.
+Rows written by the seed without an `event` are classified by their action and entity. Login and personal-data events are not part of the feed, and the bulk `index_documents` command writes no events. `PROCESSING` is reserved for the asynchronous classification pipeline (card 65); today every ingestion step runs synchronously, so an event is either `SUCCESS` or `FAILURE`.
 
 ### `GET /manager/pending-revisions`
 
