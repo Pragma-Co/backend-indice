@@ -114,11 +114,12 @@ class UserMeViewTests(TestCase):
         self.assertEqual(AuditLog.objects.count(), 0)
 
     def test_post_records_request_deactivates_but_does_not_delete_user(self):
+        self._add_manager()
         response = self.client.post("/users/me/request-deletion", REMOTE_ADDR="203.0.113.7")
 
         self.user.refresh_from_db()
         audit = AuditLog.objects.get()
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 200)
         self.assertFalse(self.user.is_active)
         self.assertIsNotNone(self.user.deletion_requested_at)
         self.assertEqual(
@@ -130,15 +131,16 @@ class UserMeViewTests(TestCase):
         self.assertEqual(audit.user, self.user)
         self.assertEqual(audit.ip_address, "203.0.113.7")
         self.assertIsNotNone(audit.occurred_at)
-        self.assertEqual(audit.record["event"], "PERSONAL_DATA_DELETION_REQUESTED")
+        self.assertEqual(audit.record["event"], "ACCOUNT_ANONYMIZED")
         self.assertTrue(is_identifier_excluded("titular@example.com"))
 
     def test_requested_deletion_ends_the_session_and_clears_its_cookie(self):
+        self._add_manager()
         session_key = self.client.session.session_key
 
         response = self.client.post("/users/me/request-deletion")
 
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.cookies["sessionid"].value, "")
         self.assertEqual(response.cookies["sessionid"]["max-age"], 0)
         self.assertFalse(Session.objects.filter(session_key=session_key).exists())
@@ -170,6 +172,7 @@ class UserMeViewTests(TestCase):
         self.assertEqual(self.user.name, "Titular")
 
     def test_deletion_request_rolls_back_when_the_audit_write_fails(self):
+        self._add_manager()
         with (
             mock.patch.object(AuditLog.objects, "create", side_effect=DatabaseError("db down")),
             self.assertLogs("core.services.audit_service", level="ERROR"),
@@ -184,16 +187,49 @@ class UserMeViewTests(TestCase):
         self.assertEqual(AuditLog.objects.count(), 0)
 
     def test_requested_deletion_blocks_recreation_after_user_row_is_removed(self):
+        self._add_manager()
+
+    def _add_manager(self):
+        return User.objects.create_user(
+            email="gestor@example.com",
+            password="senha-forte-123",
+            name="Gestor",
+            role="AUDITOR",
+            area=self.area,
+        )
+
+    def test_post_soft_deletes_and_anonymizes_the_user_and_logs_the_name(self):
+        self._add_manager()
+
         response = self.client.post("/users/me/request-deletion")
 
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("request received", response.json()["message"])
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertEqual(self.user.name, "Usuário removido")
+        self.assertNotEqual(self.user.email, "titular@example.com")
+        audit = AuditLog.objects.get(entity="app_user")
+        self.assertEqual(audit.action, AuditAction.DELETE)
+        self.assertEqual(audit.record["event"], "ACCOUNT_ANONYMIZED")
+        self.assertEqual(audit.record["actor"]["name"], "Titular")
+        self.assertEqual(self.client.get("/users/me").status_code, 401)
 
-        self.user.delete()
+    def test_post_is_refused_when_there_is_no_other_manager(self):
+        response = self.client.post("/users/me/request-deletion")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+        self.assertEqual(AuditLog.objects.count(), 0)
+
+    def test_anonymized_email_cannot_be_registered_again(self):
+        self._add_manager()
+        self.client.post("/users/me/request-deletion")
 
         with self.assertRaises(ValueError):
             User.objects.create_user(
                 email="TITULAR@example.com",
-                password="secret",
+                password="senha-forte-123",
                 name="Novo cadastro",
                 area=self.area,
             )
