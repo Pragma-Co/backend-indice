@@ -3,6 +3,7 @@ import json
 from django.contrib.auth import logout
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from core.models import AuditAction
@@ -53,6 +54,15 @@ def user_me(request):
                 user.name = updates["name"]
                 user.email = updates["email"]
                 user.save(update_fields=["name", "email"])
+                audit_service.log_event_required(
+                    request,
+                    AuditAction.UPDATE,
+                    "app_user",
+                    user.pk,
+                    {"event": "PERSONAL_DATA_UPDATED", "fields": ["name", "email"]},
+                )
+        except audit_service.AuditLogWriteError:
+            return JsonResponse({"error": "AuditUnavailable"}, status=503)
         except IntegrityError:
             return JsonResponse(
                 {"errors": {"email": "A user with this email address already exists."}},
@@ -61,13 +71,6 @@ def user_me(request):
         except ExcludedIdentifierError as exc:
             return JsonResponse({"errors": {"email": str(exc)}}, status=400)
 
-        audit_service.log_event(
-            request,
-            AuditAction.UPDATE,
-            "app_user",
-            user.pk,
-            {"event": "PERSONAL_DATA_UPDATED", "fields": ["name", "email"]},
-        )
         return JsonResponse(serialize_user(user))
 
 
@@ -77,19 +80,27 @@ def request_user_deletion(request):
     if user is None:
         return _unauthorized()
 
+    requested_at = timezone.now()
     try:
         with transaction.atomic():
-            # Logged first: the actor name is recorded before it is anonymized
-            audit_service.log_event(
+            audit_service.log_event_required(
                 request,
-                AuditAction.UPDATE,
+                AuditAction.DELETE,
                 "app_user",
                 user.pk,
                 {"event": "ACCOUNT_ANONYMIZED"},
             )
             anonymize_user(user)
+            user.deletion_requested_at = requested_at
+            user.save(update_fields=["deletion_requested_at"])
     except NoReplacementManagerError as exc:
         return JsonResponse({"error": str(exc)}, status=409)
-
+    except audit_service.AuditLogWriteError:
+        return JsonResponse({"error": "AuditUnavailable"}, status=503)
     logout(request)
-    return JsonResponse({"message": "Account deactivated and anonymized."})
+    return JsonResponse(
+        {
+            "message": "Account deactivated and anonymized.",
+            "deletion_requested_at": requested_at.isoformat(),
+        }
+    )

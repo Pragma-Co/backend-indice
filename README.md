@@ -228,6 +228,46 @@ Response `200`, ordered by most recent first:
 
 Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
 
+### `GET /documents/search`
+
+Full-text search for the document library. Takes a free-text query in `q` (required, up to 200 characters) and matches it against the title, code, description, manual tags, the thematic tags generated from the content and the normalized content of the latest revision. Matching uses PostgreSQL full-text search with the `portuguese_unaccent` configuration (Portuguese stemming, accents ignored), so `calculo viga` finds `Memorial de Cálculo das Vigas`. Query words are alternatives (OR): documents matching more words, or matching them in the title and tags, rank higher.
+
+Content is confidential: a match inside the content (and its snippets) only counts for the responsible user or a user with an approved access grant, identified by the session. Everyone else finds documents through their metadata only, as in the listing.
+
+Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `discipline`, `status`, `tags`, dates, `page`, `page_size`) is accepted and narrows the search. Response `200`, ordered by relevance:
+
+```json
+{
+  "query": "fadiga",
+  "count": 1,
+  "total_pages": 1,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 3,
+      "code": "AK-2100-EST-MEM-0002",
+      "title": "Memorial de cálculo do revestimento inferior",
+      "...": "same fields as GET /documents",
+      "score": 0.6687,
+      "tags": ["fadiga", "junção estrutural"],
+      "thematic_tags": ["revestimento", "tensões"],
+      "matched_tags": ["fadiga"],
+      "content_match": true,
+      "highlights": {
+        "title": "Memorial de cálculo do revestimento inferior",
+        "description": "Verificação de tensões e vida em <mark>fadiga</mark> do revestimento inferior",
+        "content": ["… ensaio de <mark>fadiga</mark> em escala de painel …"]
+      }
+    }
+  ]
+}
+```
+
+`highlights` are HTML-escaped, with the matched words wrapped in `<mark>`; `content` holds up to three fragments and is empty when the content did not match or the user cannot read it. `thematic_tags` are the most frequent meaningful words of the content (Portuguese and English stopwords removed). Invalid parameters answer `400` with `{"errors": {"q": {"code": "required" | "too_long" | "invalid", ...}}}` plus the listing errors.
+
+The index lives in the `document_content` table and is refreshed whenever a document or a new revision is created. Documents created before it existed are indexed with `manage.py index_documents` (`--missing-only` skips those already indexed).
+
 ### `POST /documents`
 
 Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
@@ -300,6 +340,34 @@ In both formats `change_description` is required, 20 to 255 characters, and is s
 
 Provisional sign in, used by the frontend while the real authentication does not exist. JSON body `{"user_id": <int>}`; opens a Django session for that active user and answers `200` with the same payload as `GET /users/me`. Signing in again replaces the session user. `400 {"error": "MissingUser"}` when `user_id` is missing or not an integer, `400 {"error": "InvalidJSON"}`, `404 {"error": "UserNotFound"}` for an unknown or inactive user. It asks for no credentials, so it only exists while `DJANGO_DEBUG` is on: with it off every call answers `404 {"error": "NotFound"}`. Remove it when the real login lands.
 
+### `POST /auth/logout`
+
+Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
+
+### `GET /legal-documents/<slug>/current`
+
+Latest published version of a legal document (for the seeded term the slug is `termo-tratamento-dados`), with its clauses and their ids: `{"id", "version", "document": {"slug", "title"}, "summary", "content_hash", "published_at", "clauses": [{"id", "code", "position", "title", "body", "is_required"}]}`, clauses ordered by `position`. No session needed. `404 {"error": "LegalDocumentNotFound"}` for an unknown slug or a document without a published version.
+
+### `GET /legal-documents`
+
+Legal documents that have a published version, ordered by title, each with its current version: `{"count", "results": [{"slug", "title", "current_version": {"id", "version", "published_at", "clauses": [{"id", "code", "position", "title", "is_required"}]}}]}`. Clause bodies are left out; read them through `GET /legal-documents/versions/<id>`. No session needed. The profile screen uses it to list the terms the user has not accepted yet.
+
+### `GET /legal-documents/versions/<id>`
+
+Full text of one specific version, same payload as `GET /legal-documents/<slug>/current`, so the history can show exactly the version the user accepted even after a newer one was published. Serves `PUBLISHED` and `RETIRED` versions; `404 {"error": "LegalVersionNotFound"}` for unknown ids and drafts. No session needed.
+
+### `POST /users/me/legal-acceptances`
+
+Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, required clauses must be accepted, and only the current published version can be accepted. Answers `201` with the acceptance (`id`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes `audit_log` (`CREATE`, `user_legal_acceptance`, `LEGAL_TERMS_ACCEPTED`) and sets the user's `terms_accepted_at`. Errors: `400 {"errors": ...}` with codes such as `required_clause_declined`, `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
+
+### `GET /users/me/legal-acceptances`
+
+History of the caller's acceptances, newest first, revoked ones included: `{"count", "results": [acceptance, ...]}` with the same acceptance payload as the `POST`. Requires a session; IP address and user agent are never exposed.
+
+### `POST /users/me/legal-acceptances/<id>/revoke`
+
+Withdraws one of the caller's term acceptances. Requires a session (`401 {"error": "AuthenticationRequired"}`) and the CSRF header. The acceptance is never deleted: it receives `revoked_at` and stays in `GET /users/me/legal-acceptances` as evidence; `terms_accepted_at` of the user moves to the most recent acceptance still in force (or `null`). The action is written to `audit_log` (`action = UPDATE`, `entity = "user_legal_acceptance"`, `record.event = "LEGAL_TERMS_REVOKED"`). Answers `200` with the acceptance, `404 {"error": "LegalAcceptanceNotFound"}` when it does not exist or belongs to another user, `409 {"error": "LegalAcceptanceAlreadyRevoked"}`, and `503 {"error": "AuditUnavailable"}` with nothing changed when the audit entry cannot be written. The user may accept the same version again afterwards through `POST /users/me/legal-acceptances`: the new acceptance is a new row, the revoked one stays in the history, and only one acceptance per version can be in force at a time.
+
 ### `GET /manager/pending-revisions`
 
 Approval queue of the technical manager. Requires a session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` for other roles. Lists every `PENDING` revision of documents with an active type, oldest first, paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `version`, `revision` (`REV02`), `status`, `change_description`, `issue_date`, `created_at`, `author`, `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`) and `files` (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `revision_changed`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
@@ -347,12 +415,12 @@ Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access
 
 ### `POST /users/me/request-deletion`
 
-Immediate, irreversible account removal requested by the logged-in user (`401` without a session). It is a **soft delete**: the `app_user` row is kept but deactivated and anonymized (name, email, password and terms acceptance cleared), and the session is closed. Answers `200 {"message": "Account deactivated and anonymized."}`; there is no pending "request" state.
+Immediate, irreversible account removal requested by the logged-in user (`401` without a session). It is a **soft delete**: the `app_user` row is kept but deactivated and anonymized (name, email, password and terms acceptance cleared), and the session is closed. Answers `200 {"message": "Account deactivated and anonymized.", "deletion_requested_at"}`; there is no pending "request" state. Like the other sensitive actions, the audit entry is mandatory: when it cannot be written nothing changes and the answer is `503 {"error": "AuditUnavailable"}`.
 
 - Pending access requests of the user are deleted, so they never reach the managers' panel and cannot be approved. Justifications of the remaining ones are cleared.
 - Manager work is handed over to another active manager: the area manager, otherwise another `AUDITOR` of the same area, otherwise an `ADMIN`. This covers pending revisions, documents the user was responsible for and the area's `manager`. Historical authorship stays on the anonymized row.
 - If no other manager exists, nothing is changed and the answer is `409 {"error": "..."}`.
-- The event is written to `audit_log` (`action = UPDATE`, `entity = "app_user"`, `record.event = "ACCOUNT_ANONYMIZED"`) with the user's name in `record.actor.name`, for traceability.
+- The event is written to `audit_log` (`action = DELETE`, `entity = "app_user"`, `record.event = "ACCOUNT_ANONYMIZED"`) before the anonymization, so `record.actor.name` keeps the user's name for traceability.
 - The original email is kept only as an HMAC hash to block re-registration.
 
 ### `python manage.py delete_user <email>`
@@ -376,6 +444,7 @@ docker compose exec api python manage.py migrate           # apply migrations
 docker compose exec api python manage.py makemigrations    # create migrations
 docker compose exec api python manage.py createsuperuser   # create an EXTRA admin user (the default one is automatic)
 docker compose exec api python manage.py seed              # load the demo dataset (idempotent, see below)
+docker compose exec api python manage.py index_documents   # (re)build the full-text search index
 docker compose exec api python manage.py shell             # Django shell
 docker compose exec api python manage.py test              # run tests
 

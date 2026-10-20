@@ -27,6 +27,7 @@ class DevLoginViewTests(TestCase):
         response = self._post({"user_id": self.auditor.pk})
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn("csrftoken", response.cookies)
         self.assertEqual(response.json()["id"], self.auditor.pk)
         self.assertEqual(response.json()["role"], Role.AUDITOR)
         self.assertEqual(self.client.get("/users/me").json()["id"], self.auditor.pk)

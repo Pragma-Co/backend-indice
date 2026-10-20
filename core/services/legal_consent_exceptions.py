@@ -20,3 +20,11 @@ class OutdatedLegalVersionError(Exception):
 
 class LegalVersionAlreadyAcceptedError(Exception):
     pass
+
+
+class LegalAcceptanceNotFoundError(Exception):
+    pass
+
+
+class LegalAcceptanceAlreadyRevokedError(Exception):
+    pass

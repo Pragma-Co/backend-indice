@@ -31,6 +31,32 @@ def serialize_legal_version(version: LegalDocumentVersion) -> dict:
     }
 
 
+def serialize_legal_document_summary(document, version: LegalDocumentVersion) -> dict:
+    return {
+        **_serialize_document(document),
+        "current_version": {
+            "id": version.id,
+            "version": version.version,
+            "published_at": _isoformat(version.published_at),
+            "clauses": [
+                {
+                    "id": clause.id,
+                    "code": clause.code,
+                    "position": clause.position,
+                    "title": clause.title,
+                    "is_required": clause.is_required,
+                }
+                for clause in version.clauses.all()
+            ],
+        },
+    }
+
+
+def serialize_legal_documents(items) -> dict:
+    results = [serialize_legal_document_summary(document, version) for document, version in items]
+    return {"count": len(results), "results": results}
+
+
 def serialize_acceptance(acceptance: UserLegalAcceptance) -> dict:
     version = acceptance.version
     return {

@@ -8,6 +8,7 @@ from core.views.access_request_view import (
     pending_access_requests_view,
 )
 from core.views.api_root_view import api_root
+from core.views.auth_view import logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
 from core.views.dev_login_view import dev_login_view
 from core.views.document_ai_view import suggest_document_metadata_view
@@ -18,11 +19,18 @@ from core.views.documents_view import (
     documents_collection,
     request_access,
     restore_document_view,
+    search_documents_view,
     simple_filters,
 )
 from core.views.file_view import document_file_view
 from core.views.health_view import health_check
-from core.views.legal_consent_view import current_legal_version_view, legal_acceptances_view
+from core.views.legal_consent_view import (
+    current_legal_version_view,
+    legal_acceptances_view,
+    legal_documents_view,
+    legal_version_view,
+    revoke_legal_acceptance_view,
+)
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
@@ -32,6 +40,7 @@ urlpatterns = [
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
     path("dev/login", dev_login_view, name="dev-login"),
+    path("auth/logout", logout_view, name="auth-logout"),
     path("users/me", user_me, name="user-me"),
     path(
         "users/me/request-deletion",
@@ -40,6 +49,17 @@ urlpatterns = [
     ),
     path("users/me/legal-acceptances", legal_acceptances_view, name="user-legal-acceptances"),
     path(
+        "users/me/legal-acceptances/<int:acceptance_id>/revoke",
+        revoke_legal_acceptance_view,
+        name="user-legal-acceptance-revoke",
+    ),
+    path("legal-documents", legal_documents_view, name="legal-document-list"),
+    path(
+        "legal-documents/versions/<int:version_id>",
+        legal_version_view,
+        name="legal-version-detail",
+    ),
+    path(
         "legal-documents/<slug:slug>/current",
         current_legal_version_view,
         name="legal-document-current",
@@ -47,6 +67,7 @@ urlpatterns = [
     path("documents", documents_collection, name="document-list"),
     path("documents/upload", upload_document, name="document-upload"),
     path("documents/simple-filters", simple_filters, name="document-simple-filters"),
+    path("documents/search", search_documents_view, name="document-search"),
     path("documents/archived", archived_documents_view, name="document-archived-list"),
     path("documents/<int:document_id>", document_resource, name="document-detail"),
     path("documents/<int:document_id>/restore", restore_document_view, name="document-restore"),
