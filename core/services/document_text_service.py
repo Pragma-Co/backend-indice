@@ -1,5 +1,6 @@
 import logging
 import re
+import unicodedata
 from pathlib import Path
 
 import nltk
@@ -57,6 +58,23 @@ def clean_and_normalize_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     text = text.replace("\n", " ").replace("\f", " ")
     return text.lower().strip()
+
+
+def _searchable_char(char: str) -> str:
+    category = unicodedata.category(char)
+    if category == "Cc":
+        return " "
+    return "" if category.startswith("C") else char
+
+
+def normalize_for_search(text: str) -> str:
+    text = "".join(_searchable_char(char) for char in unicodedata.normalize("NFC", text))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def search_stopwords() -> set[str]:
+    _ensure_nltk_resources()
+    return set(stopwords.words("portuguese")) | set(stopwords.words("english"))
 
 
 def preprocess_for_llm(text: str) -> str:
