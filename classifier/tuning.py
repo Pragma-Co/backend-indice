@@ -109,7 +109,7 @@ def to_json(results: list[TrialResult]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m classifier.tune")
+    parser = argparse.ArgumentParser(prog="python -m classifier.tuning")
     parser.add_argument("--csv", required=True, help="Training dataset (UTF-8 CSV).")
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG_PATH))
     parser.add_argument("--max-features", type=int, default=MAX_FEATURES)

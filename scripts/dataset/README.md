@@ -19,7 +19,7 @@ Conclusion: the collection scripts in this folder may keep running, with the exi
 3. `python -m scripts.dataset.build_csv` writes `training_export/quicksearch/dataset_unlabeled.csv` (type and discipline by rule, empty area).
 4. `python -m scripts.dataset.label_areas` fills the area with an LLM (Ollama by default, `--provider groq` as a stopgap) and writes `dataset.csv` with `area`, `area_stage` and `area_model`.
 5. `python -m scripts.dataset.area_review sample`, fill the `human_stage` column (a person, or a reference model named with `--reviewer`), then `python -m scripts.dataset.area_review agreement`.
-6. `python -m classifier.vectorize` stores the TF-IDF vectors in MongoDB; training and comparison commands are in the backend `README.md`.
+6. `python -m classifier.vectorize` stores the TF-IDF vectors in MongoDB; the training commands are in the backend `README.md`.
 
 ## Area labeling with Ollama
 

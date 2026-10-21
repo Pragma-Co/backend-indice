@@ -484,15 +484,14 @@ docker compose exec api python -m scripts.dataset.area_review agreement --datase
 # TF-IDF vectors into MongoDB (collection document_vectors) + vectorizer.joblib
 docker compose exec api python -m classifier.vectorize --csv training_export/quicksearch/dataset.csv --output-dir classifier_artifacts
 
-# Hyperparameter grid (scored on validation only) and A vs B comparison (test set)
-docker compose exec api python -m classifier.tune --csv training_export/quicksearch/dataset.csv --output training_export/quicksearch/tuning.json
-docker compose exec api python -m classifier.comparison --csv training_export/quicksearch/dataset.csv --weight-decay 0.001 --area-agreement "groq, 60 docs=training_export/quicksearch/area_agreement.json"
+# Hyperparameter grid (scored on validation only)
+docker compose exec api python -m classifier.tuning --csv training_export/quicksearch/dataset.csv --output training_export/quicksearch/tuning.json
 
 # Final model: reads the stored vectors, saves model.pt, vectorizer.joblib and metadata.json
 docker compose exec api python -m classifier.train --csv training_export/quicksearch/dataset.csv --output-dir classifier_artifacts --vectors-from-mongo --weight-decay 0.001
 ```
 
-`--filter-noise`, `--hidden-size`, `--dropout` and `--weight-decay` are accepted by `vectorize`, `comparison` and `train`; the stored vectors carry the vectorizer version, so `train --vectors-from-mongo` refuses vectors produced with other settings. Prediction: `Classifier("classifier_artifacts").predict(text)` returns label and confidence per field. Results and method: `documentation/Classificador - Resultados Preliminares.md`.
+`--filter-noise`, `--hidden-size`, `--dropout` and `--weight-decay` are accepted by `vectorize` and `train`; the stored vectors carry the vectorizer version, so `train --vectors-from-mongo` refuses vectors produced with other settings. Prediction: `Classifier("classifier_artifacts").predict(text)` returns label and confidence per field. Results and method: `documentation/Classificador - Resultados Preliminares.md`.
 
 ## Demo data
 

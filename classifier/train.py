@@ -10,13 +10,29 @@ from classifier.catalog import (
     load_catalog,
     load_criteria_version,
 )
-from classifier.comparison import add_network_options, config_from
 from classifier.dataset import DatasetValidationError, load_dataset
 from classifier.evaluation import format_evaluation
+from classifier.neural_training import TrainingConfig
 from classifier.persistence import DEFAULT_OUTPUT_DIR, VECTORIZER_FILENAME, save_model
 from classifier.splitting import SplitError
 from classifier.training_run import StoredFeatures, run_training
 from classifier.vector_store import VectorStoreError, get_vector_store, vectorizer_version
+
+
+def add_network_options(parser: argparse.ArgumentParser) -> None:
+    defaults = TrainingConfig()
+    parser.add_argument("--hidden-size", type=int, default=defaults.hidden_size)
+    parser.add_argument("--dropout", type=float, default=defaults.dropout)
+    parser.add_argument("--weight-decay", type=float, default=defaults.weight_decay)
+    parser.add_argument("--filter-noise", action="store_true")
+
+
+def config_from(arguments) -> TrainingConfig:
+    return TrainingConfig(
+        hidden_size=arguments.hidden_size,
+        dropout=arguments.dropout,
+        weight_decay=arguments.weight_decay,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
