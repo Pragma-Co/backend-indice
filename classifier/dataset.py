@@ -6,10 +6,11 @@ from pathlib import Path
 from classifier.catalog import FIELDS, load_catalog
 
 CSV_COLUMNS = {
-    "text": "texto",
-    "discipline": "disciplina",
-    "document_type": "tipo",
+    "text": "text",
+    "discipline": "discipline",
+    "document_type": "document_type",
     "area": "area",
+    "group": "group",
 }
 CSV_FIELD_SIZE_LIMIT = 2**31 - 1
 MIN_EXAMPLES_PER_CLASS = 20
@@ -29,6 +30,7 @@ class DatasetReport:
 class Dataset:
     texts: list[str]
     labels: dict[str, list[str]]
+    groups: list[str]
     report: DatasetReport
 
 
@@ -45,14 +47,21 @@ def load_dataset(csv_path, catalog=None) -> Dataset:
     records = _read_records(Path(csv_path), report)
 
     texts = []
+    groups = []
     labels = {name: [] for name in FIELDS}
     empty_text_rows = []
+    empty_group_rows = []
     invalid_labels = {name: {} for name in FIELDS}
 
     for row_number, record in enumerate(records, start=1):
         text = record[CSV_COLUMNS["text"]]
         if not text.strip():
             empty_text_rows.append(row_number)
+            continue
+
+        group = record[CSV_COLUMNS["group"]].strip()
+        if not group:
+            empty_group_rows.append(row_number)
             continue
 
         row_labels = {name: record[CSV_COLUMNS[name]].strip() for name in FIELDS}
@@ -64,11 +73,13 @@ def load_dataset(csv_path, catalog=None) -> Dataset:
 
         if row_is_valid:
             texts.append(text)
+            groups.append(group)
             for name, label in row_labels.items():
                 labels[name].append(label)
 
     report.rows_read = len(records)
     _report_empty_texts(report, empty_text_rows)
+    _report_empty_groups(report, empty_group_rows)
     _report_invalid_labels(report, invalid_labels)
     _report_class_counts(report, labels, catalog)
 
@@ -76,7 +87,7 @@ def load_dataset(csv_path, catalog=None) -> Dataset:
         report.errors.append("The dataset has no usable rows")
     if report.errors:
         raise DatasetValidationError(report)
-    return Dataset(texts=texts, labels=labels, report=report)
+    return Dataset(texts=texts, labels=labels, groups=groups, report=report)
 
 
 def _read_records(path: Path, report: DatasetReport) -> list[dict[str, str]]:
@@ -106,6 +117,11 @@ def _report_empty_texts(report: DatasetReport, rows: list[int]) -> None:
         report.warnings.append(
             f"{len(rows)} rows with empty text were ignored (rows {_format_rows(rows)})"
         )
+
+
+def _report_empty_groups(report: DatasetReport, rows: list[int]) -> None:
+    if rows:
+        report.errors.append(f"{len(rows)} rows have no group (rows {_format_rows(rows)})")
 
 
 def _report_invalid_labels(report: DatasetReport, invalid_labels: dict) -> None:

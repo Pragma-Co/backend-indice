@@ -16,6 +16,7 @@ EXCLUDED_ID_PATTERN = re.compile(
     r"^(?:QPL|MS\d|ASTM|SAE|ISO|ANSI|NEMA|NAS|NASM|IEC|ASME|AMS|STANAG|AIA|API|IPC|UL|EIA|DIN|BS)"
 )
 PUBLIC_ID_PATTERN = re.compile(r"^(?:MIL-|A-A-|DOD-|[A-Z]{1,3}-[A-Z]{1,2}-\d)")
+STANDARD_OR_HANDBOOK_ID_PATTERN = re.compile(r"^(?:MIL|DOD)-(?:STD|HDBK)")
 ID_PREFIX_PATTERN = re.compile(r"^[A-Z]+(?:-[A-Z]+)?")
 FSC_PATTERN = re.compile(r"^\d{4}$")
 SAMPLE_SEED = 42
@@ -27,9 +28,15 @@ def id_prefix(document_id: str) -> str:
     return match.group(0) if match else "OTHER"
 
 
-def sample_rows(rows: list[dict], per_group: int, seed: int = SAMPLE_SEED) -> list[dict]:
+def sample_rows(
+    rows: list[dict],
+    per_group: int,
+    seed: int = SAMPLE_SEED,
+    include_standards_and_handbooks: bool = False,
+) -> list[dict]:
     rng = random.Random(seed)
     by_group = defaultdict(lambda: defaultdict(list))
+    standards_and_handbooks = []
     for row in rows:
         if not FSC_PATTERN.match(row["fsc"]) or row["fsc"][:2] not in SELECTED_FSC_GROUPS:
             continue
@@ -38,6 +45,8 @@ def sample_rows(rows: list[dict], per_group: int, seed: int = SAMPLE_SEED) -> li
         if not PUBLIC_ID_PATTERN.match(row["document_id"]):
             continue
         by_group[row["fsc"][:2]][id_prefix(row["document_id"])].append(row)
+        if STANDARD_OR_HANDBOOK_ID_PATTERN.match(row["document_id"]):
+            standards_and_handbooks.append(row)
 
     sampled = []
     for group in SELECTED_FSC_GROUPS:
@@ -48,6 +57,12 @@ def sample_rows(rows: list[dict], per_group: int, seed: int = SAMPLE_SEED) -> li
                 if bucket and len(picked) < per_group:
                     picked.append(bucket.pop())
         sampled.extend(picked)
+
+    if include_standards_and_handbooks:
+        already_sampled = {row["ident_number"] for row in sampled}
+        sampled.extend(
+            row for row in standards_and_handbooks if row["ident_number"] not in already_sampled
+        )
     return sampled
 
 
@@ -63,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--listing", default=DEFAULT_LISTING)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--per-group", type=int, default=60)
+    parser.add_argument("--include-standards-and-handbooks", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--delay", type=float, default=REQUEST_DELAY_SECONDS)
     return parser
@@ -73,7 +89,11 @@ def main(argv=None) -> int:
     with Path(arguments.listing).open(encoding="utf-8") as handle:
         rows = [json.loads(line) for line in handle if line.strip()]
 
-    targets = sample_rows(rows, arguments.per_group)
+    targets = sample_rows(
+        rows,
+        arguments.per_group,
+        include_standards_and_handbooks=arguments.include_standards_and_handbooks,
+    )
     output = Path(arguments.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     done = load_done(output)

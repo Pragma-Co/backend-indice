@@ -1,5 +1,22 @@
 {
-  "discipline": ["AER", "ELE", "ENS", "EST", "FER", "HID", "MAT", "PES"],
-  "document_type": ["DWG", "ESP", "LDM", "MEM", "NOR", "PRO", "REV"],
-  "area": ["ADM", "AER", "CER", "EST", "MFG", "QUA", "SIS"]
+  "criteria_version": "2",
+  "discipline": ["MECHANICAL", "ELECTRICAL", "MATERIALS"],
+  "document_type": ["STANDARD", "HANDBOOK", "SPECIFICATION", "COMMERCIAL_ITEM"],
+  "area": ["DESIGN", "MATERIALS", "OTHER_STAGE"],
+  "area_stages": [
+    "DESIGN",
+    "MATERIALS",
+    "PROCESSING",
+    "INSPECTION_TEST",
+    "PACKAGING_STORAGE",
+    "NO_CLEAR_STAGE"
+  ],
+  "area_groups": {
+    "DESIGN": "DESIGN",
+    "MATERIALS": "MATERIALS",
+    "PROCESSING": "OTHER_STAGE",
+    "INSPECTION_TEST": "OTHER_STAGE",
+    "PACKAGING_STORAGE": "OTHER_STAGE",
+    "NO_CLEAR_STAGE": "OTHER_STAGE"
+  }
 }
