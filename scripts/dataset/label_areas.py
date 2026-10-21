@@ -31,8 +31,6 @@ RETRY_BACKOFF_SECONDS = 10
 CSV_FIELD_SIZE_LIMIT = 2**31 - 1
 PROGRESS_EVERY = 10
 MAX_CONSECUTIVE_UNREACHABLE = 3
-MAX_RATE_LIMIT_WAITS = 40
-DEFAULT_RATE_LIMIT_WAIT_SECONDS = 10
 UNREACHABLE_ERRORS = (urllib.error.URLError, ConnectionError, TimeoutError)
 
 Transport = Callable[[str, dict, dict, int], dict]
@@ -158,83 +156,7 @@ class LabelingResult:
     aborted: str | None = None
 
 
-def rate_limit_wait_seconds(error) -> float:
-    headers = getattr(getattr(error, "response", None), "headers", None) or {}
-    value = headers.get("retry-after")
-    try:
-        return max(float(value), 1.0)
-    except (TypeError, ValueError):
-        return DEFAULT_RATE_LIMIT_WAIT_SECONDS
-
-
-class GroqAreaLabeler:
-    def __init__(
-        self,
-        client,
-        model: str,
-        criteria: str,
-        labels: frozenset[str],
-        max_chars: int = MAX_TEXT_CHARS,
-        sleep=time.sleep,
-        fallback_model: str | None = None,
-    ):
-        self.client = client
-        self.model = model
-        self.criteria = criteria
-        self.labels = labels
-        self.max_chars = max_chars
-        self.sleep = sleep
-        self.fallback_models = [m for m in (fallback_model or "").split(",") if m]
-        self.last_model = model
-
-    def label(self, text: str, title: str = "") -> str:
-        excerpt = text[: self.max_chars]
-        content = f"Title: {title}" + chr(10) + chr(10) + excerpt if title else excerpt
-        models = [self.model, *self.fallback_models]
-        for _ in range(MAX_RATE_LIMIT_WAITS):
-            wait = None
-            for model in models:
-                try:
-                    response = self._ask(model, content)
-                except Exception as exc:
-                    if type(exc).__name__ != "RateLimitError":
-                        raise
-                    seconds = rate_limit_wait_seconds(exc)
-                    wait = seconds if wait is None else min(wait, seconds)
-                    continue
-                self.last_model = model
-                return OllamaAreaLabeler.parse(self, response.choices[0].message.content or "")
-            self.sleep(wait)
-        raise RuntimeError("rate limited for too long")
-
-    def _ask(self, model: str, content: str):
-        return self.client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": self.criteria},
-                {"role": "user", "content": content},
-            ],
-            model=model,
-            temperature=0,
-            response_format={"type": "json_object"},
-        )
-
-
-def build_labeler(
-    provider: str,
-    criteria: str,
-    stages: frozenset[str],
-    max_chars: int,
-    fallback_model: str | None = None,
-):
-    if provider == "groq":
-        import groq
-
-        model = os.environ["GROQ_MODEL"]
-        client = groq.Groq(api_key=os.environ["GROQ_API_KEY"])
-        labeler = GroqAreaLabeler(
-            client, model, criteria, stages, max_chars=max_chars, fallback_model=fallback_model
-        )
-        return labeler, model
+def build_labeler(criteria: str, stages: frozenset[str], max_chars: int):
     model = os.environ["OLLAMA_MODEL"]
     labeler = OllamaAreaLabeler(
         os.environ.get("OLLAMA_URL", DEFAULT_OLLAMA_URL),
@@ -286,7 +208,7 @@ def label_rows(
                 unreachable = isinstance(exc, UNREACHABLE_ERRORS)
                 if attempt < MAX_ATTEMPTS:
                     sleep(RETRY_BACKOFF_SECONDS * attempt)
-        used_model = getattr(labeler, "last_model", model) if label else None
+        used_model = model if label else None
         if label is None:
             result.failures.append(f"{row['document_id']}: {error}")
         else:
@@ -357,12 +279,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG_PATH))
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--max-chars", type=int, default=MAX_TEXT_CHARS)
-    parser.add_argument("--provider", choices=("ollama", "groq"), default="ollama")
-    parser.add_argument(
-        "--fallback-model",
-        default=None,
-        help="Groq model(s), comma separated, tried in order when the main model is rate limited.",
-    )
     parser.add_argument(
         "--criteria-version",
         default=None,
@@ -382,11 +298,7 @@ def main(argv=None) -> int:
     groups = load_area_groups(arguments.catalog)
     criteria_version = arguments.criteria_version or load_criteria_version(arguments.catalog)
     labeler, model = build_labeler(
-        arguments.provider,
-        criteria_path(criteria_version).read_text(encoding="utf-8"),
-        stages,
-        arguments.max_chars,
-        fallback_model=arguments.fallback_model,
+        criteria_path(criteria_version).read_text(encoding="utf-8"), stages, arguments.max_chars
     )
 
     columns, rows = read_rows(arguments.input)

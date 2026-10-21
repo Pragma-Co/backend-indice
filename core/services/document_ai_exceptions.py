@@ -6,15 +6,3 @@ class UnsupportedFileTypeError(Exception):
 
 class AISuggestionError(Exception):
     pass
-
-
-class AITimeoutError(AISuggestionError):
-    pass
-
-
-class AIRateLimitError(AISuggestionError):
-    pass
-
-
-class AICommunicationError(AISuggestionError):
-    pass

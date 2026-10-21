@@ -471,7 +471,7 @@ docker compose exec mongodb mongosh -u api6_admin -p --authenticationDatabase ad
 
 ## Document classifier
 
-The classifier (`classifier/`) is one PyTorch network that returns discipline, document type and area at once from the raw text. Training data lives in `training_export/quicksearch/` (outside git); collection and labeling scripts are in `scripts/dataset/` (sources, terms of use and the Ollama/Groq setup are in `scripts/dataset/README.md`). Every command runs inside the `api` container; the Mongo-backed steps need `docker compose up -d mongodb`.
+The classifier (`classifier/`) is one PyTorch network that returns discipline, document type and area at once from the raw text. The trained model ships in `classifier_artifacts/` (`model.pt`, `vectorizer.joblib`, `metadata.json`), so the suggestion endpoint works without any training step; `classifier/catalog_mapping.json` translates the model classes into catalog codes. Retraining is optional. Training data lives in `training_export/quicksearch/` (outside git); collection and labeling scripts are in `scripts/dataset/` (sources, terms of use and the Ollama setup are in `scripts/dataset/README.md`). Every command runs inside the `api` container; the Mongo-backed steps need `docker compose up -d mongodb`.
 
 ```bash
 # Dataset: metadata, PDFs, CSV with type and discipline, area by LLM

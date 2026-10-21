@@ -1,9 +1,7 @@
-import json
 import shutil
 import tempfile
 from datetime import timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -12,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 from docx import Document as DocxDocument
 
+from classifier.prediction import Prediction
 from core.models import (
     AccessStatus,
     Area,
@@ -673,7 +672,7 @@ class IngestionOutcomeOnUploadTests(ManagerActivityFixtureMixin, TestCase):
 
 
 @mock.patch("core.services.document_ai_service.get_mongo_db")
-@mock.patch("core.services.document_ai_service.get_groq_client")
+@mock.patch("core.services.document_ai_service.get_classifier")
 class ClassificationOutcomeTests(ManagerActivityFixtureMixin, TestCase):
     def setUp(self):
         super().setUp()
@@ -695,8 +694,8 @@ class ClassificationOutcomeTests(ManagerActivityFixtureMixin, TestCase):
         "core.services.document_ai_service.get_temp_upload_record",
         return_value={"extracted_text": "texto processado"},
     )
-    def test_should_record_a_failed_classification(self, record, groq, mongo):
-        groq.return_value.chat.completions.create.side_effect = RuntimeError("boom")
+    def test_should_record_a_failed_classification(self, record, classifier, mongo):
+        classifier.return_value.predict.side_effect = RuntimeError("boom")
 
         response = self._suggest()
 
@@ -713,17 +712,18 @@ class ClassificationOutcomeTests(ManagerActivityFixtureMixin, TestCase):
         "core.services.document_ai_service.get_temp_upload_record",
         return_value={"extracted_text": "texto processado"},
     )
-    def test_should_record_a_successful_classification(self, record, groq, mongo):
-        answer = json.dumps({"title": "Memorial", "description": "Descrição"})
-        groq.return_value.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=answer))]
-        )
+    def test_should_record_a_successful_classification(self, record, classifier, mongo):
+        classifier.return_value.predict.return_value = {
+            "discipline": Prediction("MECHANICAL", 0.9),
+            "document_type": Prediction("SPECIFICATION", 0.8),
+            "area": Prediction("DESIGN", 0.7),
+        }
 
         response = self._suggest()
 
         entry = self._classification_entry()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["title"], "Memorial")
+        self.assertEqual(response.json()["discipline"]["name"], "Estruturas")
         self.assertNotIn("classification", response.json())
         self.assertEqual(entry.record["status"], "SUCCESS")
 
@@ -731,13 +731,13 @@ class ClassificationOutcomeTests(ManagerActivityFixtureMixin, TestCase):
         "core.services.document_ai_service.get_temp_upload_record",
         return_value={"extracted_text": ""},
     )
-    def test_should_record_a_skipped_classification_without_text(self, record, groq, mongo):
+    def test_should_record_a_skipped_classification_without_text(self, record, classifier, mongo):
         response = self._suggest()
 
         entry = self._classification_entry()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(entry.record["status"], "SKIPPED")
-        groq.return_value.chat.completions.create.assert_not_called()
+        classifier.return_value.predict.assert_not_called()
 
 
 @mock.patch("core.services.document_creation_service.get_mongo_db")
