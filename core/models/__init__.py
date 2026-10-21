@@ -21,8 +21,18 @@ from core.models.choices import (
     Role,
 )
 from core.models.document import Document, DocumentArea, DocumentTag
+from core.models.excluded_identifier import ExcludedIdentifier
+from core.models.legal import (
+    LegalClause,
+    LegalDocument,
+    LegalDocumentStatus,
+    LegalDocumentVersion,
+    UserClauseConsent,
+    UserLegalAcceptance,
+)
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
+from core.models.search import DocumentContent
 
 __all__ = [
     "MAX_FILE_SIZE_BYTES",
@@ -35,10 +45,16 @@ __all__ = [
     "Document",
     "DocumentAccess",
     "DocumentArea",
+    "DocumentContent",
     "DocumentTag",
     "DocumentType",
+    "ExcludedIdentifier",
     "File",
     "FileExtension",
+    "LegalClause",
+    "LegalDocument",
+    "LegalDocumentStatus",
+    "LegalDocumentVersion",
     "Project",
     "ProjectDiscipline",
     "Revision",
@@ -46,4 +62,6 @@ __all__ = [
     "Role",
     "Tag",
     "User",
+    "UserClauseConsent",
+    "UserLegalAcceptance",
 ]

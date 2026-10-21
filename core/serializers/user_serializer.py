@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.forms import EmailField
 
 from core.models import User
+from core.services.excluded_identifier_service import is_identifier_excluded
 
 
 class UserPayloadValidationError(Exception):
@@ -63,6 +64,8 @@ def validate_user_update(payload, user):
             email = User.objects.normalize_email(email)
             if User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
                 errors["email"] = "A user with this email address already exists."
+            elif is_identifier_excluded(email):
+                errors["email"] = "This email address cannot be used for an account."
 
     if errors:
         raise UserPayloadValidationError(errors)

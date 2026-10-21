@@ -16,7 +16,7 @@ NLTK_RESOURCES = {
 
 
 @lru_cache(maxsize=1)
-def _ensure_nltk_resources() -> None:
+def ensure_nltk_resources() -> None:
     for package, resource_path in NLTK_RESOURCES.items():
         try:
             nltk.data.find(resource_path)
@@ -26,13 +26,13 @@ def _ensure_nltk_resources() -> None:
 
 @lru_cache(maxsize=1)
 def _english_stop_words() -> frozenset[str]:
-    _ensure_nltk_resources()
+    ensure_nltk_resources()
     return frozenset(stopwords.words("english"))
 
 
 @lru_cache(maxsize=1)
 def _lemmatizer() -> WordNetLemmatizer:
-    _ensure_nltk_resources()
+    ensure_nltk_resources()
     return WordNetLemmatizer()
 
 
@@ -43,7 +43,7 @@ def clean_and_normalize_text(text: str) -> str:
 
 
 def preprocess_for_llm(text: str) -> str:
-    _ensure_nltk_resources()
+    ensure_nltk_resources()
 
     text = clean_and_normalize_text(text)
     text = re.sub(r"https?://\S+|www\.\S+", "", text)

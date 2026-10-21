@@ -72,6 +72,8 @@ docker run --rm -v "${PWD}:/app" -w /app python:3.12-slim python scripts/setup_e
 
 The script refuses to overwrite an existing `.env`. To regenerate everything, add `--force` — and note that already-initialized databases keep their old passwords, so a regeneration also requires `docker compose down -v` (which deletes all database data).
 
+If you already have a `.env` from before the excluded-identifier blacklist was added, add `EXCLUDED_IDENTIFIER_HMAC_KEY` manually with a stable random value (for example, `openssl rand -hex 32`). The setup script does not update an existing `.env` unless forced. Do not rotate this key: existing blacklist hashes cannot be checked with a different key.
+
 <details>
 <summary>Prefer to do it by hand?</summary>
 
@@ -166,6 +168,17 @@ Disciplines available in the **Disciplina** select. `code` is the discipline acr
 ]
 ```
 
+### `GET /areas/`
+
+Active areas available in the **Áreas** select. `acronym` is the value sent in `areas` when creating a document.
+
+```json
+[
+  { "id": 1, "acronym": "EST", "name": "Engenharia Estrutural" },
+  { "id": 3, "acronym": "AER", "name": "Aerodinâmica e Desempenho" }
+]
+```
+
 ### `GET /documents`
 
 Main listing of the document library: serves both the direct navigation ("Ver todos os documentos") and the searches fired from the home screen. All parameters are optional and combined with AND; without any of them the endpoint returns the whole collection.
@@ -212,6 +225,48 @@ Response `200`, ordered by most recent first:
 ```
 
 `revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
+
+Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
+
+### `GET /documents/search`
+
+Full-text search for the document library. Takes a free-text query in `q` (required, up to 200 characters) and matches it against the title, code, description, manual tags, the thematic tags generated from the content and the normalized content of the latest revision. Matching uses PostgreSQL full-text search with the `portuguese_unaccent` configuration (Portuguese stemming, accents ignored), so `calculo viga` finds `Memorial de Cálculo das Vigas`. Query words are alternatives (OR): documents matching more words, or matching them in the title and tags, rank higher.
+
+Content is confidential: a match inside the content (and its snippets) only counts for the responsible user or a user with an approved access grant, identified by the session. Everyone else finds documents through their metadata only, as in the listing.
+
+Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `discipline`, `status`, `tags`, dates, `page`, `page_size`) is accepted and narrows the search. Response `200`, ordered by relevance:
+
+```json
+{
+  "query": "fadiga",
+  "count": 1,
+  "total_pages": 1,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 3,
+      "code": "AK-2100-EST-MEM-0002",
+      "title": "Memorial de cálculo do revestimento inferior",
+      "...": "same fields as GET /documents",
+      "score": 0.6687,
+      "tags": ["fadiga", "junção estrutural"],
+      "thematic_tags": ["revestimento", "tensões"],
+      "matched_tags": ["fadiga"],
+      "content_match": true,
+      "highlights": {
+        "title": "Memorial de cálculo do revestimento inferior",
+        "description": "Verificação de tensões e vida em <mark>fadiga</mark> do revestimento inferior",
+        "content": ["… ensaio de <mark>fadiga</mark> em escala de painel …"]
+      }
+    }
+  ]
+}
+```
+
+`highlights` are HTML-escaped, with the matched words wrapped in `<mark>`; `content` holds up to three fragments and is empty when the content did not match or the user cannot read it. `thematic_tags` are the most frequent meaningful words of the content (Portuguese and English stopwords removed). Invalid parameters answer `400` with `{"errors": {"q": {"code": "required" | "too_long" | "invalid", ...}}}` plus the listing errors.
+
+The index lives in the `document_content` table and is refreshed whenever a document or a new revision is created. Documents created before it existed are indexed with `manage.py index_documents` (`--missing-only` skips those already indexed).
 
 ### `POST /documents`
 
@@ -281,6 +336,69 @@ Creates the next revision of an existing document with status `PENDING` (awaitin
 
 In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
 
+### `POST /dev/login`
+
+Provisional sign in, used by the frontend while the real authentication does not exist. JSON body `{"user_id": <int>}`; opens a Django session for that active user and answers `200` with the same payload as `GET /users/me`. Signing in again replaces the session user. `400 {"error": "MissingUser"}` when `user_id` is missing or not an integer, `400 {"error": "InvalidJSON"}`, `404 {"error": "UserNotFound"}` for an unknown or inactive user. It asks for no credentials, so it only exists while `DJANGO_DEBUG` is on: with it off every call answers `404 {"error": "NotFound"}`. Remove it when the real login lands.
+
+### `POST /auth/logout`
+
+Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
+
+### `GET /legal-documents/<slug>/current`
+
+Latest published version of a legal document (for the seeded term the slug is `termo-tratamento-dados`), with its clauses and their ids: `{"id", "version", "document": {"slug", "title"}, "summary", "content_hash", "published_at", "clauses": [{"id", "code", "position", "title", "body", "is_required"}]}`, clauses ordered by `position`. No session needed. `404 {"error": "LegalDocumentNotFound"}` for an unknown slug or a document without a published version.
+
+### `GET /legal-documents`
+
+Legal documents that have a published version, ordered by title, each with its current version: `{"count", "results": [{"slug", "title", "current_version": {"id", "version", "published_at", "clauses": [{"id", "code", "position", "title", "is_required"}]}}]}`. Clause bodies are left out; read them through `GET /legal-documents/versions/<id>`. No session needed. The profile screen uses it to list the terms the user has not accepted yet.
+
+### `GET /legal-documents/versions/<id>`
+
+Full text of one specific version, same payload as `GET /legal-documents/<slug>/current`, so the history can show exactly the version the user accepted even after a newer one was published. Serves `PUBLISHED` and `RETIRED` versions; `404 {"error": "LegalVersionNotFound"}` for unknown ids and drafts. No session needed.
+
+### `POST /users/me/legal-acceptances`
+
+Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, required clauses must be accepted, and only the current published version can be accepted. Answers `201` with the acceptance (`id`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes `audit_log` (`CREATE`, `user_legal_acceptance`, `LEGAL_TERMS_ACCEPTED`) and sets the user's `terms_accepted_at`. Errors: `400 {"errors": ...}` with codes such as `required_clause_declined`, `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
+
+### `GET /users/me/legal-acceptances`
+
+History of the caller's acceptances, newest first, revoked ones included: `{"count", "results": [acceptance, ...]}` with the same acceptance payload as the `POST`. Requires a session; IP address and user agent are never exposed.
+
+### `POST /users/me/legal-acceptances/<id>/revoke`
+
+Withdraws one of the caller's term acceptances. Requires a session (`401 {"error": "AuthenticationRequired"}`) and the CSRF header. The acceptance is never deleted: it receives `revoked_at` and stays in `GET /users/me/legal-acceptances` as evidence; `terms_accepted_at` of the user moves to the most recent acceptance still in force (or `null`). The action is written to `audit_log` (`action = UPDATE`, `entity = "user_legal_acceptance"`, `record.event = "LEGAL_TERMS_REVOKED"`). Answers `200` with the acceptance, `404 {"error": "LegalAcceptanceNotFound"}` when it does not exist or belongs to another user, `409 {"error": "LegalAcceptanceAlreadyRevoked"}`, and `503 {"error": "AuditUnavailable"}` with nothing changed when the audit entry cannot be written. The user may accept the same version again afterwards through `POST /users/me/legal-acceptances`: the new acceptance is a new row, the revoked one stays in the history, and only one acceptance per version can be in force at a time.
+
+### `GET /manager/activities`
+
+Activity feed of the manager's area for the "Atividade" tab of the review panel. Requires a session user with role `AUDITOR` or `ADMIN` (`401 {"error": "AuthenticationRequired"}`, `403 {"error": "PermissionDenied"}`). It unifies the audit trail (`audit_log`) with the outcome of the ingestion pipeline, newest first, and only shows events of documents classified under the manager's own area, plus uploads and AI classifications made by users of that area.
+
+Query parameters: `type` (one or more of `UPLOAD`, `REVISION`, `INGESTION_FAILURE`, `MODERATION`, `ACCESS`, comma separated or repeated), `page` (default 1) and `page_size` (default 20, at most 100; `limit` is accepted as an alias). Response `200 {"count", "total_pages", "current_page", "page_size", "results"}`; each result carries `id`, `timestamp`, `user` (`id`, `name`, or `null`), `document` (`id`, `code`, `title`, or `null`; only the `code` survives when the document was deleted), `file` (original file name, for uploads), `revision` (`REV02`), `event_type`, `event`, `status` (`SUCCESS`, `PROCESSING` or `FAILURE`) and `detail` (a short description, or the technical error of a failed ingestion step). Invalid parameters answer `400 {"errors": {"type" | "page" | "page_size" | "limit": {"code", "message"}}}`.
+
+| `event_type` | `event` | `status` | Source |
+|---|---|---|---|
+| `UPLOAD` | `FILE_UPLOADED`, `DUPLICATE_FILE_REFUSED`, `DOCUMENT_REGISTERED`, `AI_CLASSIFICATION_DONE`, `AI_CLASSIFICATION_SKIPPED`, `CONTENT_INDEXED` | `SUCCESS` (`FAILURE` for a refused duplicate) | `POST /documents/upload`, `POST /documents`, `POST /documents/<temp_file_id>/suggestions`, the content indexing run after a registration or a new revision |
+| `REVISION` | `REVISION_SUBMITTED` | `SUCCESS` | `POST /documents/<id>/revisions` |
+| `INGESTION_FAILURE` | `TEXT_EXTRACTION_FAILED`, `AI_CLASSIFICATION_FAILED`, `CONTENT_INDEXING_FAILED` | `FAILURE` | the upload event records the text extraction outcome (`record.ingestion`); the AI suggestion records the classification outcome; the content indexing (normalization and thematic tags, `document_content`) records a `CONTENT_INDEXED` event with its status |
+| `MODERATION` | `REVISION_APPROVED`, `REVISION_REJECTED`, `ACCESS_APPROVED`, `ACCESS_REJECTED`, `DOCUMENT_ARCHIVED`, `DOCUMENT_RESTORED` | `SUCCESS` | manager decisions and archiving |
+| `ACCESS` | `ACCESS_REQUESTED`, `DOCUMENT_ACCESS_DENIED`, `DOCUMENT_VIEWED`, `DOCUMENT_DOWNLOADED` | `SUCCESS` (`FAILURE` for a denied access) | access requests and file views |
+
+Rows written by the seed without an `event` are classified by their action and entity. Login and personal-data events are not part of the feed, and the bulk `index_documents` command writes no events. `PROCESSING` is reserved for the asynchronous classification pipeline (card 65); today every ingestion step runs synchronously, so an event is either `SUCCESS` or `FAILURE`.
+
+### `GET /manager/pending-revisions`
+
+Approval queue of the technical manager. Requires a session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` for other roles. Lists every `PENDING` revision of documents with an active type, oldest first, paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `version`, `revision` (`REV02`), `status`, `change_description`, `issue_date`, `created_at`, `author`, `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`) and `files` (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `revision_changed`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
+
+Revisions of archived documents are left out of the queue and cannot be decided.
+
+### `POST /manager/revisions/<id>/decision`
+
+Records the manager's decision on a pending revision. Same permission rules as the queue. Body `{"decision": "APPROVED" | "REJECTED", "justification": "<text>"}`; the justification is required to reject, optional to approve, and when present must have 20 to 1000 characters. It is stored as the revision's `auditor_comment`, together with the manager as `auditor` and `audited_at`.
+
+- **Approval** makes the revision the official one: the previously approved revision of the document becomes `OBSOLETE` and the document's `updated_by` is set to the manager, all in one transaction.
+- **Rejection** marks the revision `REJECTED` and leaves the current approved revision untouched.
+
+Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
+
 ### `GET /documents/<id>`
 
 Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
@@ -289,13 +407,41 @@ Only a viewer who **can read the document** (its responsible, or a user whose `D
 
 `access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
 
+### `DELETE /documents/<id>`
+
+Logical archiving (soft delete) of a document. Requires the `csrftoken` cookie value in the `X-CSRFToken` header (without it the CSRF middleware answers `403` before the view, like `PUT /users/me`) and a session: `401 {"error": "AuthenticationRequired"}` without one. Only a technical manager of one of the document's areas may archive it: a user with role `AUDITOR` or `ADMIN` (the same roles that review revisions) whose area is one of the document's areas. Anyone else gets `403 {"error": "PermissionDenied"}` and nothing changes.
+
+The row is never deleted. The document receives `archived_at`, `archived_by` and `updated_by`, the action is written to `audit_log` (`action = DELETE`, `entity = "document"`, `record.event = "DOCUMENT_ARCHIVED"`, with the code and the areas) and the response is `200 {"id", "code", "archived_at", "archived_by": {"id", "name"}}`. From then on the document behaves as if it did not exist: `GET /documents`, `GET /documents/<id>`, `POST /documents/<id>/revisions`, `POST /documents/<id>/request-access`, `GET /files/<id>/view` and the manager's revision queue leave it out (`404 DocumentNotFound`, `404 FileNotFound`, `404 RevisionNotFound`), so archiving it twice also answers `404`. It stays visible in the Django admin (filter "archived at") and in `GET /documents/archived`, and `POST /documents/<id>/restore` brings it back. `GET` on the same URL keeps returning the detail; other methods answer `405`.
+
+### `GET /documents/archived`
+
+Archived documents of the manager's area, so they can be reviewed and restored. Same requirements as the manager's queue: a session user with role `AUDITOR` or `ADMIN` (`401 {"error": "AuthenticationRequired"}`, `403 {"error": "PermissionDenied"}`). Only documents classified under the manager's own area are listed, the ones they are allowed to restore. Accepts the same query parameters as `GET /documents` and answers the same paginated shape, with `archived_at` and `archived_by` (`id`, `name`) added to each item, most recently archived first. Archived documents never appear in `GET /documents`.
+
+### `POST /documents/<id>/restore`
+
+Undoes the archiving. Same rules as `DELETE /documents/<id>`: session, CSRF header, manager of one of the document's areas (`401`, `403 PermissionDenied`), `404 DocumentNotFound` when the document is unknown or not archived. Clears `archived_at` and `archived_by`, sets `updated_by`, writes `audit_log` (`action = UPDATE`, `entity = "document"`, `record.event = "DOCUMENT_RESTORED"`) and answers `200 {"id", "code", "archived_at": null, "restored_by": {"id", "name"}}`. The document is listed and readable again right away.
+
 ### `GET /files/<id>/view`
 
-Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). Other answers: `400 MissingUser` without `user_id`, `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
+Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document, or to a revision reviewer (role `AUDITOR` or `ADMIN`) while the revision of the file is still `PENDING`, so the file can be inspected before the decision. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). The viewer is the user of the session; the `user_id` query parameter is only read as a fallback while `DJANGO_DEBUG` is on and there is no session. Other answers: `400 MissingUser` without a session (or, in debug, without `user_id`), `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
 
 ### `POST /documents/<id>/request-access`
 
 Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access request and answers `201 {"id", "status": "PENDING", "created": true}`; a second call while the request is still pending answers `201` with `"created": false` and the same `id`. A viewer who can already read the document (responsible or approved grant) gets `409 {"error": "AlreadyHasAccess"}` and no row is created. `400 MissingUser`, `404 UserNotFound`, `404 DocumentNotFound`.
+
+### `POST /users/me/request-deletion`
+
+Immediate, irreversible account removal requested by the logged-in user (`401` without a session). It is a **soft delete**: the `app_user` row is kept but deactivated and anonymized (name, email, password and terms acceptance cleared), and the session is closed. Answers `200 {"message": "Account deactivated and anonymized.", "deletion_requested_at"}`; there is no pending "request" state. Like the other sensitive actions, the audit entry is mandatory: when it cannot be written nothing changes and the answer is `503 {"error": "AuditUnavailable"}`.
+
+- Pending access requests of the user are deleted, so they never reach the managers' panel and cannot be approved. Justifications of the remaining ones are cleared.
+- Manager work is handed over to another active manager: the area manager, otherwise another `AUDITOR` of the same area, otherwise an `ADMIN`. This covers pending revisions, documents the user was responsible for and the area's `manager`. Historical authorship stays on the anonymized row.
+- If no other manager exists, nothing is changed and the answer is `409 {"error": "..."}`.
+- The event is written to `audit_log` (`action = DELETE`, `entity = "app_user"`, `record.event = "ACCOUNT_ANONYMIZED"`) before the anonymization, so `record.actor.name` keeps the user's name for traceability.
+- The original email is kept only as an HMAC hash to block re-registration.
+
+### `python manage.py delete_user <email>`
+
+Hard delete, run by an operator (not an HTTP endpoint). The row is removed from the database and everything that referenced it is reassigned to another active manager (documents, revisions, access approvals, legal versions, area `manager`); the user's own access requests and legal acceptances are deleted. Audit rows keep the name in `record.actor.name`, with `audit_log.user_id` set to `NULL`. Fails without changes if no other manager exists.
 
 ## Useful commands
 
@@ -314,6 +460,7 @@ docker compose exec api python manage.py migrate           # apply migrations
 docker compose exec api python manage.py makemigrations    # create migrations
 docker compose exec api python manage.py createsuperuser   # create an EXTRA admin user (the default one is automatic)
 docker compose exec api python manage.py seed              # load the demo dataset (idempotent, see below)
+docker compose exec api python manage.py index_documents   # (re)build the full-text search index
 docker compose exec api python manage.py shell             # Django shell
 docker compose exec api python manage.py test              # run tests
 

@@ -7,11 +7,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 from core.serializers.catalog_serializer import (
+    serialize_area,
     serialize_discipline,
     serialize_document_type,
     serialize_project,
 )
 from core.services.catalog_service import (
+    list_active_areas,
     list_active_disciplines,
     list_active_document_types,
     list_active_projects,
@@ -36,21 +38,24 @@ def _respond_list(request, query, serialize, resource: str) -> JsonResponse:
 @csrf_exempt
 @require_GET
 def list_projects(request):
-    """GET /projects/ -> active projects ordered by name."""
     return _respond_list(request, list_active_projects, serialize_project, "projects")
 
 
 @csrf_exempt
 @require_GET
 def list_disciplines(request):
-    """GET /disciplines/ -> active disciplines ordered by name."""
     return _respond_list(request, list_active_disciplines, serialize_discipline, "disciplines")
 
 
 @csrf_exempt
 @require_GET
 def list_document_types(request):
-    """GET /documents/types -> active document types ordered by name."""
     return _respond_list(
         request, list_active_document_types, serialize_document_type, "document types"
     )
+
+
+@csrf_exempt
+@require_GET
+def list_areas(request):
+    return _respond_list(request, list_active_areas, serialize_area, "areas")

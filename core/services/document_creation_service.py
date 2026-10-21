@@ -37,6 +37,7 @@ from core.services.document_exceptions import (
     DuplicateRevisionUploadError,
     TempFileNotFoundError,
 )
+from core.services.document_index_service import index_document_safely
 from core.services.documents_exceptions import DocumentNotFoundError
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import MissingFileError
@@ -361,6 +362,7 @@ def create_document(payload) -> Document:
 
     for temp_file_id in cleaned["temp_file_ids"]:
         _discard_temp_record(temp_file_id)
+    index_document_safely(document, actor=document.created_by)
     return document
 
 
@@ -400,7 +402,7 @@ def validate_change_description(value) -> str:
 def _revisable_document(document_id) -> Document:
     document = (
         Document.objects.select_related("responsible")
-        .filter(pk=document_id, document_type__active=True)
+        .filter(pk=document_id, document_type__active=True, archived_at__isnull=True)
         .first()
     )
     if document is None:
@@ -483,4 +485,5 @@ def create_document_revision(document_id, temp_file_ids, change_description=None
 
     for temp_file_id in temp_file_ids:
         _discard_temp_record(temp_file_id)
+    index_document_safely(document, actor=revision.author)
     return revision

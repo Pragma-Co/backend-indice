@@ -195,10 +195,10 @@ def _start_of_day(day):
     return timezone.make_aware(datetime.combine(day, time.min))
 
 
-def filter_documents(query):
+def filter_documents(query, archived=False):
     latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
     queryset = (
-        Document.objects.filter(document_type__active=True)
+        Document.objects.filter(document_type__active=True, archived_at__isnull=not archived)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
         .annotate(
             status=Subquery(latest_revision.values("status")[:1]),
@@ -251,20 +251,23 @@ def filter_documents(query):
 
 def get_documents(params):
     query = parse_document_query(params)
-    paginator = Paginator(filter_documents(query), query["page_size"])
+    return paginate_documents(filter_documents(query), query, serialize_document)
+
+
+def paginate_documents(queryset, query, serialize):
+    paginator = Paginator(queryset, query["page_size"])
     page_number = query["page"]
     page_items = paginator.page(page_number) if page_number <= paginator.num_pages else []
-
     return {
         "count": paginator.count,
         "total_pages": paginator.num_pages,
         "current_page": page_number,
         "page_size": query["page_size"],
-        "results": [_serialize_document(document) for document in page_items],
+        "results": [serialize(document) for document in page_items],
     }
 
 
-def _serialize_document(document):
+def serialize_document(document):
     return {
         "id": document.id,
         "code": document.code,
@@ -309,7 +312,7 @@ ACCESS_PENDING = "PENDING"
 
 def _get_document_or_none(document_id):
     return (
-        Document.objects.filter(document_type__active=True)
+        Document.objects.filter(document_type__active=True, archived_at__isnull=True)
         .select_related(
             "project", "discipline", "document_type", "responsible", "created_by", "updated_by"
         )
