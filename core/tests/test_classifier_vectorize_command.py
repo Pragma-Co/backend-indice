@@ -34,9 +34,7 @@ class VectorizeCommandTests(SimpleTestCase):
         write_dataset_csv(self.csv)
 
     def test_should_store_one_vector_per_document_and_save_the_vectorizer(self):
-        code, output, _ = run(
-            vectorize, "--csv", str(self.csv), "--output-dir", str(self.model)
-        )
+        code, output, _ = run(vectorize, "--csv", str(self.csv), "--output-dir", str(self.model))
 
         vectorizer = joblib.load(self.model / "vectorizer.joblib")
         self.assertEqual(code, 0)

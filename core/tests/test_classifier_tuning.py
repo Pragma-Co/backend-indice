@@ -24,7 +24,9 @@ class TuningGridTests(SimpleTestCase):
         self.assertEqual(labels[0], DEFAULT_LABEL)
         self.assertEqual(len(labels), 6)
         self.assertEqual(sum(trial.filter_noise for trial in grid), 1)
-        self.assertEqual({trial.config.hidden_size for trial in grid}, {TrainingConfig().hidden_size})
+        self.assertEqual(
+            {trial.config.hidden_size for trial in grid}, {TrainingConfig().hidden_size}
+        )
 
 
 class TuningRunTests(SimpleTestCase):

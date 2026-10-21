@@ -21,7 +21,9 @@ class PredictCommandTests(SimpleTestCase):
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         write_dataset_csv(directory / "dataset.csv")
         with contextlib.redirect_stdout(io.StringIO()):
-            train_main(["--csv", str(directory / "dataset.csv"), "--output-dir", str(directory / "model")])
+            train_main(
+                ["--csv", str(directory / "dataset.csv"), "--output-dir", str(directory / "model")]
+            )
         (directory / "doc.txt").write_text("voltage shall welding document", encoding="utf-8")
 
         code, output, _ = self.run_command(

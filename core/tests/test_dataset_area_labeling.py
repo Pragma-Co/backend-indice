@@ -8,21 +8,21 @@ from django.test import SimpleTestCase
 from classifier.catalog import load_area_groups, load_area_stages, load_criteria_version
 from scripts.dataset.label_areas import (
     CRITERIA_DIRECTORY,
+    DEFAULT_RATE_LIMIT_WAIT_SECONDS,
     MAX_ATTEMPTS,
     MAX_TEXT_CHARS,
     NUM_CTX,
     AreaCache,
+    GroqAreaLabeler,
     InvalidLabelError,
     OllamaAreaLabeler,
     area_key,
-    build_parser,
     build_output,
+    build_parser,
     criteria_path,
     filter_rows,
-    DEFAULT_RATE_LIMIT_WAIT_SECONDS,
-    GroqAreaLabeler,
-    rate_limit_wait_seconds,
     label_rows,
+    rate_limit_wait_seconds,
 )
 
 AREA_LABELS = load_area_stages()
@@ -30,7 +30,9 @@ AREA_LABELS = load_area_stages()
 
 class BuildOutputTests(SimpleTestCase):
     def build(self, labels, columns=("text", "document_id", "area")):
-        rows = [{"text": "t", "document_id": f"DOC-{index}", "area": ""} for index in range(len(labels))]
+        rows = [
+            {"text": "t", "document_id": f"DOC-{index}", "area": ""} for index in range(len(labels))
+        ]
         return build_output(rows, labels, load_area_groups(), list(columns))
 
     def test_should_keep_the_fine_stage_and_add_the_merged_area_class(self):
@@ -132,7 +134,12 @@ class LabelRowsProgressTests(SimpleTestCase):
         label_rows(rows(1), labeler, cache, "1", "m", sleep=lambda _s: None)
 
         label_rows(
-            rows(3), labeler, cache, "1", "m", sleep=lambda _s: None,
+            rows(3),
+            labeler,
+            cache,
+            "1",
+            "m",
+            sleep=lambda _s: None,
             progress=lambda position, total: seen.append((position, total)),
         )
 
@@ -150,7 +157,9 @@ class FakeLabeler:
 
 
 def rows(count: int = 3) -> list[dict]:
-    return [{"text": f"document text {index}", "document_id": f"DOC-{index}"} for index in range(count)]
+    return [
+        {"text": f"document text {index}", "document_id": f"DOC-{index}"} for index in range(count)
+    ]
 
 
 def no_sleep(_seconds):
@@ -186,7 +195,9 @@ class LabelRowsTests(SimpleTestCase):
     def test_should_keep_the_cache_across_runs_on_disk(self):
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         path = directory / "labels.jsonl"
-        label_rows(rows(1), FakeLabeler(lambda c, t: "MATERIALS"), AreaCache(path), "1", "m", no_sleep)
+        label_rows(
+            rows(1), FakeLabeler(lambda c, t: "MATERIALS"), AreaCache(path), "1", "m", no_sleep
+        )
 
         reloaded = AreaCache(path)
 
@@ -428,7 +439,9 @@ class GroqAreaLabelerTests(SimpleTestCase):
 class RateLimitError(Exception):
     def __init__(self, retry_after=None):
         super().__init__("429")
-        self.response = type("Response", (), {"headers": {"retry-after": retry_after} if retry_after else {}})()
+        self.response = type(
+            "Response", (), {"headers": {"retry-after": retry_after} if retry_after else {}}
+        )()
 
 
 class GroqRateLimitTests(SimpleTestCase):
@@ -489,7 +502,9 @@ class GroqFallbackModelTests(SimpleTestCase):
         self.assertEqual((stage, labeler.last_model, waits), ("MATERIALS", "spare", []))
 
     def test_should_prefer_the_main_model_when_it_is_available(self):
-        labeler = GroqAreaLabeler(FakeGroqClient(), "main", "c", AREA_LABELS, fallback_model="spare")
+        labeler = GroqAreaLabeler(
+            FakeGroqClient(), "main", "c", AREA_LABELS, fallback_model="spare"
+        )
 
         labeler.label("text")
 
@@ -525,7 +540,12 @@ class GroqFallbackModelTests(SimpleTestCase):
 
         result = label_rows(rows(2), labeler, cache, "2", "main", sleep=lambda s: None)
         again = label_rows(
-            rows(2), labeler, AreaCache(directory / "labels.jsonl"), "2", "main", sleep=lambda s: None
+            rows(2),
+            labeler,
+            AreaCache(directory / "labels.jsonl"),
+            "2",
+            "main",
+            sleep=lambda s: None,
         )
         _, output = build_output(
             rows(2), again.labels, load_area_groups(), ["text", "document_id"], again.models

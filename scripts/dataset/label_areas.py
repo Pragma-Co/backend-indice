@@ -184,7 +184,7 @@ class GroqAreaLabeler:
         self.labels = labels
         self.max_chars = max_chars
         self.sleep = sleep
-        self.fallback_models = [m for m in (fallback_model or '').split(',') if m]
+        self.fallback_models = [m for m in (fallback_model or "").split(",") if m]
         self.last_model = model
 
     def label(self, text: str, title: str = "") -> str:
@@ -296,7 +296,8 @@ def label_rows(
 
         consecutive_unreachable = consecutive_unreachable + 1 if unreachable else 0
         if consecutive_unreachable >= MAX_CONSECUTIVE_UNREACHABLE:
-            result.aborted = f"the labeling service failed {consecutive_unreachable} documents in a row ({error})"
+            result.aborted = f"the labeling service failed {consecutive_unreachable} "
+            + "documents in a row ({error})"
             result.labels.extend([None] * (len(rows) - len(result.labels)))
             result.models.extend([None] * (len(rows) - len(result.models)))
             break

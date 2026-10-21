@@ -147,7 +147,9 @@ def main(argv=None) -> int:
         f"{result['rate_fine']:.1%} on the six stages, over {result['sample_size']} documents"
     )
     if result["ignored_rows"]:
-        print(f"{result['ignored_rows']} rows ignored (no valid stage on one side)", file=sys.stderr)
+        print(
+            f"{result['ignored_rows']} rows ignored (no valid stage on one side)", file=sys.stderr
+        )
     print("by area class (AI label):")
     for label, counts in result["by_area_class"].items():
         print(f"  {label}: {counts['agreed']}/{counts['compared']}")

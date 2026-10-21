@@ -70,6 +70,4 @@ def run_training(
         for name in FIELDS
     }
     evaluations = evaluate_fields(labels_for(split.test), predicted, trained.classes)
-    return TrainingRun(
-        trained=trained, vectorizer=vectorizer, split=split, evaluations=evaluations
-    )
+    return TrainingRun(trained=trained, vectorizer=vectorizer, split=split, evaluations=evaluations)

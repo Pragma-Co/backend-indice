@@ -53,7 +53,12 @@ class AgreementTests(SimpleTestCase):
 
     def test_should_report_the_rate_and_the_sample_size(self):
         rows = dataset_rows(4)
-        human = {"DOC-0": "DESIGN", "DOC-1": "MATERIALS", "DOC-2": "DESIGN", "DOC-3": "INSPECTION_TEST"}
+        human = {
+            "DOC-0": "DESIGN",
+            "DOC-1": "MATERIALS",
+            "DOC-2": "DESIGN",
+            "DOC-3": "INSPECTION_TEST",
+        }
 
         result = compute_agreement(rows, self.review(human), GROUPS)
 
@@ -61,7 +66,9 @@ class AgreementTests(SimpleTestCase):
         self.assertAlmostEqual(result["rate"], 0.75)
 
     def test_should_count_two_different_rare_stages_as_agreement_on_the_area_class(self):
-        rows = [{"document_id": "DOC-0", "text": "t", "area": "OTHER_STAGE", "area_stage": "PROCESSING"}]
+        rows = [
+            {"document_id": "DOC-0", "text": "t", "area": "OTHER_STAGE", "area_stage": "PROCESSING"}
+        ]
 
         result = compute_agreement(rows, self.review({"DOC-0": "INSPECTION_TEST"}), GROUPS)
 
@@ -69,7 +76,9 @@ class AgreementTests(SimpleTestCase):
         self.assertEqual(result["rate_fine"], 0.0)
 
     def test_should_not_count_a_rare_stage_against_a_main_class_as_agreement(self):
-        rows = [{"document_id": "DOC-0", "text": "t", "area": "OTHER_STAGE", "area_stage": "PROCESSING"}]
+        rows = [
+            {"document_id": "DOC-0", "text": "t", "area": "OTHER_STAGE", "area_stage": "PROCESSING"}
+        ]
 
         result = compute_agreement(rows, self.review({"DOC-0": "DESIGN"}), GROUPS)
 
@@ -85,7 +94,12 @@ class AgreementTests(SimpleTestCase):
 
     def test_should_break_the_result_down_by_the_ai_label(self):
         rows = dataset_rows(4)
-        human = {"DOC-0": "DESIGN", "DOC-1": "MATERIALS", "DOC-2": "DESIGN", "DOC-3": "INSPECTION_TEST"}
+        human = {
+            "DOC-0": "DESIGN",
+            "DOC-1": "MATERIALS",
+            "DOC-2": "DESIGN",
+            "DOC-3": "INSPECTION_TEST",
+        }
 
         result = compute_agreement(rows, self.review(human), GROUPS)
 
@@ -123,8 +137,15 @@ class CommandTests(SimpleTestCase):
         sheet = directory / "review.csv"
 
         code, output = self.run_command(
-            "sample", "--dataset", str(dataset), "--metadata", str(directory / "none.jsonl"),
-            "--output", str(sheet), "--size", "4",
+            "sample",
+            "--dataset",
+            str(dataset),
+            "--metadata",
+            str(directory / "none.jsonl"),
+            "--output",
+            str(sheet),
+            "--size",
+            "4",
         )
         rows = list(csv.DictReader(sheet.open(encoding="utf-8-sig", newline="")))
         ai = {row["document_id"]: row["area"] for row in dataset_rows(10)}
@@ -134,13 +155,22 @@ class CommandTests(SimpleTestCase):
             writer.writerows({**row, "human_stage": ai[row["document_id"]]} for row in rows)
         agreement_file = directory / "agreement.json"
         second_code, second_output = self.run_command(
-            "agreement", "--dataset", str(dataset), "--review", str(sheet),
-            "--output", str(agreement_file),
+            "agreement",
+            "--dataset",
+            str(dataset),
+            "--review",
+            str(sheet),
+            "--output",
+            str(agreement_file),
         )
 
         self.assertEqual((code, second_code), (0, 0))
         self.assertIn("4 documents to review", output)
-        self.assertIn("agreement with human: 100.0% on the area classes, 100.0% on the six stages, over 4 documents", second_output)
+        self.assertIn(
+            "agreement with human: 100.0% on the area classes, "
+            + "100.0% on the six stages, over 4 documents",
+            second_output,
+        )
         self.assertEqual(json.loads(agreement_file.read_text())["sample_size"], 4)
 
     def test_should_draw_a_fresh_sample_that_skips_the_documents_already_reviewed(self):
@@ -151,13 +181,31 @@ class CommandTests(SimpleTestCase):
             writer.writeheader()
             writer.writerows(dataset_rows(40))
         self.run_command(
-            "sample", "--dataset", str(dataset), "--metadata", str(directory / "none"),
-            "--output", str(first), "--size", "15",
+            "sample",
+            "--dataset",
+            str(dataset),
+            "--metadata",
+            str(directory / "none"),
+            "--output",
+            str(first),
+            "--size",
+            "15",
         )
 
         code, _ = self.run_command(
-            "sample", "--dataset", str(dataset), "--metadata", str(directory / "none"),
-            "--output", str(second), "--size", "15", "--seed", "7", "--exclude-from", str(first),
+            "sample",
+            "--dataset",
+            str(dataset),
+            "--metadata",
+            str(directory / "none"),
+            "--output",
+            str(second),
+            "--size",
+            "15",
+            "--seed",
+            "7",
+            "--exclude-from",
+            str(first),
         )
 
         def ids(path):
@@ -178,14 +226,23 @@ class CommandTests(SimpleTestCase):
             writer = csv.DictWriter(handle, fieldnames=["document_id", "human_stage"])
             writer.writeheader()
             writer.writerows(
-                [{"document_id": "DOC-0", "human_stage": "DESIGN"},
-                 {"document_id": "DOC-1", "human_stage": "DESIGN"}]
+                [
+                    {"document_id": "DOC-0", "human_stage": "DESIGN"},
+                    {"document_id": "DOC-1", "human_stage": "DESIGN"},
+                ]
             )
         agreement_file = directory / "agreement.json"
 
         _, output = self.run_command(
-            "agreement", "--dataset", str(dataset), "--review", str(sheet),
-            "--output", str(agreement_file), "--reviewer", "reference-model",
+            "agreement",
+            "--dataset",
+            str(dataset),
+            "--review",
+            str(sheet),
+            "--output",
+            str(agreement_file),
+            "--reviewer",
+            "reference-model",
         )
 
         self.assertIn("agreement with reference-model: 50.0%", output)

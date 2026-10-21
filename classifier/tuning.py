@@ -35,7 +35,9 @@ def default_grid(base: TrainingConfig | None = None) -> list[Trial]:
     base = base or TrainingConfig()
     trials = [Trial(DEFAULT_LABEL, base)]
     for weight_decay in (1e-5, 1e-3):
-        trials.append(Trial(f"weight_decay={weight_decay:g}", replace(base, weight_decay=weight_decay)))
+        trials.append(
+            Trial(f"weight_decay={weight_decay:g}", replace(base, weight_decay=weight_decay))
+        )
     for dropout in (0.2, 0.5):
         trials.append(Trial(f"dropout={dropout:g}", replace(base, dropout=dropout)))
     trials.append(Trial("filter_noise", base, filter_noise=True))
@@ -87,11 +89,15 @@ def best_result(results: list[TrialResult]) -> TrialResult:
 
 def format_table(results: list[TrialResult]) -> str:
     width = max(len(result.label) for result in results)
-    header = f"{'trial':<{width}}  " + "  ".join(f"{name:>13}" for name in FIELDS) + "  mean   epoch"
+    header = (
+        f"{'trial':<{width}}  " + "  ".join(f"{name:>13}" for name in FIELDS) + "  mean   epoch"
+    )
     lines = [header]
     for result in results:
         values = "  ".join(f"{result.validation_f1[name]:>13.3f}" for name in FIELDS)
-        lines.append(f"{result.label:<{width}}  {values}  {result.mean_f1:.3f}  {result.best_epoch:>5}")
+        lines.append(
+            f"{result.label:<{width}}  {values}  {result.mean_f1:.3f}  {result.best_epoch:>5}"
+        )
     best = best_result(results)
     lines.append(f"best on validation: {best.label} (mean macro F1 {best.mean_f1:.3f})")
     return "\n".join(lines)

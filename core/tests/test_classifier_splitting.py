@@ -5,7 +5,14 @@ from classifier.splitting import SplitError, split_dataset
 
 DISCIPLINES = ["MECHANICAL", "ELECTRICAL", "MATERIALS"]
 DOCUMENT_TYPES = ["SPECIFICATION", "STANDARD", "HANDBOOK", "COMMERCIAL_ITEM"]
-AREAS = ["DESIGN", "MATERIALS", "PROCESSING", "INSPECTION_TEST", "PACKAGING_STORAGE", "NO_CLEAR_STAGE"]
+AREAS = [
+    "DESIGN",
+    "MATERIALS",
+    "PROCESSING",
+    "INSPECTION_TEST",
+    "PACKAGING_STORAGE",
+    "NO_CLEAR_STAGE",
+]
 
 
 def build_dataset(group_count: int = 120, rows_per_group: int = 2) -> Dataset:

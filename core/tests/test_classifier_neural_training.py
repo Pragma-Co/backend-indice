@@ -28,7 +28,9 @@ def synthetic_data(sample_count: int, seed: int):
         for row, label in enumerate(labels[name]):
             one_hot[row, CLASSES[name].index(label)] = 3.0
         columns.append(one_hot)
-    features = np.hstack(columns) + rng.normal(0, 0.3, (sample_count, sum(map(len, CLASSES.values()))))
+    features = np.hstack(columns) + rng.normal(
+        0, 0.3, (sample_count, sum(map(len, CLASSES.values())))
+    )
     return features, labels
 
 

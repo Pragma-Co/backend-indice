@@ -74,24 +74,34 @@ class RunComparisonTests(SimpleTestCase):
 
     def test_should_list_every_agreement_with_its_label_and_fine_rate(self):
         agreements = [
-            AreaAgreement(rate=0.88, sample_size=60, reviewer="fable", label="criteria v1", rate_fine=0.87),
-            AreaAgreement(rate=0.9, sample_size=30, reviewer="fable", label="hold-out, criteria v2"),
+            AreaAgreement(
+                rate=0.88, sample_size=60, reviewer="fable", label="criteria v1", rate_fine=0.87
+            ),
+            AreaAgreement(
+                rate=0.9, sample_size=30, reviewer="fable", label="hold-out, criteria v2"
+            ),
         ]
         report = run_comparison(self.dataset, SMALL_CONFIG, area_agreements=agreements)
 
         text = format_report(report)
 
-        self.assertIn("fable sample, criteria v1 on 88.0% of 60 documents (87.0% on the six stages)", text)
+        self.assertIn(
+            "fable sample, criteria v1 on 88.0% of 60 documents (87.0% on the six stages)", text
+        )
         self.assertIn("fable sample, hold-out, criteria v2 on 90.0% of 30 documents;", text)
 
     def test_should_parse_a_labelled_agreement_file(self):
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         path = directory / "a.json"
-        path.write_text(json.dumps({"rate": 0.5, "rate_fine": 0.4, "sample_size": 10, "reviewer": "x"}))
+        path.write_text(
+            json.dumps({"rate": 0.5, "rate_fine": 0.4, "sample_size": 10, "reviewer": "x"})
+        )
 
         agreement = load_area_agreement(f"criteria v2={path}")
 
-        self.assertEqual((agreement.label, agreement.rate_fine, agreement.reviewer), ("criteria v2", 0.4, "x"))
+        self.assertEqual(
+            (agreement.label, agreement.rate_fine, agreement.reviewer), ("criteria v2", 0.4, "x")
+        )
         self.assertEqual(load_area_agreement(str(path)).label, "")
 
     def test_should_name_the_reviewer_when_it_was_not_a_person(self):

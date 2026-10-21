@@ -53,9 +53,7 @@ def run_comparison(
     classes = network_run.trained.classes
 
     test_texts = [dataset.texts[index] for index in split.test]
-    expected = {
-        name: [dataset.labels[name][index] for index in split.test] for name in FIELDS
-    }
+    expected = {name: [dataset.labels[name][index] for index in split.test] for name in FIELDS}
     baseline_predictions = predict_baseline(train_baseline(dataset, split), test_texts)
 
     setups = {
@@ -75,17 +73,18 @@ def format_f1_table(report: ComparisonReport) -> str:
     header = " " * field_width + "".join(f"  {name:>{len(name)}}" for name in names)
 
     def row(label: str, values: list[float]) -> str:
-        cells = "".join(f"  {value:>{len(name)}.3f}" for name, value in zip(names, values, strict=True))
+        cells = "".join(
+            f"  {value:>{len(name)}.3f}" for name, value in zip(names, values, strict=True)
+        )
         return f"{label:<{field_width}}{cells}"
 
-    rows = [
-        row(label, [report.setups[name][label].f1_macro for name in names]) for label in FIELDS
-    ]
+    rows = [row(label, [report.setups[name][label].f1_macro for name in names]) for label in FIELDS]
     means = [
-        sum(report.setups[name][label].f1_macro for label in FIELDS) / len(FIELDS)
-        for name in names
+        sum(report.setups[name][label].f1_macro for label in FIELDS) / len(FIELDS) for name in names
     ]
-    return "\n".join([f"macro F1 on {report.test_size} test documents", header, *rows, row("mean", means)])
+    return "\n".join(
+        [f"macro F1 on {report.test_size} test documents", header, *rows, row("mean", means)]
+    )
 
 
 def format_report(report: ComparisonReport) -> str:
@@ -111,7 +110,9 @@ def format_report(report: ComparisonReport) -> str:
 
 def format_area_agreement(agreement: AreaAgreement) -> str:
     label = f", {agreement.label}" if agreement.label else ""
-    fine = f" ({agreement.rate_fine:.1%} on the six stages)" if agreement.rate_fine is not None else ""
+    fine = (
+        f" ({agreement.rate_fine:.1%} on the six stages)" if agreement.rate_fine is not None else ""
+    )
     return (
         f"area: AI labeler agrees with the {agreement.reviewer} sample{label} on "
         f"{agreement.rate:.1%} of {agreement.sample_size} documents{fine}; "
