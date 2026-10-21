@@ -81,8 +81,8 @@ def _predict_labels(text: str) -> dict[str, str]:
     except Exception as exc:
         logger.exception("Classifier prediction failed")
         raise AISuggestionError() from exc
-    for name, prediction in predictions.items():
-        logger.info("Classifier suggested %s=%s (%.2f)", name, prediction.label, prediction.confidence)
+    for name, predict in predictions.items():
+        logger.info("Classifier suggested %s=%s (%.2f)", name, predict.label, predict.confidence)
     return {name: prediction.label for name, prediction in predictions.items()}
 
 

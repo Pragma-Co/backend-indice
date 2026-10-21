@@ -218,8 +218,8 @@ def label_rows(
 
         consecutive_unreachable = consecutive_unreachable + 1 if unreachable else 0
         if consecutive_unreachable >= MAX_CONSECUTIVE_UNREACHABLE:
-            result.aborted = f"the labeling service failed {consecutive_unreachable} "
-            + "documents in a row ({error})"
+            amount = consecutive_unreachable
+            result.aborted = f"the labeling service failed {amount} documents in a row ({error})"
             result.labels.extend([None] * (len(rows) - len(result.labels)))
             result.models.extend([None] * (len(rows) - len(result.models)))
             break
