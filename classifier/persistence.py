@@ -2,36 +2,51 @@ import hashlib
 import json
 import sys
 import warnings
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import joblib
 import sklearn
+import torch
 
-from classifier import text_preprocessing
+from classifier import text_preprocessing, tfidf_input
 from classifier.catalog import FIELDS
 from classifier.evaluation import FieldEvaluation
-from classifier.training import RANDOM_STATE, TEST_SIZE, TrainedField
+from classifier.network import MultiHeadNetwork
+from classifier.neural_training import TrainedNetwork
+from classifier.splitting import RANDOM_STATE, TEST_FOLDS, VALIDATION_FOLDS
 
 DEFAULT_OUTPUT_DIR = "classifier_artifacts"
 METADATA_FILENAME = "metadata.json"
+MODEL_FILENAME = "model.pt"
+VECTORIZER_FILENAME = "vectorizer.joblib"
+MODEL_TYPE = "multi_head_network"
+INPUT_REPRESENTATION = "tfidf"
 
 
 class ArtifactsError(Exception):
     pass
 
 
-def model_path(output_dir, field: str) -> Path:
-    return Path(output_dir) / f"{field}.joblib"
+@dataclass
+class LoadedModel:
+    network: MultiHeadNetwork
+    vectorizer: object
+    classes: dict[str, list[str]]
+    metadata: dict
 
 
 def file_sha256(path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def preprocessing_sha256() -> str:
-    source = Path(text_preprocessing.__file__).read_text(encoding="utf-8")
-    return hashlib.sha256(source.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+def text_handling_sha256() -> str:
+    digest = hashlib.sha256()
+    for module in (text_preprocessing, tfidf_input):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        digest.update(source.replace("\r\n", "\n").encode("utf-8"))
+    return digest.hexdigest()
 
 
 def json_safe(value):
@@ -40,24 +55,41 @@ def json_safe(value):
     return str(value)
 
 
-def build_metadata(trained, evaluations, csv_path, catalog) -> dict:
-    first = next(iter(trained.values()))
+def build_metadata(
+    trained: TrainedNetwork,
+    input_size: int,
+    evaluations: dict[str, FieldEvaluation],
+    dataset_path,
+    catalog,
+    criteria_version: str,
+    row_count: int,
+) -> dict:
     return {
+        "model_type": MODEL_TYPE,
+        "input_representation": INPUT_REPRESENTATION,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "python_version": sys.version.split()[0],
+        "torch_version": torch.__version__,
         "scikit_learn_version": sklearn.__version__,
         "joblib_version": joblib.__version__,
-        "csv_sha256": file_sha256(csv_path),
-        "rows": first.train_size + len(first.test_labels),
-        "random_state": RANDOM_STATE,
-        "test_size": TEST_SIZE,
-        "preprocessing_sha256": preprocessing_sha256(),
+        "dataset_sha256": file_sha256(dataset_path),
+        "rows": row_count,
+        "text_handling_sha256": text_handling_sha256(),
+        "criteria_version": criteria_version,
         "catalog": {name: sorted(catalog[name]) for name in FIELDS},
+        "input_size": input_size,
+        "classes": trained.classes,
+        "hyperparameters": asdict(trained.config),
+        "best_epoch": trained.best_epoch,
+        "epochs_run": len(trained.train_loss),
+        "split": {
+            "random_state": RANDOM_STATE,
+            "test_folds": TEST_FOLDS,
+            "validation_folds": VALIDATION_FOLDS,
+        },
         "fields": {
             name: {
-                "classes": evaluations[name].labels,
-                "train_size": trained[name].train_size,
-                "test_size": evaluations[name].support,
+                "support": evaluations[name].support,
                 "accuracy": evaluations[name].accuracy,
                 "f1_macro": evaluations[name].f1_macro,
                 "report": evaluations[name].report,
@@ -67,18 +99,25 @@ def build_metadata(trained, evaluations, csv_path, catalog) -> dict:
     }
 
 
-def save_models(
-    trained: dict[str, TrainedField],
+def save_model(
+    trained: TrainedNetwork,
+    vectorizer,
     evaluations: dict[str, FieldEvaluation],
-    output_dir,
-    csv_path,
+    dataset_path,
     catalog,
+    criteria_version: str,
+    row_count: int,
+    output_dir=DEFAULT_OUTPUT_DIR,
 ) -> Path:
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    for name in FIELDS:
-        joblib.dump(trained[name].pipeline, model_path(directory, name))
-    metadata = build_metadata(trained, evaluations, csv_path, catalog)
+    torch.save(trained.network.state_dict(), directory / MODEL_FILENAME)
+    joblib.dump(vectorizer, directory / VECTORIZER_FILENAME)
+    input_size = len(vectorizer.vocabulary_)
+    metadata = build_metadata(
+        trained, input_size, evaluations, dataset_path, catalog, criteria_version, row_count
+    )
+    metadata["tfidf_token_pattern"] = vectorizer.token_pattern
     (directory / METADATA_FILENAME).write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False, default=json_safe) + "\n",
         encoding="utf-8",
@@ -86,28 +125,51 @@ def save_models(
     return directory
 
 
-def load_models(output_dir=DEFAULT_OUTPUT_DIR):
+def load_model(output_dir=DEFAULT_OUTPUT_DIR) -> LoadedModel:
     directory = Path(output_dir)
-    metadata_file = directory / METADATA_FILENAME
-    if not metadata_file.is_file():
-        raise ArtifactsError(f"No {METADATA_FILENAME} found in {directory}")
-    metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    metadata = _read_metadata(directory)
 
-    if metadata["preprocessing_sha256"] != preprocessing_sha256():
+    if metadata.get("model_type") != MODEL_TYPE:
         raise ArtifactsError(
-            "The text preprocessing changed since these models were trained; retrain them"
+            f"The files in {directory} were not saved by the multi-head trainer; retrain the model"
         )
-    if metadata["scikit_learn_version"] != sklearn.__version__:
+    if metadata["text_handling_sha256"] != text_handling_sha256():
+        raise ArtifactsError(
+            "The text handling changed since this model was trained; retrain the model"
+        )
+    if metadata["torch_version"] != torch.__version__:
         warnings.warn(
-            f"Models trained with scikit-learn {metadata['scikit_learn_version']}, "
-            f"running {sklearn.__version__}",
+            f"Model trained with torch {metadata['torch_version']}, running {torch.__version__}",
             stacklevel=2,
         )
 
-    models = {}
-    for name in FIELDS:
-        path = model_path(directory, name)
-        if not path.is_file():
-            raise ArtifactsError(f"Model file not found: {path}")
-        models[name] = joblib.load(path)
-    return models, metadata
+    model_path = _require_file(directory, MODEL_FILENAME)
+    vectorizer_path = _require_file(directory, VECTORIZER_FILENAME)
+    classes = metadata["classes"]
+    hyperparameters = metadata["hyperparameters"]
+    network = MultiHeadNetwork(
+        metadata["input_size"],
+        {name: len(classes[name]) for name in FIELDS},
+        hidden_size=hyperparameters["hidden_size"],
+        dropout=hyperparameters["dropout"],
+    )
+    network.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
+    network.eval()
+    return LoadedModel(
+        network=network,
+        vectorizer=joblib.load(vectorizer_path),
+        classes=classes,
+        metadata=metadata,
+    )
+
+
+def _read_metadata(directory: Path) -> dict:
+    metadata_file = _require_file(directory, METADATA_FILENAME)
+    return json.loads(metadata_file.read_text(encoding="utf-8"))
+
+
+def _require_file(directory: Path, filename: str) -> Path:
+    path = directory / filename
+    if not path.is_file():
+        raise ArtifactsError(f"File not found: {path}")
+    return path

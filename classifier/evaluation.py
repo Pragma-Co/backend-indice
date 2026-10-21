@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 
-from classifier.training import TrainedField
 
 
 @dataclass
@@ -17,13 +16,22 @@ class FieldEvaluation:
     confusion_matrix: list[list[int]]
 
 
-def evaluate_field(trained: TrainedField) -> FieldEvaluation:
-    labels = [str(label) for label in trained.pipeline.classes_]
-    expected = trained.test_labels
-    predicted = list(trained.pipeline.predict(trained.test_texts))
+def evaluate_fields(
+    expected: dict[str, list[str]],
+    predicted: dict[str, list[str]],
+    classes: dict[str, list[str]],
+) -> dict[str, FieldEvaluation]:
+    return {
+        name: evaluate_predictions(name, expected[name], predicted[name], classes[name])
+        for name in expected
+    }
 
+
+def evaluate_predictions(
+    name: str, expected: list[str], predicted: list[str], labels: list[str]
+) -> FieldEvaluation:
     return FieldEvaluation(
-        name=trained.name,
+        name=name,
         support=len(expected),
         accuracy=float(accuracy_score(expected, predicted)),
         f1_macro=float(
@@ -38,10 +46,6 @@ def evaluate_field(trained: TrainedField) -> FieldEvaluation:
         labels=labels,
         confusion_matrix=confusion_matrix(expected, predicted, labels=labels).tolist(),
     )
-
-
-def evaluate_all(trained_fields: dict[str, TrainedField]) -> dict[str, FieldEvaluation]:
-    return {name: evaluate_field(trained) for name, trained in trained_fields.items()}
 
 
 def format_confusion_matrix(labels: list[str], matrix: list[list[int]]) -> str:

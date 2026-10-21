@@ -1,11 +1,22 @@
 import argparse
 import sys
+from pathlib import Path
 
-from classifier.catalog import DEFAULT_CATALOG_PATH, CatalogError, load_catalog
+import joblib
+
+from classifier.catalog import (
+    DEFAULT_CATALOG_PATH,
+    CatalogError,
+    load_catalog,
+    load_criteria_version,
+)
+from classifier.comparison import add_network_options, config_from
 from classifier.dataset import DatasetValidationError, load_dataset
-from classifier.evaluation import evaluate_all, format_evaluation
-from classifier.persistence import DEFAULT_OUTPUT_DIR, save_models
-from classifier.training import TrainingError, train_all
+from classifier.evaluation import format_evaluation
+from classifier.persistence import DEFAULT_OUTPUT_DIR, VECTORIZER_FILENAME, save_model
+from classifier.splitting import SplitError
+from classifier.training_run import StoredFeatures, run_training
+from classifier.vector_store import VectorStoreError, get_vector_store, vectorizer_version
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -14,14 +25,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--catalog",
         default=str(DEFAULT_CATALOG_PATH),
-        help="JSON file with the valid labels per field.",
+        help="JSON file with the valid labels per field and the criteria version.",
     )
     parser.add_argument(
         "--output-dir",
         default=DEFAULT_OUTPUT_DIR,
-        help="Directory that receives the trained models and metadata.json.",
+        help="Directory that receives the trained model and metadata.json.",
     )
+    parser.add_argument(
+        "--vectors-from-mongo",
+        action="store_true",
+        help="Read the TF-IDF vectors stored by classifier.vectorize instead of fitting them.",
+    )
+    add_network_options(parser)
     return parser
+
+
+def load_stored_features(dataset, output_dir) -> StoredFeatures:
+    path = Path(output_dir) / VECTORIZER_FILENAME
+    if not path.is_file():
+        raise VectorStoreError(f"{path} not found; run python -m classifier.vectorize first")
+    vectorizer = joblib.load(path)
+    features = get_vector_store().load(dataset.texts, vectorizer_version(vectorizer))
+    return StoredFeatures(vectorizer=vectorizer, features=features)
 
 
 def main(argv=None) -> int:
@@ -29,6 +55,7 @@ def main(argv=None) -> int:
 
     try:
         catalog = load_catalog(arguments.catalog)
+        criteria_version = load_criteria_version(arguments.catalog)
         dataset = load_dataset(arguments.csv, catalog)
     except (CatalogError, DatasetValidationError) as exc:
         report = getattr(exc, "report", None)
@@ -41,18 +68,32 @@ def main(argv=None) -> int:
     print(f"{len(dataset.texts)} usable documents out of {dataset.report.rows_read} rows")
 
     try:
-        trained = train_all(dataset)
-    except TrainingError as exc:
+        stored = None
+        if arguments.vectors_from_mongo:
+            stored = load_stored_features(dataset, arguments.output_dir)
+            print(f"{stored.features.shape[0]} vectors read from MongoDB")
+        training = run_training(
+            dataset, config_from(arguments), stored=stored, filter_noise=arguments.filter_noise
+        )
+    except (SplitError, VectorStoreError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    evaluations = evaluate_all(trained)
-    for name, evaluation in evaluations.items():
+    for evaluation in training.evaluations.values():
         print()
-        print(format_evaluation(evaluation, trained[name].train_size))
+        print(format_evaluation(evaluation, len(training.split.train)))
 
-    directory = save_models(trained, evaluations, arguments.output_dir, arguments.csv, catalog)
-    print(f"\nmodels saved to {directory}")
+    directory = save_model(
+        training.trained,
+        training.vectorizer,
+        training.evaluations,
+        arguments.csv,
+        catalog,
+        criteria_version,
+        len(dataset.texts),
+        arguments.output_dir,
+    )
+    print(f"\nmodel saved to {directory}")
     return 0
 
 
