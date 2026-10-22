@@ -268,6 +268,54 @@ Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `disc
 
 The index lives in the `document_content` table and is refreshed whenever a document or a new revision is created. Documents created before it existed are indexed with `manage.py index_documents` (`--missing-only` skips those already indexed).
 
+### `POST /documents/search/ai-summary`
+
+This endpoint does not run a search; send it the `query` and `highlights.content` snippets returned by `GET /documents/search`. The request may contain up to 10 snippets, each up to 2,000 characters, and a query up to 200 characters. Before sending the text to Ollama, the API redacts common patterns for personal information and credentials, including email addresses, CPF/CNPJ numbers, phone numbers and tokens. Snippets are treated as untrusted content, and the model is not given tools to execute.
+
+Request (`application/json`):
+
+```json
+{
+  "query": "fadiga estrutural",
+  "snippets": [
+    "... ensaio de fadiga em escala de painel ...",
+    "... análise de tensões e vida útil do revestimento ..."
+  ]
+}
+```
+
+Response `200`:
+
+```json
+{
+  "query": "fadiga estrutural",
+  "summary": "Os trechos relacionam a fadiga estrutural à análise de tensões e à vida útil do revestimento.",
+  "fallback": false
+}
+```
+
+If Ollama is unavailable, times out or returns an unusable response, the endpoint still answers `200` with a fallback message and `fallback: true`. An empty snippets list skips the model call. Invalid input answers `400`; request bodies larger than 96 KB answer `413`.
+
+#### Ollama configuration
+
+Add these settings to the backend `.env` file used by each developer:
+
+```dotenv
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT=30
+```
+
+Install the model once on the machine running Ollama:
+
+```bash
+ollama pull llama3.2
+```
+
+`OLLAMA_BASE_URL` must be reachable from the Django process. The values above work when Django runs directly on the same machine as Ollama. When Django runs in Docker, `localhost` refers to the API container, not the host. On Docker Desktop, `host.docker.internal` usually points to the host; on Linux, use a host address reachable from the container and configure Ollama to accept connections from the Docker network. This project does not start Ollama through Docker Compose, so each developer must run Ollama separately. Keep any Ollama listener limited to trusted local development networks.
+
+`OLLAMA_MODEL` must match a model installed in Ollama. `OLLAMA_TIMEOUT` is the maximum request time in seconds; if Ollama exceeds it, the API returns the fallback response.
+
 ### `POST /documents`
 
 Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).

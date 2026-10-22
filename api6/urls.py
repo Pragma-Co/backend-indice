@@ -11,7 +11,7 @@ from core.views.api_root_view import api_root
 from core.views.auth_view import logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
 from core.views.dev_login_view import dev_login_view
-from core.views.document_ai_view import suggest_document_metadata_view
+from core.views.document_ai_view import suggest_document_metadata_view, summarize_search_view
 from core.views.documents_view import (
     archived_documents_view,
     create_revision_view,
@@ -69,6 +69,11 @@ urlpatterns = [
     path("documents/upload", upload_document, name="document-upload"),
     path("documents/simple-filters", simple_filters, name="document-simple-filters"),
     path("documents/search", search_documents_view, name="document-search"),
+    path(
+        "documents/search/ai-summary",
+        summarize_search_view,
+        name="document-search-ai-summary",
+    ),
     path("documents/archived", archived_documents_view, name="document-archived-list"),
     path("documents/<int:document_id>", document_resource, name="document-detail"),
     path("documents/<int:document_id>/restore", restore_document_view, name="document-restore"),
