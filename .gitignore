@@ -2,7 +2,6 @@
 .env
 CREDENTIALS.txt
 tmp_uploads/
-training_export/
 
 # Python
 __pycache__/
@@ -27,3 +26,6 @@ media/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Command output
+training_export/
