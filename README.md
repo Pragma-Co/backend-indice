@@ -303,7 +303,7 @@ Add these settings to the backend `.env` file used by each developer:
 ```dotenv
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
-OLLAMA_TIMEOUT=30
+OLLAMA_TIMEOUT=120
 ```
 
 Install the model once on the machine running Ollama:
@@ -312,9 +312,9 @@ Install the model once on the machine running Ollama:
 ollama pull llama3.2
 ```
 
-`OLLAMA_BASE_URL` must be reachable from the Django process. The values above work when Django runs directly on the same machine as Ollama. When Django runs in Docker, `localhost` refers to the API container, not the host. On Docker Desktop, `host.docker.internal` usually points to the host; on Linux, use a host address reachable from the container and configure Ollama to accept connections from the Docker network. This project does not start Ollama through Docker Compose, so each developer must run Ollama separately. Keep any Ollama listener limited to trusted local development networks.
+`OLLAMA_BASE_URL` must be reachable from the Django process. The values above work when Django runs directly on the same machine as Ollama. When Django runs in Docker, `localhost` refers to the API container, not the host. On Windows with Docker Desktop, set the backend URL to `http://host.docker.internal:11434`; if the container cannot connect, configure Ollama to listen on an address reachable from Docker Desktop and restart Ollama. On Linux, use the Docker host gateway address and configure the Ollama service to listen on that address. This project does not start Ollama through Docker Compose, so each developer must run Ollama separately. Keep any Ollama listener limited to trusted local development networks.
 
-`OLLAMA_MODEL` must match a model installed in Ollama. `OLLAMA_TIMEOUT` is the maximum request time in seconds; if Ollama exceeds it, the API returns the fallback response.
+`OLLAMA_MODEL` must match a model installed in Ollama. `OLLAMA_TIMEOUT` is the maximum request time in seconds and defaults to 120; if Ollama exceeds it, the API returns the fallback response.
 
 ### `POST /documents`
 
