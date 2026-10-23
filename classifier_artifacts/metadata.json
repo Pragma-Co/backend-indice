@@ -1,0 +1,190 @@
+{
+  "model_type": "multi_head_network",
+  "input_representation": "tfidf",
+  "created_at": "2026-10-21T23:35:38+00:00",
+  "python_version": "3.12.14",
+  "torch_version": "2.14.1+cpu",
+  "scikit_learn_version": "1.9.1",
+  "joblib_version": "1.6.0",
+  "dataset_sha256": "a91e88e0a4c9c0b9d27e04e574a81182aaa10b25b22b3eed141ffc8564ecf970",
+  "rows": 565,
+  "text_handling_sha256": "2dbe92662851a4e46ad55e98080d7ddcb0099107648206a65d72c6fefb2128ef",
+  "criteria_version": "2",
+  "catalog": {
+    "discipline": [
+      "ELECTRICAL",
+      "MATERIALS",
+      "MECHANICAL"
+    ],
+    "document_type": [
+      "COMMERCIAL_ITEM",
+      "HANDBOOK",
+      "SPECIFICATION",
+      "STANDARD"
+    ],
+    "area": [
+      "DESIGN",
+      "MATERIALS",
+      "OTHER_STAGE"
+    ]
+  },
+  "input_size": 20000,
+  "classes": {
+    "discipline": [
+      "ELECTRICAL",
+      "MATERIALS",
+      "MECHANICAL"
+    ],
+    "document_type": [
+      "COMMERCIAL_ITEM",
+      "HANDBOOK",
+      "SPECIFICATION",
+      "STANDARD"
+    ],
+    "area": [
+      "DESIGN",
+      "MATERIALS",
+      "OTHER_STAGE"
+    ]
+  },
+  "hyperparameters": {
+    "hidden_size": 256,
+    "dropout": 0.3,
+    "learning_rate": 0.001,
+    "weight_decay": 0.001,
+    "batch_size": 32,
+    "max_epochs": 200,
+    "patience": 15,
+    "random_state": 42
+  },
+  "best_epoch": 25,
+  "epochs_run": 41,
+  "split": {
+    "random_state": 42,
+    "test_folds": 5,
+    "validation_folds": 5
+  },
+  "fields": {
+    "discipline": {
+      "support": 113,
+      "accuracy": 0.9469026548672567,
+      "f1_macro": 0.9488946310651737,
+      "report": {
+        "ELECTRICAL": {
+          "precision": 0.9285714285714286,
+          "recall": 1.0,
+          "f1-score": 0.9629629629629629,
+          "support": 26.0
+        },
+        "MATERIALS": {
+          "precision": 0.9523809523809523,
+          "recall": 0.9090909090909091,
+          "f1-score": 0.9302325581395349,
+          "support": 44.0
+        },
+        "MECHANICAL": {
+          "precision": 0.9534883720930233,
+          "recall": 0.9534883720930233,
+          "f1-score": 0.9534883720930233,
+          "support": 43.0
+        },
+        "accuracy": 0.9469026548672567,
+        "macro avg": {
+          "precision": 0.9448135843484681,
+          "recall": 0.9541930937279774,
+          "f1-score": 0.9488946310651737,
+          "support": 113.0
+        },
+        "weighted avg": {
+          "precision": 0.9473240623683102,
+          "recall": 0.9469026548672567,
+          "f1-score": 0.9466130052670493,
+          "support": 113.0
+        }
+      }
+    },
+    "document_type": {
+      "support": 113,
+      "accuracy": 0.9026548672566371,
+      "f1_macro": 0.800392316017316,
+      "report": {
+        "COMMERCIAL_ITEM": {
+          "precision": 1.0,
+          "recall": 0.8823529411764706,
+          "f1-score": 0.9375,
+          "support": 17.0
+        },
+        "HANDBOOK": {
+          "precision": 0.7777777777777778,
+          "recall": 0.5384615384615384,
+          "f1-score": 0.6363636363636364,
+          "support": 13.0
+        },
+        "SPECIFICATION": {
+          "precision": 0.9367088607594937,
+          "recall": 0.9866666666666667,
+          "f1-score": 0.961038961038961,
+          "support": 75.0
+        },
+        "STANDARD": {
+          "precision": 0.6,
+          "recall": 0.75,
+          "f1-score": 0.6666666666666666,
+          "support": 8.0
+        },
+        "accuracy": 0.9026548672566371,
+        "macro avg": {
+          "precision": 0.8286216596343179,
+          "recall": 0.7893702865761689,
+          "f1-score": 0.800392316017316,
+          "support": 113.0
+        },
+        "weighted avg": {
+          "precision": 0.9041086342307356,
+          "recall": 0.9026548672566371,
+          "f1-score": 0.899305156495422,
+          "support": 113.0
+        }
+      }
+    },
+    "area": {
+      "support": 113,
+      "accuracy": 0.8495575221238938,
+      "f1_macro": 0.7696444980990648,
+      "report": {
+        "DESIGN": {
+          "precision": 0.873015873015873,
+          "recall": 0.859375,
+          "f1-score": 0.8661417322834646,
+          "support": 64.0
+        },
+        "MATERIALS": {
+          "precision": 0.9210526315789473,
+          "recall": 0.9210526315789473,
+          "f1-score": 0.9210526315789473,
+          "support": 38.0
+        },
+        "OTHER_STAGE": {
+          "precision": 0.5,
+          "recall": 0.5454545454545454,
+          "f1-score": 0.5217391304347826,
+          "support": 11.0
+        },
+        "accuracy": 0.8495575221238938,
+        "macro avg": {
+          "precision": 0.7646895015316068,
+          "recall": 0.7752940590111642,
+          "f1-score": 0.7696444980990648,
+          "support": 113.0
+        },
+        "weighted avg": {
+          "precision": 0.8528585475488131,
+          "recall": 0.8495575221238938,
+          "f1-score": 0.8510814274418084,
+          "support": 113.0
+        }
+      }
+    }
+  },
+  "tfidf_token_pattern": "(?u)\\b\\w\\w+\\b"
+}
