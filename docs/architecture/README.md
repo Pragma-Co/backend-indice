@@ -51,7 +51,7 @@ flowchart LR
     Models --> PG
     Services -- "pymongo" --> Mongo
     Services -- "read / write files" --> Files
-    Services -- "HTTP /api/chat" --> Ollama
+    Services --> Ollama
 ```
 
 SVG export: [overview.svg](./overview.svg)
@@ -273,9 +273,9 @@ flowchart TB
         S3["documents (listing) · document_search · document_index · document_archive"]
         S4["revision_review · access_request · manager_activity · audit"]
     end
-    subgraph ModelsLayer["core/models → PostgreSQL · core/mongo → MongoDB"]
-        M1["organization · catalog · document · revision · access"]
-        M2["legal · audit · search · excluded_identifier"]
+    subgraph ModelsLayer["core/models · core/mongo"]
+        M1["PostgreSQL: organization · catalog ·<br/>document · revision · access"]
+        M2["PostgreSQL: legal · audit · search ·<br/>excluded_identifier<br/>MongoDB: temp_uploads · document_vectors"]
         ML["classifier/ + classifier_artifacts/<br/>TF-IDF vectorizer · PyTorch model"]
     end
     R1 --> V1 --> S1
