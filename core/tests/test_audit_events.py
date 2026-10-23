@@ -112,15 +112,16 @@ class UploadDuplicateAuditTests(TestCase):
         self.user = User.objects.create_user(
             email="audit@example.com", password="secret", name="Auditora", area=area
         )
-        project = Project.objects.create(code="PRJ-A", name="Projeto Audit")
-        discipline = Discipline.objects.create(code="DISA", name="Disciplina Audit")
-        document_type = DocumentType.objects.create(code="DTA", name="Tipo Audit")
+        self.project = Project.objects.create(code="PRJ-A", name="Projeto Audit")
+        self.discipline = Discipline.objects.create(code="DISA", name="Disciplina Audit")
+        self.project.disciplines.add(self.discipline)
+        self.document_type = DocumentType.objects.create(code="DTA", name="Tipo Audit")
         self.document = Document.objects.create(
             code="RA-0700",
             title="Documento Existente",
-            project=project,
-            discipline=discipline,
-            document_type=document_type,
+            project=self.project,
+            discipline=self.discipline,
+            document_type=self.document_type,
             responsible=self.user,
             created_by=self.user,
             updated_by=self.user,
@@ -138,21 +139,39 @@ class UploadDuplicateAuditTests(TestCase):
             storage_path="/fake/path/original.pdf",
         )
 
-    def test_should_record_the_duplicate_attempt_against_the_existing_document(self):
+    def test_should_record_the_duplicate_attempt_when_the_document_is_submitted(self):
         self.client.force_login(self.user)
         uploaded = SimpleUploadedFile("copia.pdf", PDF_HEADER)
 
-        response = self.client.post("/documents/upload", {"file": uploaded})
+        upload_response = self.client.post("/documents/upload", {"file": uploaded})
+        temp_file_id = upload_response.json()["temp_file_id"]
+        response = self.client.post(
+            "/documents",
+            data=json.dumps(
+                {
+                    "temp_file_id": temp_file_id,
+                    "title": "Documento duplicado",
+                    "project_id": self.project.id,
+                    "discipline_id": self.discipline.id,
+                    "document_type": self.document_type.id,
+                    "confidentiality": "CONFIDENTIAL",
+                    "responsible_id": self.user.id,
+                    "areas": ["AUD"],
+                }
+            ),
+            content_type="application/json",
+        )
 
-        entry = AuditLog.objects.get()
+        entry = AuditLog.objects.get(action=AuditAction.DOC_UPLOAD_DUPLICATE)
+        self.assertEqual(upload_response.status_code, 201)
         self.assertEqual(response.status_code, 409)
         self.assertEqual(entry.user, self.user)
         self.assertEqual(entry.action, AuditAction.DOC_UPLOAD_DUPLICATE)
         self.assertEqual(entry.entity, "document")
         self.assertEqual(entry.entity_id, self.document.id)
-        self.assertEqual(entry.record["stage"], "upload")
+        self.assertEqual(entry.record["stage"], "submit")
         self.assertEqual(entry.record["document_code"], "RA-0700")
-        self.assertEqual(entry.record["original_name"], "copia.pdf")
+        self.assertEqual(entry.record["temp_file_id"], temp_file_id)
         self.assertEqual(entry.record["sha256"], hashlib.sha256(PDF_HEADER).hexdigest())
 
 
