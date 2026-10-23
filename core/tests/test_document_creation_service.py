@@ -52,8 +52,10 @@ class DocumentCreationServiceTests(TestCase):
             email="ana@example.com", password="secret", name="Ana", area=self.area
         )
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
+        self.other_project = Project.objects.create(code="AK-2200", name="Empenagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.project.disciplines.add(self.discipline)
+        self.other_project.disciplines.add(self.discipline)
         self.unlinked_discipline = Discipline.objects.create(code="HID", name="Hidráulica")
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
 
@@ -508,6 +510,19 @@ class DocumentCreationServiceTests(TestCase):
             service.create_document(self._payload(temp_file_id=duplicate_id))
         self.assertEqual(context.exception.document.code, "AK-2100-EST-DWG-0001")
         self.assertEqual(Document.objects.count(), 1)
+
+    def test_should_allow_a_file_already_attached_to_another_project(self, mongo):
+        self._temp_file()
+        service.create_document(self._payload())
+        duplicate_id = "33333333-2222-4333-8444-555555555555"
+        self._temp_file(temp_file_id=duplicate_id, content=PDF_BYTES)
+
+        document = service.create_document(
+            self._payload(temp_file_id=duplicate_id, project_id=self.other_project.id)
+        )
+
+        self.assertEqual(document.code, "AK-2200-EST-DWG-0001")
+        self.assertEqual(Document.objects.count(), 2)
 
     def test_should_roll_back_everything_when_the_file_cannot_be_moved(self, mongo):
         temp_path = self._temp_file()

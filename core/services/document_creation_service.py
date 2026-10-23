@@ -325,7 +325,10 @@ def create_document(payload) -> Document:
         temp_files.append(temp_file)
 
         existing_file = (
-            File.objects.filter(sha256=temp_file["sha256"])
+            File.objects.filter(
+                sha256=temp_file["sha256"],
+                revision__document__project=cleaned["project"],
+            )
             .select_related("revision__document")
             .order_by("-uploaded_at")
             .first()
