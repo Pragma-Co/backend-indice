@@ -14,7 +14,6 @@ from core.services.file_validation_service import (
     validate_file_type,
 )
 from core.services.upload_exceptions import (
-    DuplicateFileError,
     MissingFileError,
     UploadStorageError,
 )
