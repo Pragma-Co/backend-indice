@@ -130,8 +130,6 @@ MAX_UPLOAD_SIZE_BYTES = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 *
 TEMP_UPLOAD_DIR = Path(os.environ.get("TEMP_UPLOAD_DIR", BASE_DIR / "tmp_uploads"))
 DOCUMENT_STORAGE_DIR = Path(os.environ.get("DOCUMENT_STORAGE_DIR", BASE_DIR / "media"))
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "120"))
