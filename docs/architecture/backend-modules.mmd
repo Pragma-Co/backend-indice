@@ -13,13 +13,14 @@ flowchart TB
     end
     subgraph ServicesLayer["core/services"]
         S1["user_anonymization · excluded_identifier · legal_consent"]
-        S2["temp_upload · document_text · document_ai · document_creation · document_code · file"]
+        S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
         S3["documents (listing) · document_search · document_index · document_archive"]
         S4["revision_review · access_request · manager_activity · audit"]
     end
     subgraph ModelsLayer["core/models → PostgreSQL · core/mongo → MongoDB"]
         M1["organization · catalog · document · revision · access"]
         M2["legal · audit · search · excluded_identifier"]
+        ML["classifier/ + classifier_artifacts/<br/>TF-IDF vectorizer · PyTorch model"]
     end
     R1 --> V1 --> S1
     R2 --> V2 --> S2
@@ -28,6 +29,7 @@ flowchart TB
     V2 --> S3
     S1 --> M2
     S2 --> M1
+    S2 --> ML
     S3 --> M1
     S3 --> M2
     S4 --> M1

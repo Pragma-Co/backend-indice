@@ -13,7 +13,7 @@ Visual guide to how Índice is put together: the Vue frontend, the Django API, t
 
 ## 1. Overview <a id="overview"></a>
 
-Índice is a single-page application that talks to a JSON API. Everything runs in Docker Compose: the API, PostgreSQL and MongoDB are containers, the frontend runs on the Vite dev server, and the only external dependency at runtime is the Groq API used for metadata suggestions.
+Índice is a single-page application that talks to a JSON API. Everything runs on the developer's machine: the API, PostgreSQL and MongoDB are Docker Compose containers, the frontend runs on the Vite dev server, metadata suggestions come from a text classifier that ships with the backend, and the only service outside Compose is Ollama, a local LLM used to summarize search results.
 
 ```mermaid
 flowchart LR
@@ -29,27 +29,29 @@ flowchart LR
         Views["Views<br/>plain JsonResponse endpoints"]
         Services["Services<br/>business rules"]
         Models["Models · ORM"]
+        Classifier["Local text classifier<br/>TF-IDF + PyTorch · classifier/"]
         Admin["Django admin<br/>(role ADMIN only)"]
         Views --> Services --> Models
+        Services --> Classifier
         Admin --> Models
     end
 
     subgraph Data["Data layer"]
         PG[("PostgreSQL 17<br/>relational data, audit trail,<br/>full-text search index")]
-        Mongo[("MongoDB 8.2<br/>temp_uploads")]
+        Mongo[("MongoDB 8.2<br/>temp_uploads · document_vectors")]
         Files[/"File storage (volumes)<br/>tmp_uploads/ · media/"/]
     end
 
     subgraph External["External services"]
-        Groq["Groq API · LLM<br/>metadata suggestions,<br/>called only on request"]
+        Ollama["Ollama · local LLM (llama3.2)<br/>on the host machine<br/>search summaries on request"]
     end
 
-    Browser -- "HTTP · JSON<br/>session cookie + X-CSRFToken" --> Proxy
+    Browser -- "HTTP · JSON · session cookie" --> Proxy
     Proxy --> Views
     Models --> PG
     Services -- "pymongo" --> Mongo
     Services -- "read / write files" --> Files
-    Services -- "groq SDK" --> Groq
+    Services -- "HTTP /api/chat" --> Ollama
 ```
 
 SVG export: [overview.svg](./overview.svg)
@@ -61,11 +63,12 @@ SVG export: [overview.svg](./overview.svg)
 | Frontend | Vue 3, Vite, Pinia, Vue Router, `docx-preview`, Vitest, ESLint/Prettier | SPA served by the Vite dev server on `:5173`; the `/api` proxy forwards calls to the backend and strips the prefix, so routes live at the API root. |
 | Backend | Python 3.12, Django 5.2, `django-cors-headers`, plain `JsonResponse` views (no Django REST Framework) | API, authentication (Django sessions + CSRF), business rules, Django admin. |
 | Relational database | PostgreSQL 17 (`psycopg` 3 with a connection pool), extensions `unaccent` and `pg_trgm` | Users, areas, catalogs, documents, revisions, files, access requests, legal terms, audit trail and the full-text search index. |
-| Document database | MongoDB 8.2 (`pymongo`) | `temp_uploads`: metadata, extracted text and AI suggestion of files uploaded but not yet registered. |
+| Document database | MongoDB 8.2 (`pymongo`) | `temp_uploads`: metadata, extracted text and suggestion of files uploaded but not yet registered; `document_vectors`: TF-IDF vectors of the classifier's training dataset, written by `classifier.vectorize` and read by `classifier.train`. |
 | File storage | Local volumes `tmp_uploads/` (temporary) and `media/` (definitive, `DOCUMENT_STORAGE_DIR`) | The bytes of every revision file, served through `GET /files/<id>/view`. |
 | Text processing | PyPDF2, python-docx, NLTK (stopwords bundled in the image) | Text extraction, normalization, thematic tags for the search index. |
-| AI | Groq API (`groq` SDK, model `openai/gpt-oss-120b` by default) | Suggests title, description, project, discipline, type and area from the extracted text. |
-| Infrastructure | Docker Compose, GitHub Actions | Local environment and CI (build, lint, tests, commit lint) in both repositories; no published environment yet. |
+| Machine learning | Local text classifier: scikit-learn TF-IDF + PyTorch network (`classifier/` package, trained artifacts in `classifier_artifacts/`) | Suggests discipline, document type and area from the extracted text, without leaving the server. |
+| LLM | Ollama on the host machine (`llama3.2` by default, `OLLAMA_BASE_URL`) | Summarizes the highlighted snippets of a search on request (`POST /documents/search/ai-summary`); answers a fallback summary when unreachable. |
+| Infrastructure | Docker Compose, GitHub Actions | Local environment and CI (build, lint, tests, commit lint) in both repositories; Ollama runs outside Compose; no published environment yet. |
 
 ## 3. Frontend and backend communication <a id="communication"></a>
 
@@ -74,7 +77,7 @@ SVG export: [overview.svg](./overview.svg)
 **Authentication and authorization.**
 
 - The session is a Django session: the backend sets an `HttpOnly` `sessionid` cookie and a `csrftoken` cookie. Until the real login exists, the frontend opens the session through the provisional `POST /dev/login {"user_id"}` (available only with `DJANGO_DEBUG` on) and closes it with `POST /auth/logout`.
-- Every write (`POST`, `PUT`, `DELETE`) must carry the `csrftoken` cookie value in the `X-CSRFToken` header; the API client (`src/api/client.js`) adds it automatically. `DJANGO_CORS_ALLOWED_ORIGINS` and `DJANGO_CSRF_TRUSTED_ORIGINS` list the frontend origins, because the browser sends `Origin: http://localhost:5173` while the proxied request reaches the API as `localhost:8000`.
+- Django's CSRF protection stays on: every write (`POST`, `PUT`, `DELETE`) carries the `csrftoken` cookie value in the `X-CSRFToken` header, added automatically by the API client (`src/api/client.js`), and `DJANGO_CSRF_TRUSTED_ORIGINS` / `DJANGO_CORS_ALLOWED_ORIGINS` list the frontend origins.
 - Roles live in `app_user.role`: `AUTHOR` and `VIEWER` are collaborators; `AUDITOR` and `ADMIN` are technical managers (they review revisions, decide access requests, archive documents and read the activity feed). `ADMIN` also enters the Django admin. The frontend mirrors this with the `managerOnly` / `collaboratorOnly` route guards and the `public` flag of the login route.
 - Reading a document's content is a separate rule, checked on the server for the detail and for every file: the responsible user, a user with an approved access request, or a manager while the revision is pending.
 
@@ -85,11 +88,11 @@ SVG export: [overview.svg](./overview.svg)
 | Login (`/login`) | `POST /dev/login`, `GET /users/me` |
 | Home and results (`/home`, `/results`) | `GET /documents` (filters, pagination), `GET /documents/simple-filters`, `GET /documents/search` |
 | Documents list and details (`/documents`, `/documents/:id`) | `GET /documents`, `GET /documents/<id>`, `GET /files/<id>/view`, `POST /documents/<id>/request-access` |
-| New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions`, `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `POST /documents` |
+| New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions` (local classifier), `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `POST /documents` |
 | New revision (`/documents/:id/new-revision`) | `POST /documents/<id>/revisions` |
 | Manager panel (`/revisions`) | `GET /manager/pending-revisions`, `POST /manager/revisions/<id>/decision`, `GET /manager/pending-access-requests`, `POST /manager/access-requests/<id>/decision`, `GET /manager/activities` |
 | Profile / data subject management (`/profile`) | `GET`/`PUT /users/me`, `POST /users/me/request-deletion`, `GET /legal-documents`, `GET /legal-documents/versions/<id>`, `GET`/`POST /users/me/legal-acceptances`, `POST /users/me/legal-acceptances/<id>/revoke`, `POST /auth/logout` |
-| Not called by the frontend | `GET /health/`, `/admin/`, `DELETE /documents/<id>`, `GET /documents/archived`, `POST /documents/<id>/restore` (archiving has no screen yet) |
+| Not called by the frontend yet | `GET /health/`, `/admin/`, `DELETE /documents/<id>`, `GET /documents/archived`, `POST /documents/<id>/restore` (archiving has no screen yet), `POST /documents/search/ai-summary` (search summary) |
 
 The full contract of every endpoint is documented in the [backend README](../../README.md).
 
@@ -128,7 +131,7 @@ sequenceDiagram
     participant A as Django API
     participant FS as File storage
     participant M as MongoDB
-    participant G as Groq API
+    participant C as Local classifier
     participant DB as PostgreSQL
 
     B->>A: POST /documents/upload (multipart)
@@ -140,8 +143,8 @@ sequenceDiagram
     A-->>B: 201 temp_file_id
     B->>A: POST /documents/<temp_file_id>/suggestions
     A->>M: read extracted text
-    A->>G: prompt with the text and the catalogs
-    G-->>A: title, description, project, discipline, type, area
+    A->>C: TF-IDF of the text + prediction
+    C-->>A: discipline, document type, area (label + confidence)
     A->>M: save suggestion · audit_log AI_CLASSIFICATION
     A-->>B: 200 suggestion (form pre-filled)
     B->>A: POST /documents (metadata + temp_file_id)
@@ -162,7 +165,7 @@ SVG export: [flow-registration.svg](./flow-registration.svg)
 | Revision review | A manager lists `GET /manager/pending-revisions` and decides with `POST /manager/revisions/<id>/decision`: approval makes the revision current and the previous one `OBSOLETE`; rejection requires a justification. Managers cannot decide their own revisions. |
 | Access to a document | Everyone sees the public metadata. Reading the description and files requires being the responsible user or holding an approved access request (`POST /documents/<id>/request-access`, decided by a manager); every denied file read is audited. |
 | Archiving | `DELETE /documents/<id>` is a soft delete by a manager of one of the document's areas; archived documents disappear from every listing and search and can be restored. |
-| Search | `GET /documents` filters by metadata; `GET /documents/search` runs PostgreSQL full-text search over title, code, description, tags and, for users who can read the document, the indexed content, with highlighted snippets. |
+| Search | `GET /documents` filters by metadata; `GET /documents/search` runs PostgreSQL full-text search over title, code, description, tags and, for users who can read the document, the indexed content, with highlighted snippets; `POST /documents/search/ai-summary` asks Ollama for a short summary of those snippets (a fallback text when the model is unreachable). |
 | Data subject rights (LGPD) | `GET`/`PUT /users/me`, account deletion with anonymization, consent per clause of the legal terms with revocation and re-acceptance, and a blacklist of hashed identifiers that blocks re-registration. |
 | Traceability | Sensitive actions write to the append-only `audit_log` inside the same transaction (`503 AuditUnavailable` otherwise). `GET /manager/activities` turns the trail plus the ingestion outcomes into the manager's activity feed. |
 
@@ -233,7 +236,7 @@ Notes on the data layer:
 
 - `audit_log` is append-only at the database level (a trigger rejects `UPDATE` and `DELETE`), and `document.updated_at` is maintained by a trigger. Enumerations are guarded by `CHECK` constraints.
 - `excluded_identifier` stores only an HMAC-SHA256 of the email of removed accounts, so the identifier can never be reused without storing readable personal data.
-- `temp_uploads` in MongoDB is transient: a record exists between the upload and the registration (or until the temporary file is discarded) and holds the metadata, the extracted text and the AI suggestion.
+- `temp_uploads` in MongoDB is transient: a record exists between the upload and the registration (or until the temporary file is discarded) and holds the metadata, the extracted text and the suggestion. `document_vectors` holds the TF-IDF vectors of the classifier's training dataset, tagged with the vectorizer version; the trained model itself (`model.pt`, `vectorizer.joblib`, `metadata.json`) is versioned in `classifier_artifacts/` and loaded in memory by the API.
 - File bytes never go to a database: temporary files stay in `tmp_uploads/`, registered files in `media/<document code>/v<version>/`, both Docker volumes.
 
 ### Search sources
@@ -243,11 +246,12 @@ Notes on the data layer:
 | Metadata filters | PostgreSQL (`document`, `revision`, catalogs, trigram indexes on title and code) | `GET /documents`: text on title/code/description/tags, type, area, discipline, status, responsible, dates, pagination. |
 | Full-text search | PostgreSQL `document_content.search_vector` (GIN index, configuration `portuguese_unaccent`: Portuguese stemming without accents) plus a metadata vector built per query | `GET /documents/search`: ranked results, highlighted snippets; the content and the thematic tags only count for users who can read the document. |
 | Catalogs | PostgreSQL (`project`, `discipline`, `document_type`, `area`, `tag`) | Form options, simple filters and the project → discipline dependency. |
-| AI suggestions | Groq API over the text kept in MongoDB | Pre-fills the metadata form; it is an aid to classification, not a search source, and its outcome is recorded in the audit trail. |
+| Metadata suggestions | Local classifier (TF-IDF + PyTorch, `classifier/`) over the text kept in MongoDB | Pre-fills discipline, document type and area in the form; an aid to classification, not a search source; its outcome is recorded in the audit trail. |
+| Search summaries | Ollama (local LLM) over the highlighted snippets of a search | `POST /documents/search/ai-summary` returns a short summary of what the results say about the query; not called by the frontend yet. |
 
 ## 6. Module map <a id="module-map"></a>
 
-**Backend (`backend/core/`)**, organized by layer: `views/` (one module per resource, HTTP only), `services/` (business rules, one topic per module), `serializers/` (model ↔ JSON), `models/` (entities grouped by subject: organization, catalog, document, revision, access, legal, audit, search), `management/` (`seed`, `ensure_superuser`, `index_documents`, `delete_user`), `migrations/` (0001 creates the schema, 0002 the database triggers) and `tests/`. Routes are registered in `api6/urls.py`.
+**Backend (`backend/core/`)**, organized by layer: `views/` (one module per resource, HTTP only), `services/` (business rules, one topic per module), `serializers/` (model ↔ JSON), `models/` (entities grouped by subject: organization, catalog, document, revision, access, legal, audit, search), `management/` (`seed`, `ensure_superuser`, `index_documents`, `delete_user`), `migrations/` (0001 creates the schema, 0002 the database triggers) and `tests/`. Routes are registered in `api6/urls.py`. The classifier is a separate package at the repository root (`classifier/`: vectorize, train, predict) with its trained artifacts in `classifier_artifacts/`.
 
 ```mermaid
 flowchart TB
@@ -265,13 +269,14 @@ flowchart TB
     end
     subgraph ServicesLayer["core/services"]
         S1["user_anonymization · excluded_identifier · legal_consent"]
-        S2["temp_upload · document_text · document_ai · document_creation · document_code · file"]
+        S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
         S3["documents (listing) · document_search · document_index · document_archive"]
         S4["revision_review · access_request · manager_activity · audit"]
     end
     subgraph ModelsLayer["core/models → PostgreSQL · core/mongo → MongoDB"]
         M1["organization · catalog · document · revision · access"]
         M2["legal · audit · search · excluded_identifier"]
+        ML["classifier/ + classifier_artifacts/<br/>TF-IDF vectorizer · PyTorch model"]
     end
     R1 --> V1 --> S1
     R2 --> V2 --> S2
@@ -280,6 +285,7 @@ flowchart TB
     V2 --> S3
     S1 --> M2
     S2 --> M1
+    S2 --> ML
     S3 --> M1
     S3 --> M2
     S4 --> M1
@@ -293,7 +299,7 @@ SVG export: [backend-modules.svg](./backend-modules.svg)
 ## 7. Delivery and CI <a id="delivery"></a>
 
 - **Hosting**: there is no published environment yet. The reference environment is the Docker Compose stack of the backend repository plus the Vite dev server of the frontend, on the developer's machine; when the system is deployed, a reverse proxy will take the place of the Vite proxy in front of the API and the built SPA.
-- **Local environment**: `docker compose up` in the backend repository starts `postgres` (`:5433` on the host), `mongodb` (`:27018`) and `api` (`:8000`, runs `migrate` and `ensure_superuser` on start); `npm run dev` in the frontend repository starts Vite on `:5173`. Configuration comes from `.env` (generated by `scripts/setup_env.py`), never committed.
+- **Local environment**: `docker compose up` in the backend repository starts `postgres` (`:5433` on the host), `mongodb` (`:27018`) and `api` (`:8000`, runs `migrate` and `ensure_superuser` on start); `npm run dev` in the frontend repository starts Vite on `:5173`; Ollama is installed on the host (`ollama pull llama3.2`) and reached through `OLLAMA_BASE_URL`. Configuration comes from `.env` (generated by `scripts/setup_env.py`), never committed.
 - **Branching**: Gitflow in every repository (`main`, `develop`, `<type>/<card>-description` branches), Conventional Commits with the card id, pull requests reviewed by a teammate and merged only with a green pipeline. See [Branch Strategy](https://github.com/Pragma-Co/indice/blob/main/documentation/process/Branch%20Strategy.md) and [Commit Standards](https://github.com/Pragma-Co/indice/blob/main/documentation/process/Commit%20Standards.md) in the documentation repository.
 - **CI (GitHub Actions)**, on pull requests to `develop` and `main`: backend runs Ruff (lint and format), the Docker image build with `django check`, the test suite against a PostgreSQL service and the commit message lint; the frontend runs build, ESLint/Prettier, Vitest and the commit message lint.
 

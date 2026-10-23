@@ -11,24 +11,26 @@ flowchart LR
         Views["Views<br/>plain JsonResponse endpoints"]
         Services["Services<br/>business rules"]
         Models["Models · ORM"]
+        Classifier["Local text classifier<br/>TF-IDF + PyTorch · classifier/"]
         Admin["Django admin<br/>(role ADMIN only)"]
         Views --> Services --> Models
+        Services --> Classifier
         Admin --> Models
     end
 
     subgraph Data["Data layer"]
         PG[("PostgreSQL 17<br/>relational data, audit trail,<br/>full-text search index")]
-        Mongo[("MongoDB 8.2<br/>temp_uploads")]
+        Mongo[("MongoDB 8.2<br/>temp_uploads · document_vectors")]
         Files[/"File storage (volumes)<br/>tmp_uploads/ · media/"/]
     end
 
     subgraph External["External services"]
-        Groq["Groq API · LLM<br/>metadata suggestions,<br/>called only on request"]
+        Ollama["Ollama · local LLM (llama3.2)<br/>on the host machine<br/>search summaries on request"]
     end
 
-    Browser -- "HTTP · JSON<br/>session cookie + X-CSRFToken" --> Proxy
+    Browser -- "HTTP · JSON · session cookie" --> Proxy
     Proxy --> Views
     Models --> PG
     Services -- "pymongo" --> Mongo
     Services -- "read / write files" --> Files
-    Services -- "groq SDK" --> Groq
+    Services -- "HTTP /api/chat" --> Ollama

@@ -4,7 +4,7 @@ sequenceDiagram
     participant A as Django API
     participant FS as File storage
     participant M as MongoDB
-    participant G as Groq API
+    participant C as Local classifier
     participant DB as PostgreSQL
 
     B->>A: POST /documents/upload (multipart)
@@ -16,8 +16,8 @@ sequenceDiagram
     A-->>B: 201 temp_file_id
     B->>A: POST /documents/<temp_file_id>/suggestions
     A->>M: read extracted text
-    A->>G: prompt with the text and the catalogs
-    G-->>A: title, description, project, discipline, type, area
+    A->>C: TF-IDF of the text + prediction
+    C-->>A: discipline, document type, area (label + confidence)
     A->>M: save suggestion · audit_log AI_CLASSIFICATION
     A-->>B: 200 suggestion (form pre-filled)
     B->>A: POST /documents (metadata + temp_file_id)
