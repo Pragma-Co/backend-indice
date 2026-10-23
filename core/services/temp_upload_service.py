@@ -14,7 +14,6 @@ from core.services.file_validation_service import (
     validate_file_type,
 )
 from core.services.upload_exceptions import (
-    DuplicateFileError,
     MissingFileError,
     UploadStorageError,
 )
@@ -73,15 +72,6 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
     file_type = validate_file_type(uploaded_file)
 
     file_hash = calculate_file_hash(uploaded_file)
-
-    existing_file = (
-        File.objects.filter(sha256=file_hash)
-        .select_related("revision__document")
-        .order_by("-uploaded_at")
-        .first()
-    )
-    if existing_file is not None:
-        raise DuplicateFileError(existing_file)
 
     temp_file_id = str(uuid.uuid4())
     temp_dir = Path(settings.TEMP_UPLOAD_DIR)

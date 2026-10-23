@@ -268,6 +268,63 @@ Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `disc
 
 The index lives in the `document_content` table and is refreshed whenever a document or a new revision is created. Documents created before it existed are indexed with `manage.py index_documents` (`--missing-only` skips those already indexed).
 
+### `POST /documents/search/ai-summary`
+
+Summarizes snippets from `GET /documents/search`. Send the query and content highlights:
+
+```json
+{
+  "query": "fadiga estrutural",
+  "snippets": ["... ensaio de fadiga em escala de painel ..."]
+}
+```
+
+The response includes the summary and a `fallback` flag. If Ollama is unavailable, a fallback summary is returned.
+
+```json
+{
+  "query": "fadiga estrutural",
+  "summary": "Os trechos relacionam fadiga estrutural à análise de tensões.",
+  "fallback": false
+}
+```
+
+#### Ollama configuration
+
+Add these settings to the backend `.env` file used by each developer:
+
+Linux (replace the example IP if your Docker gateway is different):
+
+```dotenv
+OLLAMA_BASE_URL=http://172.19.0.1:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT=120
+```
+
+To find the Docker gateway on Linux, run this command and use its output in `OLLAMA_BASE_URL`:
+
+```bash
+docker network inspect api-6_default --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+Windows with Docker Desktop:
+
+```dotenv
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT=120
+```
+
+Install the model once on the machine running Ollama:
+
+```bash
+ollama pull llama3.2
+```
+
+The API runs in a container, so `localhost` points to the container itself. Use the Docker gateway on Linux or `host.docker.internal` on Windows to reach Ollama. If the API cannot connect, configure Ollama to listen on an address reachable from Docker and restrict access to trusted local networks. 
+
+After changing `.env`, recreate the API container with `docker compose up -d --force-recreate api`.
+
 ### `POST /documents`
 
 Confirmation step of the registration flow (step 3). Receives the metadata filled in the form plus the `temp_file_id` returned by `POST /documents/upload`, validates every field, generates the unique document code, writes `document`, its first `revision` (version 1, `PENDING`) and the `file` row in one transaction, and moves the file from `TEMP_UPLOAD_DIR` to `DOCUMENT_STORAGE_DIR` (`media/` by default, see `.env.example`).
