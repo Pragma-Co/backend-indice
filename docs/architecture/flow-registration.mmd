@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    participant B as Browser (Vue SPA)
+    participant A as Django API
+    participant FS as File storage
+    participant M as MongoDB
+    participant G as Groq API
+    participant DB as PostgreSQL
+
+    B->>A: POST /documents/upload (multipart)
+    A->>A: validate type and size, SHA-256, duplicate check
+    A->>FS: write tmp_uploads/<temp_file_id>.<ext>
+    A->>A: extract and normalize text (PyPDF2 / python-docx / NLTK)
+    A->>M: temp_uploads.insert (metadata, extracted text)
+    A->>DB: audit_log DOC_UPLOAD_SUCCESS (+ extraction outcome)
+    A-->>B: 201 temp_file_id
+    B->>A: POST /documents/<temp_file_id>/suggestions
+    A->>M: read extracted text
+    A->>G: prompt with the text and the catalogs
+    G-->>A: title, description, project, discipline, type, area
+    A->>M: save suggestion · audit_log AI_CLASSIFICATION
+    A-->>B: 200 suggestion (form pre-filled)
+    B->>A: POST /documents (metadata + temp_file_id)
+    A->>DB: document + revision v1 (PENDING) + file rows (one transaction)
+    A->>FS: move file to media/<code>/v1/
+    A->>M: temp_uploads.delete
+    A->>DB: document_content (normalized text, thematic tags, tsvector) · audit_log
+    A-->>B: 201 document

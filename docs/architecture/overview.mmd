@@ -1,0 +1,34 @@
+flowchart LR
+    subgraph Client["Client"]
+        Browser["Vue 3 SPA<br/>Vite · Pinia · Vue Router<br/>localhost:5173"]
+    end
+
+    subgraph Edge["Entry point"]
+        Proxy["Vite dev proxy<br/>/api/* → strips /api"]
+    end
+
+    subgraph Backend["Backend · Django 5.2 API · :8000"]
+        Views["Views<br/>plain JsonResponse endpoints"]
+        Services["Services<br/>business rules"]
+        Models["Models · ORM"]
+        Admin["Django admin<br/>(role ADMIN only)"]
+        Views --> Services --> Models
+        Admin --> Models
+    end
+
+    subgraph Data["Data layer"]
+        PG[("PostgreSQL 17<br/>relational data, audit trail,<br/>full-text search index")]
+        Mongo[("MongoDB 8.2<br/>temp_uploads")]
+        Files[/"File storage (volumes)<br/>tmp_uploads/ · media/"/]
+    end
+
+    subgraph External["External services"]
+        Groq["Groq API · LLM<br/>metadata suggestions,<br/>called only on request"]
+    end
+
+    Browser -- "HTTP · JSON<br/>session cookie + X-CSRFToken" --> Proxy
+    Proxy --> Views
+    Models --> PG
+    Services -- "pymongo" --> Mongo
+    Services -- "read / write files" --> Files
+    Services -- "groq SDK" --> Groq
