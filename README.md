@@ -270,38 +270,47 @@ The index lives in the `document_content` table and is refreshed whenever a docu
 
 ### `POST /documents/search/ai-summary`
 
-This endpoint does not run a search; send it the `query` and `highlights.content` snippets returned by `GET /documents/search`. The request may contain up to 10 snippets, each up to 2,000 characters, and a query up to 200 characters. Before sending the text to Ollama, the API redacts common patterns for personal information and credentials, including email addresses, CPF/CNPJ numbers, phone numbers and tokens. Snippets are treated as untrusted content, and the model is not given tools to execute.
-
-Request (`application/json`):
+Summarizes snippets from `GET /documents/search`. Send the query and content highlights:
 
 ```json
 {
   "query": "fadiga estrutural",
-  "snippets": [
-    "... ensaio de fadiga em escala de painel ...",
-    "... análise de tensões e vida útil do revestimento ..."
-  ]
+  "snippets": ["... ensaio de fadiga em escala de painel ..."]
 }
 ```
 
-Response `200`:
+The response includes the summary and a `fallback` flag. If Ollama is unavailable, a fallback summary is returned.
 
 ```json
 {
   "query": "fadiga estrutural",
-  "summary": "Os trechos relacionam a fadiga estrutural à análise de tensões e à vida útil do revestimento.",
+  "summary": "Os trechos relacionam fadiga estrutural à análise de tensões.",
   "fallback": false
 }
 ```
-
-If Ollama is unavailable, times out or returns an unusable response, the endpoint still answers `200` with a fallback message and `fallback: true`. An empty snippets list skips the model call. Invalid input answers `400`; request bodies larger than 96 KB answer `413`.
 
 #### Ollama configuration
 
 Add these settings to the backend `.env` file used by each developer:
 
+Linux (replace the example IP if your Docker gateway is different):
+
 ```dotenv
-OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_BASE_URL=http://172.19.0.1:11434
+OLLAMA_MODEL=llama3.2
+OLLAMA_TIMEOUT=120
+```
+
+To find the Docker gateway on Linux, run this command and use its output in `OLLAMA_BASE_URL`:
+
+```bash
+docker network inspect api-6_default --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+Windows with Docker Desktop:
+
+```dotenv
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 OLLAMA_MODEL=llama3.2
 OLLAMA_TIMEOUT=120
 ```
@@ -312,9 +321,9 @@ Install the model once on the machine running Ollama:
 ollama pull llama3.2
 ```
 
-`OLLAMA_BASE_URL` must be reachable from the Django process. The values above work when Django runs directly on the same machine as Ollama. When Django runs in Docker, `localhost` refers to the API container, not the host. On Windows with Docker Desktop, set the backend URL to `http://host.docker.internal:11434`; if the container cannot connect, configure Ollama to listen on an address reachable from Docker Desktop and restart Ollama. On Linux, use the Docker host gateway address and configure the Ollama service to listen on that address. This project does not start Ollama through Docker Compose, so each developer must run Ollama separately. Keep any Ollama listener limited to trusted local development networks.
+The API runs in a container, so `localhost` points to the container itself. Use the Docker gateway on Linux or `host.docker.internal` on Windows to reach Ollama. If the API cannot connect, configure Ollama to listen on an address reachable from Docker and restrict access to trusted local networks. 
 
-`OLLAMA_MODEL` must match a model installed in Ollama. `OLLAMA_TIMEOUT` is the maximum request time in seconds and defaults to 120; if Ollama exceeds it, the API returns the fallback response.
+After changing `.env`, recreate the API container with `docker compose up -d --force-recreate api`.
 
 ### `POST /documents`
 
