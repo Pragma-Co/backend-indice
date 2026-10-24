@@ -141,7 +141,6 @@ def _describe_search(params: QueryDict) -> str:
 
 
 def _readable_contents(document_ids, user) -> dict[int, str]:
-    """Indexed content of the documents the user is allowed to read."""
     if user is None or not document_ids:
         return {}
     readable = Document.objects.filter(pk__in=document_ids).annotate(can_read=_can_read(user))
@@ -192,8 +191,6 @@ def _ask_for_ranked_summary(description: str, entries: list[dict]) -> tuple[str,
 
 
 def summarize_search_results(filters, user=None) -> dict:
-    """Runs the search, reads the content of the top results and summarizes them,
-    pointing out the document that best matches the search."""
     params = _build_params(filters)
     description = _describe_search(params)
     if not description:
@@ -227,7 +224,7 @@ def summarize_search_results(filters, user=None) -> dict:
         MAX_TOTAL_INPUT_LENGTH - len(sanitized_description),
     )
     titles = {result["id"]: result for result in results}
-    # Only the fact that the content matches is disclosed for documents the user cannot read.
+
     restricted = [
         {"id": result["id"], "code": result.get("code"), "title": result.get("title")}
         for result in results
@@ -248,7 +245,6 @@ def summarize_search_results(filters, user=None) -> dict:
     except Exception as exc:
         logger.warning("Ollama search summary request failed: %s", type(exc).__name__)
 
-    # Text searches are ordered by relevance, so the first result is the best guess.
     if best_id is None and has_text and entries:
         best_id = entries[0]["id"]
     best = titles.get(best_id)
