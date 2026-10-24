@@ -264,7 +264,7 @@ Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `disc
 }
 ```
 
-`highlights` are HTML-escaped, with the matched words wrapped in `<mark>`; `content` holds up to three fragments and is empty when the content did not match or the user cannot read it. `thematic_tags` are the most frequent meaningful words of the content (Portuguese and English stopwords removed). Invalid parameters answer `400` with `{"errors": {"q": {"code": "required" | "too_long" | "invalid", ...}}}` plus the listing errors.
+`content_match` is `true` whenever the document content matches, even for users without access to it; in that case `highlights.content` and `thematic_tags` stay empty, so only the existence of the match is disclosed. `highlights` are HTML-escaped, with the matched words wrapped in `<mark>`; `content` holds up to three fragments and is empty when the content did not match or the user cannot read it. `thematic_tags` are the most frequent meaningful words of the content (Portuguese and English stopwords removed). Invalid parameters answer `400` with `{"errors": {"q": {"code": "required" | "too_long" | "invalid", ...}}}` plus the listing errors.
 
 The index lives in the `document_content` table and is refreshed whenever a document or a new revision is created. Documents created before it existed are indexed with `manage.py index_documents` (`--missing-only` skips those already indexed).
 
@@ -279,6 +279,16 @@ Summarizes snippets from `GET /documents/search`. Send the query and content hig
 }
 ```
 
+Alternatively, send the search `filters` (same parameters as `GET /documents/search`/`GET /documents`: `q`, `area`, `tipo`, `data`, `date_from`, `date_to`, ...) and the backend runs the search itself (full-text when `q` is present, plain listing otherwise), uses the top 10 results as snippets and summarizes them. This is what the frontend `SearchPanel` flow uses:
+
+```json
+{ "filters": { "q": "fadiga", "area": "ENG", "date_from": "2026-01-01" } }
+```
+
+The summary only uses the content of documents the user can read. Response extras: `most_relevant` (`{id, code, title}` or `null`, the document that best matches the search) and `restricted_matches` (documents whose content matches but that the user cannot read; only their `id`, `code` and `title` are returned, and their content is never sent to the model).
+
+Invalid filters answer `400` with `{"errors": {...}}`; empty filters answer `400` with `{"error": "InvalidInput"}`.
+
 The response includes the summary and a `fallback` flag. If Ollama is unavailable, a fallback summary is returned.
 
 ```json
@@ -290,6 +300,10 @@ The response includes the summary and a `fallback` flag. If Ollama is unavailabl
 ```
 
 #### Ollama configuration
+
+`docker compose up --build` already starts an `ollama` container (volume `ollama_data`) and an `ollama-pull` job that downloads `OLLAMA_MODEL` (default `llama3.2`) on the first run, so no extra setup is needed. The `api` service is pointed at `http://ollama:11434` automatically, overriding `OLLAMA_BASE_URL` from `.env`. The first startup waits for the model download. GPU is not enabled by default.
+
+The settings below apply only if you prefer to run Ollama outside Compose (remove the `ollama` service and its `depends_on` entry).
 
 Add these settings to the backend `.env` file used by each developer:
 

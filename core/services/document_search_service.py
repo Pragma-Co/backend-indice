@@ -25,7 +25,7 @@ from django.db.models.functions import Coalesce, Concat
 
 from core.models import Document, DocumentAccess, DocumentTag
 from core.models.choices import AccessStatus
-from core.models.search import SEARCH_CONFIG
+from core.models.search import ENGLISH_SEARCH_CONFIG, SEARCH_CONFIG
 from core.serializers.document_search_serializer import (
     FRAGMENT_SEPARATOR,
     HIGHLIGHT_START,
@@ -81,10 +81,10 @@ def parse_search_query(params):
     return {**query, "search_term": "", "terms": terms}
 
 
-def build_search_query(terms):
+def build_search_query(terms, config=SEARCH_CONFIG):
     search_query = None
     for term in terms:
-        term_query = SearchQuery(term, config=SEARCH_CONFIG)
+        term_query = SearchQuery(term, config=config)
         search_query = term_query if search_query is None else search_query | term_query
     return search_query
 
@@ -123,7 +123,7 @@ def _can_read(user):
     )
 
 
-def apply_full_text_search(queryset, search_query, user):
+def apply_full_text_search(queryset, search_query, content_query, user):
     return (
         queryset.annotate(
             metadata_vector=_metadata_vector(),
@@ -135,7 +135,7 @@ def apply_full_text_search(queryset, search_query, user):
                 Q(metadata_vector=search_query), output_field=BooleanField()
             ),
             content_match=ExpressionWrapper(
-                Q(can_read=True, indexed_content__search_vector=search_query),
+                Q(indexed_content__search_vector=content_query),
                 output_field=BooleanField(),
             ),
         )
@@ -145,7 +145,7 @@ def apply_full_text_search(queryset, search_query, user):
             + Case(
                 When(
                     content_match=True,
-                    then=SearchRank(F("indexed_content__search_vector"), search_query),
+                    then=SearchRank(F("indexed_content__search_vector"), content_query),
                 ),
                 default=Value(0.0),
                 output_field=FloatField(),
@@ -155,18 +155,37 @@ def apply_full_text_search(queryset, search_query, user):
     )
 
 
-def _headline(field, search_query, **options):
+def _headline(field, search_query, config=SEARCH_CONFIG, **options):
     return SearchHeadline(
         field,
         search_query,
-        config=SEARCH_CONFIG,
+        config=config,
         start_sel=HIGHLIGHT_START,
         stop_sel=HIGHLIGHT_STOP,
         **options,
     )
 
 
-def fetch_highlights(document_ids, content_match_ids, search_query):
+def _content_headline(content_match_ids, query, config=SEARCH_CONFIG):
+    return Case(
+        When(
+            pk__in=content_match_ids,
+            then=_headline(
+                "indexed_content__content",
+                query,
+                config,
+                max_fragments=SNIPPET_MAX_FRAGMENTS,
+                max_words=SNIPPET_MAX_WORDS,
+                min_words=SNIPPET_MIN_WORDS,
+                fragment_delimiter=FRAGMENT_SEPARATOR,
+            ),
+        ),
+        default=Value(""),
+        output_field=TextField(),
+    )
+
+
+def fetch_highlights(document_ids, content_match_ids, search_query, english_query):
     rows = (
         Document.objects.filter(pk__in=document_ids)
         .annotate(
@@ -191,20 +210,9 @@ def fetch_highlights(document_ids, content_match_ids, search_query):
                 search_query,
                 highlight_all=True,
             ),
-            content_highlight=Case(
-                When(
-                    pk__in=content_match_ids,
-                    then=_headline(
-                        "indexed_content__content",
-                        search_query,
-                        max_fragments=SNIPPET_MAX_FRAGMENTS,
-                        max_words=SNIPPET_MAX_WORDS,
-                        min_words=SNIPPET_MIN_WORDS,
-                        fragment_delimiter=FRAGMENT_SEPARATOR,
-                    ),
-                ),
-                default=Value(""),
-                output_field=TextField(),
+            content_highlight=_content_headline(content_match_ids, search_query),
+            content_highlight_en=_content_headline(
+                content_match_ids, english_query, ENGLISH_SEARCH_CONFIG
             ),
         )
         .values(
@@ -213,6 +221,7 @@ def fetch_highlights(document_ids, content_match_ids, search_query):
             "description_highlight",
             "tags_highlight",
             "content_highlight",
+            "content_highlight_en",
         )
     )
     return {row["pk"]: serialize_search_highlights(row) for row in rows}
@@ -225,20 +234,26 @@ def _serialize_result(document):
         "tags": [tag.name for tag in document.tags.all()],
         "thematic_tags": list(document.thematic_tags or []) if document.can_read else [],
         "content_match": document.content_match,
+        "can_read": document.can_read,
     }
 
 
 def search_documents(params, user=None):
     query = parse_search_query(params)
     search_query = build_search_query(query["terms"])
-    queryset = apply_full_text_search(filter_documents(query), search_query, user)
+    english_query = build_search_query(query["terms"], ENGLISH_SEARCH_CONFIG)
+    content_query = search_query | english_query
+    queryset = apply_full_text_search(filter_documents(query), search_query, content_query, user)
     page = paginate_documents(queryset, query, _serialize_result)
 
     document_ids = [result["id"] for result in page["results"]]
-    content_match_ids = [result["id"] for result in page["results"] if result["content_match"]]
-    highlights = fetch_highlights(document_ids, content_match_ids, search_query)
+    content_match_ids = [
+        result["id"] for result in page["results"] if result["content_match"] and result["can_read"]
+    ]
+    highlights = fetch_highlights(document_ids, content_match_ids, search_query, english_query)
     for result in page["results"]:
         highlight = highlights[result["id"]]
+        result.pop("can_read")
         matched_tags = highlight.pop("matched_tags")
         result["matched_tags"] = list(
             dict.fromkeys(
