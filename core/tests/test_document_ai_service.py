@@ -1,3 +1,4 @@
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -45,6 +46,10 @@ class SuggestDocumentMetadataTests(TestCase):
         self.settings_override = override_settings(TEMP_UPLOAD_DIR=self.temp_dir)
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
+        self.ollama = mock.patch(
+            "core.services.document_ai_service.ask_ollama", side_effect=OSError("offline")
+        ).start()
+        self.addCleanup(mock.patch.stopall)
 
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.document_type = DocumentType.objects.create(code="ESP", name="Especificação Técnica")
@@ -71,6 +76,84 @@ class SuggestDocumentMetadataTests(TestCase):
         self.assertIsNone(result["title"])
         self.assertIsNone(result["description"])
         self.assertIsNone(result["project"])
+
+    def test_given_ollama_answer_when_suggested_then_fills_title_and_description(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps(
+            {"title": "Memorial de Cálculo", "subtitle": "Dimensiona a longarina."}
+        )
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "Memorial de Cálculo")
+        self.assertEqual(result["description"], "Dimensiona a longarina.")
+        self.assertEqual(result["discipline"], {"id": self.discipline.id, "name": "Estruturas"})
+
+    def test_given_ollama_answer_over_limits_when_suggested_then_truncates_fields(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps({"title": "T" * 400, "subtitle": "S" * 900})
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(len(result["title"]), 255)
+        self.assertEqual(len(result["description"]), 500)
+
+    def test_given_ollama_invalid_json_when_suggested_then_keeps_classification_and_null_text(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = "not json"
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertEqual(result["discipline"], {"id": self.discipline.id, "name": "Estruturas"})
+
+    def test_given_ollama_failure_when_suggested_then_keeps_classification_and_null_text(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertEqual(result["area"], {"id": self.area.id, "name": "Engenharia Estrutural"})
+
+    def test_given_email_in_text_when_suggested_then_redacts_it_before_calling_ollama(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {"extracted_text": "contato ana@example.com sobre a asa"}
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        sent_message = self.ollama.call_args.args[1]
+        self.assertNotIn("ana@example.com", sent_message)
+        self.assertIn("[REDACTED]", sent_message)
+
+    def test_given_no_extracted_text_when_suggested_then_does_not_call_ollama(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {"extracted_text": "   "}
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        self.ollama.assert_not_called()
 
     def test_given_valid_pdf_when_suggested_then_classifies_the_extracted_text_once(
         self, mock_classifier, mock_record, mock_mongo
@@ -190,6 +273,10 @@ class SuggestDocumentMetadataViewTests(TestCase):
         self.settings_override = override_settings(TEMP_UPLOAD_DIR=self.temp_dir)
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
+        self.ollama = mock.patch(
+            "core.services.document_ai_service.ask_ollama", side_effect=OSError("offline")
+        ).start()
+        self.addCleanup(mock.patch.stopall)
 
         Discipline.objects.create(code="EST", name="Estruturas")
         DocumentType.objects.create(code="ESP", name="Especificação Técnica")

@@ -25,7 +25,7 @@ class SearchSummaryServiceTests(SimpleTestCase):
         OLLAMA_MODEL="llama3.2",
         OLLAMA_TIMEOUT=3,
     )
-    @mock.patch("core.services.document_search_summary_service.urlopen")
+    @mock.patch("core.ollama_client.urlopen")
     def test_should_redact_sensitive_data_and_send_a_controlled_prompt(self, mock_urlopen):
         mock_urlopen.return_value = _fake_ollama_response(OLLAMA_RESPONSE)
 
@@ -63,7 +63,7 @@ class SearchSummaryServiceTests(SimpleTestCase):
         self.assertIn("[REDACTED]", search_data["snippets"][0])
 
     @mock.patch(
-        "core.services.document_search_summary_service.urlopen",
+        "core.ollama_client.urlopen",
         side_effect=TimeoutError,
     )
     def test_should_return_a_fallback_when_ollama_times_out(self, mock_urlopen):
@@ -76,7 +76,7 @@ class SearchSummaryServiceTests(SimpleTestCase):
         )
         mock_urlopen.assert_called_once()
 
-    @mock.patch("core.services.document_search_summary_service.urlopen")
+    @mock.patch("core.ollama_client.urlopen")
     def test_should_skip_ollama_when_no_snippets_are_available(self, mock_urlopen):
         result = summarize_search("ponte", [])
 

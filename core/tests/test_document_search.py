@@ -44,7 +44,6 @@ class DocumentSearchTestCase(TestCase):
         self.area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.project = Project.objects.create(code="PRJ", name="Projeto")
-        self.project.disciplines.add(self.discipline)
         self.document_type = DocumentType.objects.create(code="MEM", name="Memorial")
         self.owner = User.objects.create_user(
             email="owner@example.com", password="secret", name="Owner", area=self.area

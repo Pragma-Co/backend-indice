@@ -9,7 +9,6 @@ from core.models.catalog import (
     Discipline,
     DocumentType,
     Project,
-    ProjectDiscipline,
     Tag,
 )
 from core.models.choices import (
@@ -56,7 +55,6 @@ __all__ = [
     "LegalDocumentStatus",
     "LegalDocumentVersion",
     "Project",
-    "ProjectDiscipline",
     "Revision",
     "RevisionStatus",
     "Role",
