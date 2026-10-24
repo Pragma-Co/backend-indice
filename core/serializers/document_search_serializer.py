@@ -13,7 +13,9 @@ def render_highlight(text: str | None) -> str:
     return escaped.replace(HIGHLIGHT_START, MARK_START).replace(HIGHLIGHT_STOP, MARK_STOP)
 
 
-def render_snippets(text: str | None) -> list[str]:
+def render_snippets(text: str | None, fallback: str | None = None) -> list[str]:
+    if HIGHLIGHT_START not in (text or ""):
+        text = fallback
     fragments = (fragment.strip() for fragment in (text or "").split(FRAGMENT_SEPARATOR))
     return [render_highlight(fragment) for fragment in fragments if HIGHLIGHT_START in fragment]
 
@@ -30,6 +32,6 @@ def serialize_search_highlights(row: dict) -> dict:
     return {
         "title": render_highlight(row["title_highlight"]),
         "description": render_highlight(row["description_highlight"]),
-        "content": render_snippets(row["content_highlight"]),
+        "content": render_snippets(row["content_highlight"], row.get("content_highlight_en")),
         "matched_tags": highlighted_tags(row["tags_highlight"]),
     }
