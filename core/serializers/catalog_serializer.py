@@ -6,7 +6,7 @@ def serialize_project(project: Project) -> dict:
         "id": project.id,
         "code": project.code,
         "name": project.name,
-        "discipline_ids": [discipline.id for discipline in project.disciplines.all()],
+        "discipline_ids": project.discipline_ids,
     }
 
 

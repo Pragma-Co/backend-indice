@@ -148,12 +148,12 @@ Both catalogs are maintained through the Django admin and populated by `manage.p
 
 ### `GET /projects/`
 
-Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code. `discipline_ids` lists the active disciplines linked to the project, ordered by id, so the form can offer only those in the Disciplina select (`POST /documents` rejects a discipline outside the project with `not_in_project`).
+Projects available in the **Projeto Associado** select of the metadata form. `code` is the first part of the document code. `discipline_ids` is derived, not stored: the active disciplines of the documents already registered in the project, ordered by id (empty for a project without documents). It is informational only; `POST /documents` accepts any active discipline.
 
 ```json
 [
-  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central", "discipline_ids": [1, 2, 7, 8] },
-  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical", "discipline_ids": [1, 2, 3, 8] }
+  { "id": 1, "code": "AK-2100", "name": "Aeroestrutura de Fuselagem Central" },
+  { "id": 2, "code": "AK-2200", "name": "Conjunto de Empenagem Vertical" }
 ]
 ```
 
@@ -321,6 +321,8 @@ Install the model once on the machine running Ollama:
 ollama pull llama3.2
 ```
 
+When the model runs on a remote machine, open an SSH tunnel on the host (`ssh -N -L 11434:127.0.0.1:11434 <user>@<vm>`) and keep `OLLAMA_BASE_URL` pointing at the host as above. The same Ollama instance also generates the suggested title and description (subtitle) in `POST /documents/<temp_file_id>/suggestions`; if it is unreachable, those two fields come back `null` and the classification is unaffected.
+
 The API runs in a container, so `localhost` points to the container itself. Use the Docker gateway on Linux or `host.docker.internal` on Windows to reach Ollama. If the API cannot connect, configure Ollama to listen on an address reachable from Docker and restrict access to trusted local networks. 
 
 After changing `.env`, recreate the API container with `docker compose up -d --force-recreate api`.
@@ -351,7 +353,7 @@ Request (`application/json`):
 | `title` | yes | up to 255 characters |
 | `description` | no | up to 500 characters |
 | `project_id` | yes | id of an active project (`GET /projects/`) |
-| `discipline_id` | yes | id of an active discipline that belongs to the project (`GET /disciplines/`) |
+| `discipline_id` | yes | id of an active discipline (`GET /disciplines/`); it does not depend on the project |
 | `document_type` | yes | code of an active document type (`DWG`, `MEM`, ...) |
 | `confidentiality` | yes | `PUBLIC`, `CONFIDENTIAL` or `SECRET` |
 | `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
@@ -360,7 +362,7 @@ Request (`application/json`):
 **Ids are not stable across databases.** `manage.py seed` assigns whatever ids the sequences are at, so the numbers in the example above will differ on your machine. Get valid ones before calling the endpoint:
 
 ```bash
-curl http://localhost:8000/projects/    # project id and the discipline_ids linked to it
+curl http://localhost:8000/projects/    # project ids
 docker compose exec api python manage.py shell -c "from core.models import User; print(User.objects.get(email='beatriz.canuto@akaer.local').id)"
 ```
 

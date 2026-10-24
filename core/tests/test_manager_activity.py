@@ -744,7 +744,6 @@ class ClassificationOutcomeTests(ManagerActivityFixtureMixin, TestCase):
 class ContentIndexingOutcomeTests(ManagerActivityFixtureMixin, TestCase):
     def setUp(self):
         super().setUp()
-        self.project.disciplines.add(self.discipline)
         self.temp_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
         self.storage_dir = tempfile.mkdtemp()

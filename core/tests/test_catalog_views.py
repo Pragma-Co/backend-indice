@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from core.models import Area, Discipline, Project
+from core.models import Area, Discipline, Document, DocumentType, Project, User
 
 
 class ListProjectsViewTests(TestCase):
@@ -42,27 +42,48 @@ class ListProjectsViewTests(TestCase):
             ],
         )
 
-    def test_should_list_only_active_disciplines_linked_to_each_project_ordered_by_id(self):
-        project = Project.objects.create(code="AK-2100", name="Aeroestrutura de Fuselagem Central")
-        other = Project.objects.create(code="AK-2200", name="Conjunto de Empenagem Vertical")
-        materials = Discipline.objects.create(code="MAT", name="Materiais e Processos")
+    def test_should_derive_discipline_ids_from_the_active_disciplines_of_project_documents(self):
+        area = Area.objects.create(acronym="ENG", name="Engenharia")
+        user = User.objects.create_user(
+            email="ana@example.com", password="x", name="Ana", area=area
+        )
+        document_type = DocumentType.objects.create(code="DWG", name="Desenho")
+        project = Project.objects.create(code="AK-2100", name="Aeroestrutura")
+        other = Project.objects.create(code="AK-2200", name="Empenagem")
+        empty = Project.objects.create(code="AK-2300", name="Sem documentos")
+        materials = Discipline.objects.create(code="MAT", name="Materiais")
         structures = Discipline.objects.create(code="EST", name="Estruturas")
-        retired = Discipline.objects.create(code="PNE", name="Sistemas Pneumáticos", active=False)
-        unlinked = Discipline.objects.create(code="HID", name="Sistemas Hidráulicos")
-        project.disciplines.add(structures, materials, retired)
-        other.disciplines.add(unlinked)
+        retired = Discipline.objects.create(code="PNE", name="Pneumática", active=False)
+        hydraulics = Discipline.objects.create(code="HID", name="Hidráulica")
+        for index, (doc_project, discipline) in enumerate(
+            [
+                (project, structures),
+                (project, structures),
+                (project, materials),
+                (project, retired),
+                (other, hydraulics),
+            ]
+        ):
+            Document.objects.create(
+                code=f"DOC-{index}",
+                title="Documento",
+                project=doc_project,
+                discipline=discipline,
+                document_type=document_type,
+                responsible=user,
+                created_by=user,
+            )
 
         response = self.client.get(reverse("project-list"))
 
-        self.assertEqual(response.status_code, 200)
         by_code = {item["code"]: item["discipline_ids"] for item in response.json()}
         self.assertEqual(by_code["AK-2100"], sorted([materials.id, structures.id]))
-        self.assertEqual(by_code["AK-2200"], [unlinked.id])
+        self.assertEqual(by_code["AK-2200"], [hydraulics.id])
+        self.assertEqual(by_code[empty.code], [])
 
     def test_should_not_query_the_database_once_per_project(self):
         for index in range(5):
-            project = Project.objects.create(code=f"AK-{index}", name=f"Projeto {index}")
-            project.disciplines.add(Discipline.objects.create(code=f"D{index}", name=f"D {index}"))
+            Project.objects.create(code=f"AK-{index}", name=f"Projeto {index}")
 
         with self.assertNumQueries(2):
             response = self.client.get(reverse("project-list"))

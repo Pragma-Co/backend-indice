@@ -3,7 +3,7 @@
 The product UI is the Vue frontend; this is the maintenance back door for the
 catalog tables and for inspecting the audit trail.
 
-`project_discipline`, `document_area` and `document_tag` use composite primary
+`document_area` and `document_tag` use composite primary
 keys, which the admin does not support, so those links cannot be edited here —
 use the API or the shell (`DocumentArea.objects.create(...)`).
 """
@@ -95,8 +95,6 @@ class ProjectAdmin(admin.ModelAdmin):
     list_filter = ("active",)
     search_fields = ("code", "name")
     readonly_fields = ("created_at",)
-    # ManyToMany through an explicit model is not editable in a form
-    exclude = ("disciplines",)
 
 
 @admin.register(Discipline)

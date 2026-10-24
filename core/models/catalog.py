@@ -17,12 +17,6 @@ class Project(models.Model):
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(db_default=Now(), editable=False)
 
-    disciplines = models.ManyToManyField(
-        "core.Discipline",
-        through="core.ProjectDiscipline",
-        related_name="projects",
-    )
-
     class Meta:
         db_table = "project"
         ordering = ["code"]
@@ -55,29 +49,6 @@ class DocumentType(models.Model):
 
     def __str__(self):
         return f"{self.code} — {self.name}"
-
-
-class ProjectDiscipline(models.Model):
-    """Disciplines a project is broken down into. Composite primary key."""
-
-    pk = models.CompositePrimaryKey("project_id", "discipline_id")
-    # db_index=False: the composite primary key already leads with project_id
-    project = models.ForeignKey(
-        Project,
-        on_delete=models.CASCADE,
-        related_name="project_disciplines",
-        db_index=False,
-    )
-    # RESTRICT: a discipline in use by a project cannot be deleted
-    discipline = models.ForeignKey(
-        Discipline, on_delete=models.PROTECT, related_name="project_disciplines"
-    )
-
-    class Meta:
-        db_table = "project_discipline"
-
-    def __str__(self):
-        return f"{self.project_id}/{self.discipline_id}"
 
 
 class Tag(models.Model):

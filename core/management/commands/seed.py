@@ -82,7 +82,7 @@ class Command(BaseCommand):
         self._assign_managers(areas, users)
         disciplines = self._seed_disciplines()
         document_types = self._seed_document_types()
-        projects = self._seed_projects(disciplines)
+        projects = self._seed_projects()
         tags = self._seed_tags()
         documents = self._seed_documents(projects, disciplines, document_types, users, areas, tags)
         revisions = self._seed_revisions(documents, users)
@@ -171,15 +171,13 @@ class Command(BaseCommand):
             document_types[code] = document_type
         return document_types
 
-    def _seed_projects(self, disciplines):
+    def _seed_projects(self):
         projects = {}
-        for code, name, active, discipline_codes in data.PROJECTS:
+        for code, name, active in data.PROJECTS:
             project, created = Project.objects.get_or_create(
                 code=code, defaults={"name": name, "active": active}
             )
             self._count("project", created)
-            # set() is idempotent and writes straight to project_discipline
-            project.disciplines.set([disciplines[c] for c in discipline_codes])
             projects[code] = project
         return projects
 
@@ -214,11 +212,6 @@ class Command(BaseCommand):
             project = projects[project_code]
             discipline = disciplines[discipline_code]
 
-            # Rule 2 of section 8: the discipline must be one of the project's
-            if not project.project_disciplines.filter(discipline=discipline).exists():
-                raise CommandError(
-                    f"{code}: discipline {discipline_code} is not part of project {project_code}."
-                )
             # Rule 4: a document needs at least one area
             if not area_acronyms:
                 raise CommandError(f"{code}: a document needs at least one area.")

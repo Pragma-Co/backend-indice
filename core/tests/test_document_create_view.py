@@ -45,7 +45,6 @@ class CreateDocumentViewTests(TestCase):
         )
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
-        self.project.disciplines.add(self.discipline)
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
         self.url = reverse("document-list")
 

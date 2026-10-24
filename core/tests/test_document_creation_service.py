@@ -54,8 +54,6 @@ class DocumentCreationServiceTests(TestCase):
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.other_project = Project.objects.create(code="AK-2200", name="Empenagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
-        self.project.disciplines.add(self.discipline)
-        self.other_project.disciplines.add(self.discipline)
         self.unlinked_discipline = Discipline.objects.create(code="HID", name="Hidráulica")
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
 
@@ -145,19 +143,12 @@ class DocumentCreationServiceTests(TestCase):
         self.assertEqual(errors["project_id"]["message"], "Project not found or inactive.")
         self.assertIn("['NOPE', 'OLD']", errors["areas"]["message"])
 
-    def test_should_reject_discipline_outside_the_project(self, mongo):
+    def test_should_accept_any_active_discipline_regardless_of_the_project(self, mongo):
         payload = self._payload(discipline_id=self.unlinked_discipline.id)
 
-        with self.assertRaises(DocumentValidationError) as context:
-            service.validate_payload(payload)
+        cleaned = service.validate_payload(payload)
 
-        self.assertEqual(
-            context.exception.errors["discipline_id"],
-            {
-                "code": "not_in_project",
-                "message": "Discipline is not part of the selected project.",
-            },
-        )
+        self.assertEqual(cleaned["discipline"], self.unlinked_discipline)
 
     def test_should_reject_invalid_confidentiality_areas_and_temp_file_id(self, mongo):
         payload = self._payload(confidentiality="INTERNAL", areas="EST", temp_file_id="abc")

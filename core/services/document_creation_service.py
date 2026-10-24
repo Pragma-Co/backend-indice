@@ -59,7 +59,6 @@ REQUIRED = "required"
 INVALID = "invalid"
 TOO_LONG = "too_long"
 NOT_FOUND = "not_found"
-NOT_IN_PROJECT = "not_in_project"
 INVALID_CHOICE = "invalid_choice"
 
 
@@ -133,10 +132,6 @@ def validate_payload(payload) -> dict:
         discipline = Discipline.objects.filter(pk=discipline_id, active=True).first()
         if discipline is None:
             errors["discipline_id"] = _error(NOT_FOUND, "Discipline not found or inactive.")
-        elif project is not None and not project.disciplines.filter(pk=discipline.pk).exists():
-            errors["discipline_id"] = _error(
-                NOT_IN_PROJECT, "Discipline is not part of the selected project."
-            )
     cleaned["discipline"] = discipline
 
     document_type = None
