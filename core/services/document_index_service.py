@@ -9,7 +9,7 @@ from django.db.models import F, Func, TextField, Value
 from django.db.models.functions import Coalesce
 
 from core.models import Document, DocumentContent, Revision
-from core.models.search import SEARCH_CONFIG, THEMATIC_TAG_MAX_LENGTH
+from core.models.search import ENGLISH_SEARCH_CONFIG, SEARCH_CONFIG, THEMATIC_TAG_MAX_LENGTH
 from core.services import audit_service
 from core.services.document_text_service import (
     AI_TEXT_EXTENSIONS,
@@ -61,6 +61,7 @@ def save_document_content(
     DocumentContent.objects.filter(pk=indexed.pk).update(
         search_vector=SearchVector(thematic_tag_names(), weight="B", config=SEARCH_CONFIG)
         + SearchVector("content", weight="C", config=SEARCH_CONFIG)
+        + SearchVector("content", weight="C", config=ENGLISH_SEARCH_CONFIG)
     )
     return indexed
 

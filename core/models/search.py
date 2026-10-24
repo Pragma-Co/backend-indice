@@ -7,6 +7,7 @@ from core.models.document import Document
 from core.models.revision import Revision
 
 SEARCH_CONFIG = "portuguese_unaccent"
+ENGLISH_SEARCH_CONFIG = "english_unaccent"
 THEMATIC_TAG_MAX_LENGTH = 60
 
 

@@ -228,21 +228,41 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         self.assertEqual(len(result["highlights"]["content"]), 1)
         self.assertIn("<mark>estacas</mark>", result["highlights"]["content"][0])
 
-    def test_should_hide_content_only_matches_from_users_without_access(self):
+    def test_should_find_english_content_with_inflected_terms(self):
+        self._document(
+            "MEM-EN",
+            "Memorial descritivo",
+            content="The centrifugal pumps operate under cyclic pressure loads.",
+        )
+        self.client.force_login(self.owner)
+
+        result = self._search(q="pump").json()["results"][0]
+
+        self.assertEqual(result["code"], "MEM-EN")
+        self.assertTrue(result["content_match"])
+        self.assertIn("<mark>pumps</mark>", result["highlights"]["content"][0])
+
+    def test_should_flag_content_matches_without_exposing_content_to_users_without_access(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
         self.client.force_login(self.reader)
 
         response = self._search(q="estacas")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["count"], 0)
+        result = response.json()["results"][0]
+        self.assertTrue(result["content_match"])
+        self.assertEqual(result["highlights"]["content"], [])
+        self.assertEqual(result["thematic_tags"], [])
+        self.assertNotIn("can_read", result)
 
-    def test_should_hide_content_only_matches_from_anonymous_users(self):
+    def test_should_flag_content_matches_without_exposing_content_to_anonymous_users(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
 
         response = self._search(q="estacas")
 
-        self.assertEqual(response.json()["count"], 0)
+        result = response.json()["results"][0]
+        self.assertTrue(result["content_match"])
+        self.assertEqual(result["highlights"]["content"], [])
 
     def test_should_return_content_matches_to_users_with_approved_access(self):
         document = self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
@@ -259,14 +279,14 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
 
         self.assertEqual(self._codes(response), ["MEM-001"])
 
-    def test_should_not_send_content_snippets_when_only_metadata_matches(self):
+    def test_should_not_send_content_snippets_to_users_without_access(self):
         self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)
         self.client.force_login(self.reader)
 
         response = self._search(q="ponte")
 
         result = response.json()["results"][0]
-        self.assertFalse(result["content_match"])
+        self.assertTrue(result["content_match"])
         self.assertEqual(result["highlights"]["content"], [])
         self.assertEqual(result["highlights"]["title"], "Memorial da <mark>ponte</mark>")
 
@@ -281,20 +301,14 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         self.assertEqual(result["thematic_tags"], ["ponte", "fundação"])
         self.assertEqual(result["matched_tags"], ["fundação"])
 
-    def test_should_not_match_thematic_tags_for_users_without_access(self):
+    def test_should_not_report_matched_thematic_tags_to_users_without_access(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
         self.client.force_login(self.reader)
 
-        response = self._search(q="fundação")
+        result = self._search(q="fundação").json()["results"][0]
 
-        self.assertEqual(response.json()["count"], 0)
-
-    def test_should_not_match_thematic_tags_for_anonymous_users(self):
-        self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
-
-        response = self._search(q="fundação")
-
-        self.assertEqual(response.json()["count"], 0)
+        self.assertEqual(result["matched_tags"], [])
+        self.assertEqual(result["thematic_tags"], [])
 
     def test_should_not_expose_thematic_tags_to_users_without_access(self):
         self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)
