@@ -114,7 +114,6 @@ class UploadDuplicateAuditTests(TestCase):
         )
         self.project = Project.objects.create(code="PRJ-A", name="Projeto Audit")
         self.discipline = Discipline.objects.create(code="DISA", name="Disciplina Audit")
-        self.project.disciplines.add(self.discipline)
         self.document_type = DocumentType.objects.create(code="DTA", name="Tipo Audit")
         self.document = Document.objects.create(
             code="RA-0700",
@@ -194,7 +193,6 @@ class SubmissionAuditTests(TestCase):
         )
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
-        self.project.disciplines.add(self.discipline)
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
 
     def _temp_file(self, temp_file_id=TEMP_FILE_ID, content=PDF_BYTES):
