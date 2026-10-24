@@ -160,7 +160,9 @@ def _document_entry(result: dict, contents: dict[int, str]) -> dict:
         "code": sanitize_text(result.get("code") or ""),
         "title": sanitize_text(result.get("title") or ""),
         "description": sanitize_text(result.get("description") or "")[:MAX_CONTENT_EXCERPT_LENGTH],
-        "content_excerpts": [sanitize_text(excerpt)[:MAX_CONTENT_EXCERPT_LENGTH] for excerpt in excerpts],
+        "content_excerpts": [
+            sanitize_text(excerpt)[:MAX_CONTENT_EXCERPT_LENGTH] for excerpt in excerpts
+        ],
     }
 
 
@@ -217,7 +219,11 @@ def summarize_search_results(filters, user=None) -> dict:
         if result.get("content_match") and result["id"] not in contents
     }
     entries = _fit_budget(
-        [_document_entry(result, contents) for result in results if result["id"] not in restricted_ids],
+        [
+            _document_entry(result, contents)
+            for result in results
+            if result["id"] not in restricted_ids
+        ],
         MAX_TOTAL_INPUT_LENGTH - len(sanitized_description),
     )
     titles = {result["id"]: result for result in results}

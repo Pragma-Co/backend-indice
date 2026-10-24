@@ -68,7 +68,9 @@ def summarize_search_view(request):
         if "snippets" in payload:
             result = summarize_search(payload.get("query"), payload.get("snippets"))
         else:
-            user = request.user if request.user.is_authenticated and request.user.is_active else None
+            user = (
+                request.user if request.user.is_authenticated and request.user.is_active else None
+            )
             result = summarize_search_results(payload.get("filters"), user)
     except InvalidSearchSummaryInput:
         return JsonResponse({"error": "InvalidInput"}, status=400)

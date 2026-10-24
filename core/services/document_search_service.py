@@ -248,9 +248,7 @@ def search_documents(params, user=None):
 
     document_ids = [result["id"] for result in page["results"]]
     content_match_ids = [
-        result["id"]
-        for result in page["results"]
-        if result["content_match"] and result["can_read"]
+        result["id"] for result in page["results"] if result["content_match"] and result["can_read"]
     ]
     highlights = fetch_highlights(document_ids, content_match_ids, search_query, english_query)
     for result in page["results"]:

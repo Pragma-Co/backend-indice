@@ -184,8 +184,13 @@ class SearchSummaryFromFiltersTests(SimpleTestCase):
     def test_should_summarize_the_top_results_and_point_the_most_relevant(self):
         page = {
             "results": [
-                {"id": 1, "code": "A-1", "title": "Memorial", "description": "Cálculo",
-                 "highlights": {"content": ["ensaio de <mark>fadiga</mark>"]}},
+                {
+                    "id": 1,
+                    "code": "A-1",
+                    "title": "Memorial",
+                    "description": "Cálculo",
+                    "highlights": {"content": ["ensaio de <mark>fadiga</mark>"]},
+                },
                 {"id": 2, "code": "A-2", "title": "Desenho", "description": ""},
             ]
         }
@@ -198,9 +203,7 @@ class SearchSummaryFromFiltersTests(SimpleTestCase):
         self.assertEqual(sent["documents"][0]["content_excerpts"], ["ensaio de fadiga"])
         self.assertEqual(result["summary"], "Resumo.")
         self.assertFalse(result["fallback"])
-        self.assertEqual(
-            result["most_relevant"], {"id": 2, "code": "A-2", "title": "Desenho"}
-        )
+        self.assertEqual(result["most_relevant"], {"id": 2, "code": "A-2", "title": "Desenho"})
 
     def test_should_fall_back_to_the_top_ranked_document_when_the_model_fails(self):
         page = {"results": [{"id": 7, "code": "A-7", "title": "Doc", "description": ""}]}
@@ -218,7 +221,11 @@ class SearchSummaryFromFiltersTests(SimpleTestCase):
         answer = json.dumps({"summary": "ok", "most_relevant_id": 99})
 
         result, _, mock_ask = self._run(
-            {"area": ["ENG"]}, page, answer, contents={3: "texto do documento"}, search="get_documents"
+            {"area": ["ENG"]},
+            page,
+            answer,
+            contents={3: "texto do documento"},
+            search="get_documents",
         )
 
         sent = json.loads(mock_ask.call_args.args[1].split("\n", 1)[1])
@@ -229,8 +236,20 @@ class SearchSummaryFromFiltersTests(SimpleTestCase):
     def test_should_only_flag_restricted_documents_without_sending_them_to_the_model(self):
         page = {
             "results": [
-                {"id": 1, "code": "A-1", "title": "Aberto", "description": "d", "content_match": True},
-                {"id": 2, "code": "A-2", "title": "Secreto", "description": "segredo", "content_match": True},
+                {
+                    "id": 1,
+                    "code": "A-1",
+                    "title": "Aberto",
+                    "description": "d",
+                    "content_match": True,
+                },
+                {
+                    "id": 2,
+                    "code": "A-2",
+                    "title": "Secreto",
+                    "description": "segredo",
+                    "content_match": True,
+                },
             ]
         }
         answer = json.dumps({"summary": "ok", "most_relevant_id": 1})
