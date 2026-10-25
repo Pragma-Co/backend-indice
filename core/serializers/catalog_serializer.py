@@ -1,4 +1,4 @@
-from core.models import Discipline, Project
+from core.models import Area, Discipline, Project
 
 
 def serialize_project(project: Project) -> dict:
@@ -6,7 +6,7 @@ def serialize_project(project: Project) -> dict:
         "id": project.id,
         "code": project.code,
         "name": project.name,
-        "discipline_ids": [discipline.id for discipline in project.disciplines.all()],
+        "discipline_ids": project.discipline_ids,
     }
 
 
@@ -20,3 +20,7 @@ def serialize_document_type(document_type) -> dict:
         "code": document_type.code,
         "name": document_type.name,
     }
+
+
+def serialize_area(area: Area) -> dict:
+    return {"id": area.id, "acronym": area.acronym, "name": area.name}

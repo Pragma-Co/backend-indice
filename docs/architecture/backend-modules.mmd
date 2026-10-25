@@ -1,0 +1,36 @@
+flowchart TB
+    subgraph Routes["api6/urls.py"]
+        R1["/dev/login · /auth/logout · /users/me/*"]
+        R2["/documents/* · /files/*"]
+        R3["/manager/*"]
+        R4["/legal-documents/* · /projects/ · /areas/ · /disciplines/"]
+    end
+    subgraph ViewsLayer["core/views"]
+        V1["user_view · dev_login_view · auth_view"]
+        V2["documents_view · upload_view · file_view · document_ai_view"]
+        V3["revision_review_view · access_request_view · manager_activity_view"]
+        V4["legal_consent_view · catalog_view"]
+    end
+    subgraph ServicesLayer["core/services"]
+        S1["user_anonymization · excluded_identifier · legal_consent"]
+        S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
+        S3["documents (listing) · document_search · document_index · document_archive"]
+        S4["revision_review · access_request · manager_activity · audit"]
+    end
+    subgraph ModelsLayer["core/models · core/mongo"]
+        M1["PostgreSQL: organization · catalog ·<br/>document · revision · access"]
+        M2["PostgreSQL: legal · audit · search ·<br/>excluded_identifier<br/>MongoDB: temp_uploads · document_vectors"]
+        ML["classifier/ + classifier_artifacts/<br/>TF-IDF vectorizer · PyTorch model"]
+    end
+    R1 --> V1 --> S1
+    R2 --> V2 --> S2
+    R3 --> V3 --> S4
+    R4 --> V4 --> S1
+    V2 --> S3
+    S1 --> M2
+    S2 --> M1
+    S2 --> ML
+    S3 --> M1
+    S3 --> M2
+    S4 --> M1
+    S4 --> M2

@@ -32,6 +32,10 @@ from core.models import (
     DocumentAccess,
     DocumentType,
     File,
+    LegalClause,
+    LegalDocument,
+    LegalDocumentStatus,
+    LegalDocumentVersion,
     Project,
     Revision,
     RevisionStatus,
@@ -78,12 +82,13 @@ class Command(BaseCommand):
         self._assign_managers(areas, users)
         disciplines = self._seed_disciplines()
         document_types = self._seed_document_types()
-        projects = self._seed_projects(disciplines)
+        projects = self._seed_projects()
         tags = self._seed_tags()
         documents = self._seed_documents(projects, disciplines, document_types, users, areas, tags)
         revisions = self._seed_revisions(documents, users)
         self._seed_files(documents, revisions)
         accesses = self._seed_document_access(documents, users)
+        self._seed_legal_documents(users)
         self._seed_audit_log(users, documents, revisions, accesses)
 
         self._report(generated_password, password)
@@ -166,15 +171,13 @@ class Command(BaseCommand):
             document_types[code] = document_type
         return document_types
 
-    def _seed_projects(self, disciplines):
+    def _seed_projects(self):
         projects = {}
-        for code, name, active, discipline_codes in data.PROJECTS:
+        for code, name, active in data.PROJECTS:
             project, created = Project.objects.get_or_create(
                 code=code, defaults={"name": name, "active": active}
             )
             self._count("project", created)
-            # set() is idempotent and writes straight to project_discipline
-            project.disciplines.set([disciplines[c] for c in discipline_codes])
             projects[code] = project
         return projects
 
@@ -209,11 +212,6 @@ class Command(BaseCommand):
             project = projects[project_code]
             discipline = disciplines[discipline_code]
 
-            # Rule 2 of section 8: the discipline must be one of the project's
-            if not project.project_disciplines.filter(discipline=discipline).exists():
-                raise CommandError(
-                    f"{code}: discipline {discipline_code} is not part of project {project_code}."
-                )
             # Rule 4: a document needs at least one area
             if not area_acronyms:
                 raise CommandError(f"{code}: a document needs at least one area.")
@@ -354,6 +352,49 @@ class Command(BaseCommand):
             self._count("document_access", created)
             accesses.append(access)
         return accesses
+
+    # -- legal documents ------------------------------------------------------
+
+    def _seed_legal_documents(self, users):
+        """Publish the data-processing term. Published versions are never rewritten."""
+        document, created = LegalDocument.objects.get_or_create(
+            slug=data.LEGAL_DOCUMENT_SLUG, defaults={"title": data.LEGAL_DOCUMENT_TITLE}
+        )
+        self._count("legal_document", created)
+
+        content = "\n".join(
+            [data.LEGAL_VERSION_SUMMARY]
+            + [
+                f"{code}|{title}|{required}|{body}"
+                for code, title, required, body in data.LEGAL_CLAUSES
+            ]
+        )
+        version, created = LegalDocumentVersion.objects.get_or_create(
+            document=document,
+            version=data.LEGAL_VERSION,
+            defaults={
+                "status": LegalDocumentStatus.PUBLISHED,
+                "summary": data.LEGAL_VERSION_SUMMARY,
+                "change_notes": data.LEGAL_VERSION_NOTES,
+                "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+                "created_by": users[data.LEGAL_VERSION_AUTHOR],
+                "published_at": self.now,
+            },
+        )
+        self._count("legal_version", created)
+
+        for position, (code, title, required, body) in enumerate(data.LEGAL_CLAUSES, start=1):
+            _, created = LegalClause.objects.get_or_create(
+                version=version,
+                code=code,
+                defaults={
+                    "position": position,
+                    "title": title,
+                    "body": body,
+                    "is_required": required,
+                },
+            )
+            self._count("legal_clause", created)
 
     # -- audit trail ----------------------------------------------------------
 

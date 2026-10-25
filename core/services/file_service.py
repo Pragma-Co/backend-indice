@@ -2,20 +2,25 @@ from pathlib import Path
 
 from django.conf import settings
 
-from core.models import Document
+from core.models import Document, RevisionStatus
 from core.models.revision import File
 from core.services.documents_exceptions import AccessDeniedError, DocumentFileNotFoundError
 from core.services.documents_service import can_view_document, resolve_user
+from core.services.revision_review_service import is_revision_reviewer
 
 
 def _get_document_for_file(file_obj):
     return (
-        Document.objects.filter(document_type__active=True)
+        Document.objects.filter(document_type__active=True, archived_at__isnull=True)
         .select_related("responsible")
         .prefetch_related("revisions")
         .filter(pk=file_obj.revision.document_id)
         .first()
     )
+
+
+def _can_review_file(file_obj, user):
+    return file_obj.revision.status == RevisionStatus.PENDING and is_revision_reviewer(user)
 
 
 def get_document_file_for_view(file_id, user_id=None):
@@ -28,7 +33,7 @@ def get_document_file_for_view(file_id, user_id=None):
         raise DocumentFileNotFoundError()
 
     user = resolve_user(user_id)
-    if not can_view_document(document, user):
+    if not (can_view_document(document, user) or _can_review_file(file_obj, user)):
         raise AccessDeniedError(document, user)
 
     path = Path(settings.DOCUMENT_STORAGE_DIR) / file_obj.storage_path

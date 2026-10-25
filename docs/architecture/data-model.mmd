@@ -1,0 +1,53 @@
+erDiagram
+    AREA ||--o{ APP_USER : "has members"
+    AREA ||--o{ DOCUMENT_AREA : "classifies"
+    APP_USER ||--o{ DOCUMENT : "responsible / created_by"
+    PROJECT ||--o{ DOCUMENT : "belongs to"
+    DISCIPLINE ||--o{ DOCUMENT : "belongs to"
+    DOCUMENT_TYPE ||--o{ DOCUMENT : "typed as"
+    DOCUMENT ||--o{ DOCUMENT_AREA : "areas"
+    DOCUMENT ||--o{ DOCUMENT_TAG : "tags"
+    TAG ||--o{ DOCUMENT_TAG : ""
+    DOCUMENT ||--o{ REVISION : "versions"
+    REVISION ||--o{ FILE : "files"
+    APP_USER ||--o{ REVISION : "author / auditor"
+    DOCUMENT ||--o{ DOCUMENT_ACCESS : "access requests"
+    APP_USER ||--o{ DOCUMENT_ACCESS : "requester / approver"
+    DOCUMENT ||--o| DOCUMENT_CONTENT : "search index"
+    REVISION ||--o| DOCUMENT_CONTENT : "indexed revision"
+    APP_USER ||--o{ AUDIT_LOG : "actor"
+    LEGAL_DOCUMENT ||--o{ LEGAL_DOCUMENT_VERSION : "versions"
+    LEGAL_DOCUMENT_VERSION ||--o{ LEGAL_CLAUSE : "clauses"
+    APP_USER ||--o{ USER_LEGAL_ACCEPTANCE : "accepts"
+    LEGAL_DOCUMENT_VERSION ||--o{ USER_LEGAL_ACCEPTANCE : ""
+    USER_LEGAL_ACCEPTANCE ||--o{ USER_CLAUSE_CONSENT : "per clause"
+
+    DOCUMENT {
+        string code
+        string title
+        string confidentiality_level
+        datetime archived_at
+    }
+    REVISION {
+        int version
+        string status "PENDING / APPROVED / REJECTED / OBSOLETE"
+        string change_description
+    }
+    FILE {
+        string original_name
+        string sha256
+        string storage_path
+    }
+    DOCUMENT_CONTENT {
+        text content
+        string[] thematic_tags
+        tsvector search_vector
+    }
+    AUDIT_LOG {
+        string action
+        string entity
+        json record
+    }
+    EXCLUDED_IDENTIFIER {
+        string identifier_hash
+    }

@@ -37,7 +37,10 @@ from core.services.document_exceptions import (
     DuplicateRevisionUploadError,
     TempFileNotFoundError,
 )
+from core.services.document_index_service import index_document_safely
 from core.services.documents_exceptions import DocumentNotFoundError
+from core.services.temp_upload_service import store_uploaded_file
+from core.services.upload_exceptions import MissingFileError
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,6 @@ REQUIRED = "required"
 INVALID = "invalid"
 TOO_LONG = "too_long"
 NOT_FOUND = "not_found"
-NOT_IN_PROJECT = "not_in_project"
 INVALID_CHOICE = "invalid_choice"
 
 
@@ -130,10 +132,6 @@ def validate_payload(payload) -> dict:
         discipline = Discipline.objects.filter(pk=discipline_id, active=True).first()
         if discipline is None:
             errors["discipline_id"] = _error(NOT_FOUND, "Discipline not found or inactive.")
-        elif project is not None and not project.disciplines.filter(pk=discipline.pk).exists():
-            errors["discipline_id"] = _error(
-                NOT_IN_PROJECT, "Discipline is not part of the selected project."
-            )
     cleaned["discipline"] = discipline
 
     document_type = None
@@ -322,7 +320,10 @@ def create_document(payload) -> Document:
         temp_files.append(temp_file)
 
         existing_file = (
-            File.objects.filter(sha256=temp_file["sha256"])
+            File.objects.filter(
+                sha256=temp_file["sha256"],
+                revision__document__project=cleaned["project"],
+            )
             .select_related("revision__document")
             .order_by("-uploaded_at")
             .first()
@@ -359,17 +360,71 @@ def create_document(payload) -> Document:
 
     for temp_file_id in cleaned["temp_file_ids"]:
         _discard_temp_record(temp_file_id)
+    index_document_safely(document, actor=document.created_by)
     return document
 
 
-def create_document_revision(document_id, temp_file_ids) -> Revision:
+CHANGE_DESCRIPTION_MIN_LENGTH = 20
+CHANGE_DESCRIPTION_MAX_LENGTH = Revision._meta.get_field("change_description").max_length
+
+
+def validate_change_description(value) -> str:
+    text = _clean_text(value)
+    if not text:
+        raise DocumentValidationError(
+            {"change_description": _error(REQUIRED, "Change description is required.")}
+        )
+    if len(text) < CHANGE_DESCRIPTION_MIN_LENGTH:
+        raise DocumentValidationError(
+            {
+                "change_description": _error(
+                    "too_short",
+                    f"Change description must have at least "
+                    f"{CHANGE_DESCRIPTION_MIN_LENGTH} characters.",
+                )
+            }
+        )
+    if len(text) > CHANGE_DESCRIPTION_MAX_LENGTH:
+        raise DocumentValidationError(
+            {
+                "change_description": _error(
+                    TOO_LONG,
+                    f"Change description must have at most "
+                    f"{CHANGE_DESCRIPTION_MAX_LENGTH} characters.",
+                )
+            }
+        )
+    return text
+
+
+def _revisable_document(document_id) -> Document:
     document = (
         Document.objects.select_related("responsible")
-        .filter(pk=document_id, document_type__active=True)
+        .filter(pk=document_id, document_type__active=True, archived_at__isnull=True)
         .first()
     )
     if document is None:
         raise DocumentNotFoundError()
+    return document
+
+
+def submit_document_revision(document_id, uploaded_files, change_description):
+    _revisable_document(document_id)
+    change_description = validate_change_description(change_description)
+    if not uploaded_files:
+        raise MissingFileError()
+
+    temp_file_ids = [
+        store_uploaded_file(uploaded_file)["temp_file_id"] for uploaded_file in uploaded_files
+    ]
+    revision = create_document_revision(document_id, temp_file_ids, change_description)
+    return revision, temp_file_ids
+
+
+def create_document_revision(document_id, temp_file_ids, change_description=None) -> Revision:
+    document = _revisable_document(document_id)
+
+    change_description = validate_change_description(change_description)
 
     if isinstance(temp_file_ids, str):
         temp_file_ids = [temp_file_ids]
@@ -408,6 +463,7 @@ def create_document_revision(document_id, temp_file_ids) -> Revision:
             version=last_version + 1,
             status=RevisionStatus.PENDING,
             issue_date=timezone.localdate(),
+            change_description=change_description,
             author=document.responsible,
         )
         for file_index, temp_file in enumerate(temp_files):
@@ -427,4 +483,5 @@ def create_document_revision(document_id, temp_file_ids) -> Revision:
 
     for temp_file_id in temp_file_ids:
         _discard_temp_record(temp_file_id)
+    index_document_safely(document, actor=revision.author)
     return revision

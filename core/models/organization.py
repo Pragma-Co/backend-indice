@@ -41,6 +41,10 @@ class UserManager(BaseUserManager):
             raise ValueError("A user requires an email address.")
         if not extra_fields.get("area") and not extra_fields.get("area_id"):
             raise ValueError("A user requires an area.")
+
+        from core.services.excluded_identifier_service import ensure_identifier_is_available
+
+        ensure_identifier_is_available(email)
         user = self.model(email=self.normalize_email(email), **extra_fields)
         # set_password hashes with the configured Django hasher; the plain
         # password never reaches the database (LGPD)
@@ -75,8 +79,9 @@ class User(AbstractBaseUser):
     # RESTRICT: an area with members cannot be deleted
     area = models.ForeignKey(Area, on_delete=models.PROTECT, related_name="members")
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
-    # Users are deactivated, never deleted, so authorship and audit stay intact
+    # Dismissed users are deactivated and anonymized; users who ask for deletion are removed
     is_active = models.BooleanField(default=True, db_column="active")
+    deletion_requested_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(db_default=Now(), editable=False)
 
     objects = UserManager()

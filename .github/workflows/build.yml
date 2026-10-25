@@ -32,7 +32,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Verificar sintaxe de todos os modulos
-        run: docker run --rm backend-indice:ci python -m compileall -q api6 core manage.py scripts
+        run: docker run --rm backend-indice:ci python -m compileall -q api6 core classifier manage.py scripts
 
       - name: Rodar o django check
         run: docker run --rm backend-indice:ci python manage.py check

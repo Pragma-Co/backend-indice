@@ -26,7 +26,6 @@ from core.services.file_validation_service import (
 )
 from core.services.temp_upload_service import get_temp_upload_record, store_uploaded_file
 from core.services.upload_exceptions import (
-    DuplicateFileError,
     FileTooLargeError,
     InvalidFileTypeError,
     MissingFileError,
@@ -151,7 +150,8 @@ class StoreUploadedFileTests(TestCase):
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     @mock.patch(
-        "core.services.temp_upload_service.extract_text_for_ai", return_value="texto extraido"
+        "core.services.temp_upload_service.ingest_text",
+        return_value={"text": "texto extraido", "extraction": "SUCCESS", "detail": None},
     )
     def test_given_valid_pdf_when_stored_then_extracts_text_for_ai_upfront(
         self, mock_extract, mock_mongo
@@ -290,18 +290,15 @@ class StoreUploadedFileDeduplicationTests(TestCase):
         )
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_given_file_with_existing_hash_when_stored_then_raises_duplicate_file_error(
+    def test_given_file_with_existing_hash_when_stored_then_creates_a_temporary_upload(
         self, mock_mongo
     ):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", PDF_HEADER)
-            with self.assertRaises(DuplicateFileError) as ctx:
-                store_uploaded_file(uploaded)
+            result = store_uploaded_file(uploaded)
 
-        self.assertEqual(ctx.exception.codigo_ra, "RA-0001")
-        self.assertEqual(ctx.exception.titulo, "Documento Original")
-        self.assertEqual(ctx.exception.status, "APPROVED")
-        mock_mongo.assert_not_called()
+        self.assertEqual(result["sha256"], self.existing_sha256)
+        mock_mongo.return_value.__getitem__.return_value.insert_one.assert_called_once()
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_given_file_with_new_hash_when_stored_then_no_error_is_raised(self, mock_mongo):
@@ -353,20 +350,18 @@ class UploadDocumentViewDeduplicationTests(TestCase):
             storage_path="/fake/path/original.pdf",
         )
 
-    def test_given_duplicate_file_when_posted_then_returns_409_with_document_payload(self):
+    def test_given_duplicate_file_when_posted_then_returns_a_temporary_upload(self):
         uploaded = SimpleUploadedFile("copia.pdf", PDF_HEADER)
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             response = self.client.post("/documents/upload", {"file": uploaded})
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 201)
         body = response.json()
-        self.assertTrue(body["duplicate"])
-        self.assertEqual(body["document"]["codigo_ra"], "RA-0099")
-        self.assertEqual(body["document"]["titulo"], "Documento Duplicado")
-        self.assertEqual(body["document"]["status"], "PENDING")
+        self.assertEqual(body["sha256"], hashlib.sha256(PDF_HEADER).hexdigest())
+        self.assertIn("temp_file_id", body)
 
 
-class DuplicateUploadAlwaysBlockedTests(TestCase):
+class DuplicateUploadTemporaryFileTests(TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
@@ -409,17 +404,17 @@ class DuplicateUploadAlwaysBlockedTests(TestCase):
         )
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_given_force_new_revision_when_stored_then_still_raises_duplicate(self, mock_mongo):
+    def test_given_force_new_revision_when_stored_then_creates_a_temporary_upload(self, mock_mongo):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", self.content)
-            with self.assertRaises(DuplicateFileError):
-                store_uploaded_file(uploaded, force_new_revision=True)
+            result = store_uploaded_file(uploaded, force_new_revision=True)
 
+        self.assertEqual(result["sha256"], hashlib.sha256(self.content).hexdigest())
         self.assertEqual(Revision.objects.filter(document=self.document).count(), 1)
         self.assertEqual(File.objects.filter(revision__document=self.document).count(), 1)
-        mock_mongo.assert_not_called()
+        mock_mongo.return_value.__getitem__.return_value.insert_one.assert_called_once()
 
-    def test_given_force_new_revision_via_view_when_posted_then_returns_409(self):
+    def test_given_force_new_revision_via_view_when_posted_then_returns_a_temporary_upload(self):
         with override_settings(TEMP_UPLOAD_DIR=self.temp_dir, MAX_UPLOAD_SIZE_BYTES=1024 * 1024):
             uploaded = SimpleUploadedFile("copia.pdf", self.content)
             response = self.client.post(
@@ -427,7 +422,7 @@ class DuplicateUploadAlwaysBlockedTests(TestCase):
                 {"file": uploaded, "force_new_revision": "true"},
             )
 
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.status_code, 201)
         body = response.json()
-        self.assertTrue(body["duplicate"])
+        self.assertIn("temp_file_id", body)
         self.assertEqual(Revision.objects.filter(document=self.document).count(), 1)

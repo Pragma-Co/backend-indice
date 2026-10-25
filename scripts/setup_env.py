@@ -54,12 +54,15 @@ Password: {DJANGO_SUPERUSER_PASSWORD}
 
 --- Django ---
 SECRET_KEY: {DJANGO_SECRET_KEY}
+Excluded-identifier HMAC key: {EXCLUDED_IDENTIFIER_HMAC_KEY}
 """
 
 
 def generate_value(key: str) -> str:
     # 64 hex chars for the signing key, 32 for passwords (128+ bits either way)
-    return secrets.token_hex(32 if "SECRET_KEY" in key else 16)
+    return secrets.token_hex(
+        32 if key in ("DJANGO_SECRET_KEY", "EXCLUDED_IDENTIFIER_HMAC_KEY") else 16
+    )
 
 
 def main() -> int:

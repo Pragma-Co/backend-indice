@@ -1,0 +1,17 @@
+sequenceDiagram
+    autonumber
+    participant B as Browser (Vue SPA)
+    participant P as Vite proxy
+    participant A as Django API
+    participant DB as PostgreSQL
+
+    B->>P: POST /api/dev/login {user_id}
+    P->>A: POST /dev/login
+    A->>DB: load active user
+    A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + csrftoken
+    B->>B: store profile in Pinia, apply route guards
+    B->>P: PUT /api/users/me (X-CSRFToken from the cookie)
+    P->>A: PUT /users/me · Origin localhost:5173
+    A->>A: CSRF check (cookie + header + trusted origin), session user
+    A->>DB: update user + audit_log (required, same transaction)
+    A-->>B: 200 user · or 503 AuditUnavailable when the audit entry fails

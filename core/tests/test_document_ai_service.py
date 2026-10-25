@@ -4,18 +4,16 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import httpx
 from django.test import Client, TestCase, override_settings
-from groq import APIConnectionError, APITimeoutError, RateLimitError
 
-from core.models import Area, Discipline, DocumentType, Project
+from classifier.persistence import ArtifactsError
+from classifier.prediction import Prediction
+from core.models import Area, Discipline, DocumentType
 from core.services.document_ai_exceptions import UnsupportedFileTypeError
 from core.services.document_ai_service import suggest_document_metadata
 from core.services.document_exceptions import TempFileNotFoundError
 
 TEMP_FILE_ID = "11111111-2222-4333-8444-555555555555"
-
-GROQ_REQUEST = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
 
 NULL_SUGGESTION = {
     "title": None,
@@ -27,25 +25,12 @@ NULL_SUGGESTION = {
 }
 
 
-def _fake_groq_response(content: str):
-    response = mock.Mock()
-    response.choices = [mock.Mock(message=mock.Mock(content=content))]
-    return response
-
-
-def _happy_path_answer():
-    return _fake_groq_response(
-        json.dumps(
-            {
-                "title": "Relatório de fadiga estrutural",
-                "description": "Descrição breve do documento.",
-                "project": "Fuselagem",
-                "discipline": "Estruturas",
-                "document_type": "Desenho Técnico",
-                "area": "Engenharia Estrutural",
-            }
-        )
-    )
+def predictions(discipline="MECHANICAL", document_type="SPECIFICATION", area="DESIGN"):
+    return {
+        "discipline": Prediction(discipline, 0.9),
+        "document_type": Prediction(document_type, 0.8),
+        "area": Prediction(area, 0.7),
+    }
 
 
 @mock.patch("core.services.document_ai_service.get_mongo_db")
@@ -53,7 +38,7 @@ def _happy_path_answer():
     "core.services.document_ai_service.get_temp_upload_record",
     return_value={"extracted_text": "texto processado"},
 )
-@mock.patch("core.services.document_ai_service.get_groq_client")
+@mock.patch("core.services.document_ai_service.get_classifier")
 class SuggestDocumentMetadataTests(TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
@@ -61,73 +46,144 @@ class SuggestDocumentMetadataTests(TestCase):
         self.settings_override = override_settings(TEMP_UPLOAD_DIR=self.temp_dir)
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
+        self.ollama = mock.patch(
+            "core.services.document_ai_service.ask_ollama", side_effect=OSError("offline")
+        ).start()
+        self.addCleanup(mock.patch.stopall)
 
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
-        self.other_discipline = Discipline.objects.create(code="HID", name="Hidráulica")
-        self.document_type = DocumentType.objects.create(code="DWG", name="Desenho Técnico")
+        self.document_type = DocumentType.objects.create(code="ESP", name="Especificação Técnica")
         self.area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
-        self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
-        self.project.disciplines.add(self.discipline)
 
     def _temp_file(self, extension="pdf"):
         path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.{extension}"
         path.write_bytes(b"conteudo")
         return path
 
-    def test_given_valid_pdf_when_suggested_then_returns_matched_fields(
-        self, mock_client, mock_record, mock_mongo
+    def test_given_valid_pdf_when_suggested_then_maps_labels_to_catalog_items(
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _happy_path_answer()
+        mock_classifier.return_value.predict.return_value = predictions()
 
         result = suggest_document_metadata(TEMP_FILE_ID)
 
-        self.assertEqual(result["title"], "Relatório de fadiga estrutural")
-        self.assertEqual(result["description"], "Descrição breve do documento.")
-        self.assertEqual(result["project"], {"id": self.project.id, "name": "Fuselagem"})
         self.assertEqual(result["discipline"], {"id": self.discipline.id, "name": "Estruturas"})
         self.assertEqual(
-            result["document_type"], {"id": self.document_type.id, "name": "Desenho Técnico"}
+            result["document_type"], {"id": self.document_type.id, "name": "Especificação Técnica"}
         )
         self.assertEqual(result["area"], {"id": self.area.id, "name": "Engenharia Estrutural"})
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertIsNone(result["project"])
 
-    def test_given_valid_pdf_when_suggested_then_asks_groq_only_once(
-        self, mock_client, mock_record, mock_mongo
+    def test_given_ollama_answer_when_suggested_then_fills_title_and_description(
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _happy_path_answer()
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps(
+            {"title": "Memorial de Cálculo", "subtitle": "Dimensiona a longarina."}
+        )
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "Memorial de Cálculo")
+        self.assertEqual(result["description"], "Dimensiona a longarina.")
+        self.assertEqual(result["discipline"], {"id": self.discipline.id, "name": "Estruturas"})
+
+    def test_given_ollama_answer_over_limits_when_suggested_then_truncates_fields(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps({"title": "T" * 400, "subtitle": "S" * 900})
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(len(result["title"]), 255)
+        self.assertEqual(len(result["description"]), 500)
+
+    def test_given_ollama_invalid_json_when_suggested_then_keeps_classification_and_null_text(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = "not json"
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertEqual(result["discipline"], {"id": self.discipline.id, "name": "Estruturas"})
+
+    def test_given_ollama_failure_when_suggested_then_keeps_classification_and_null_text(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertIsNone(result["title"])
+        self.assertIsNone(result["description"])
+        self.assertEqual(result["area"], {"id": self.area.id, "name": "Engenharia Estrutural"})
+
+    def test_given_email_in_text_when_suggested_then_redacts_it_before_calling_ollama(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {"extracted_text": "contato ana@example.com sobre a asa"}
+        mock_classifier.return_value.predict.return_value = predictions()
 
         suggest_document_metadata(TEMP_FILE_ID)
 
-        self.assertEqual(mock_client.return_value.chat.completions.create.call_count, 1)
+        sent_message = self.ollama.call_args.args[1]
+        self.assertNotIn("ana@example.com", sent_message)
+        self.assertIn("[REDACTED]", sent_message)
 
-    def test_given_discipline_outside_matched_project_when_suggested_then_returns_null_id(
-        self, mock_client, mock_record, mock_mongo
+    def test_given_no_extracted_text_when_suggested_then_does_not_call_ollama(
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _fake_groq_response(
-            json.dumps(
-                {
-                    "title": "T",
-                    "description": "D",
-                    "project": "Fuselagem",
-                    "discipline": "Hidráulica",
-                    "document_type": "Desenho Técnico",
-                    "area": "Engenharia Estrutural",
-                }
-            )
+        mock_record.return_value = {"extracted_text": "   "}
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        self.ollama.assert_not_called()
+
+    def test_given_valid_pdf_when_suggested_then_classifies_the_extracted_text_once(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        mock_classifier.return_value.predict.assert_called_once_with("texto processado")
+
+    def test_given_label_without_catalog_item_when_suggested_then_returns_label_with_null_id(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions(
+            discipline="ELECTRICAL", document_type="HANDBOOK", area="OTHER_STAGE"
         )
 
         result = suggest_document_metadata(TEMP_FILE_ID)
 
-        self.assertIsNone(result["discipline"]["id"])
-        self.assertEqual(result["discipline"]["name"], "Hidráulica")
+        self.assertEqual(result["discipline"], {"id": None, "name": "ELECTRICAL"})
+        self.assertEqual(result["document_type"], {"id": None, "name": "HANDBOOK"})
+        self.assertEqual(result["area"], {"id": None, "name": "OTHER_STAGE"})
 
     def test_given_valid_pdf_when_suggested_then_saves_suggestion_to_temp_upload_record(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _happy_path_answer()
+        mock_classifier.return_value.predict.return_value = predictions()
 
         result = suggest_document_metadata(TEMP_FILE_ID)
 
@@ -135,119 +191,38 @@ class SuggestDocumentMetadataTests(TestCase):
             {"temp_file_id": TEMP_FILE_ID}, {"$set": {"ai_suggestion": result}}
         )
 
-    def test_given_unrecognized_suggestion_when_matched_then_returns_null_id(
-        self, mock_client, mock_record, mock_mongo
-    ):
-        self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _fake_groq_response(
-            json.dumps(
-                {
-                    "title": "T",
-                    "description": "D",
-                    "project": "Projeto Desconhecido",
-                    "discipline": "Disciplina Desconhecida",
-                    "document_type": "Tipo Desconhecido",
-                    "area": "Área Desconhecida",
-                }
-            )
-        )
-
-        result = suggest_document_metadata(TEMP_FILE_ID)
-
-        self.assertIsNone(result["project"]["id"])
-        self.assertIsNone(result["discipline"]["id"])
-        self.assertIsNone(result["document_type"]["id"])
-        self.assertIsNone(result["area"]["id"])
-
-    def test_given_answer_wrapped_in_extra_text_when_parsed_then_extracts_json_block(
-        self, mock_client, mock_record, mock_mongo
-    ):
-        self._temp_file()
-        payload = {
-            "title": "T",
-            "description": "D",
-            "project": "Fuselagem",
-            "discipline": "Estruturas",
-            "document_type": "Desenho Técnico",
-            "area": "Engenharia Estrutural",
-        }
-        mock_client.return_value.chat.completions.create.return_value = _fake_groq_response(
-            f"Aqui está o resultado:\n{json.dumps(payload)}\nFim."
-        )
-
-        result = suggest_document_metadata(TEMP_FILE_ID)
-
-        self.assertEqual(result["title"], "T")
-
-    def test_given_answer_is_not_valid_json_when_suggested_then_returns_null_fields(
-        self, mock_client, mock_record, mock_mongo
-    ):
-        self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _fake_groq_response(
-            "isto não é um JSON válido"
-        )
-
-        with self.assertLogs("core.services.document_ai_service", level="ERROR"):
-            result = suggest_document_metadata(TEMP_FILE_ID)
-
-        self.assertEqual(result, NULL_SUGGESTION)
-
-    def test_given_answer_with_missing_or_blank_fields_when_suggested_then_those_fields_are_null(
-        self, mock_client, mock_record, mock_mongo
-    ):
-        self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _fake_groq_response(
-            json.dumps({"title": "  ", "project": "Fuselagem", "area": ""})
-        )
-
-        result = suggest_document_metadata(TEMP_FILE_ID)
-
-        self.assertEqual(
-            result,
-            {
-                **NULL_SUGGESTION,
-                "project": {"id": self.project.id, "name": "Fuselagem"},
-            },
-        )
-
     def test_given_missing_temp_file_when_suggested_then_raises_temp_file_not_found_error(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         with self.assertRaises(TempFileNotFoundError):
             suggest_document_metadata(TEMP_FILE_ID)
-        mock_client.assert_not_called()
+        mock_classifier.assert_not_called()
         mock_mongo.assert_not_called()
 
     def test_given_unsupported_extension_when_suggested_then_raises_unsupported_file_type_error(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file(extension="png")
 
         with self.assertRaises(UnsupportedFileTypeError):
             suggest_document_metadata(TEMP_FILE_ID)
-        mock_client.assert_not_called()
+        mock_classifier.assert_not_called()
         mock_mongo.assert_not_called()
 
-    def test_given_groq_failure_when_suggested_then_saves_and_returns_null_fields(
-        self, mock_client, mock_record, mock_mongo
+    def test_given_classifier_failure_when_suggested_then_saves_and_returns_null_fields(
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        rate_limit_response = httpx.Response(status_code=429, request=GROQ_REQUEST)
         failures = {
-            "generic": (Exception("boom"), "ERROR"),
-            "timeout": (APITimeoutError(request=GROQ_REQUEST), "WARNING"),
-            "rate_limit": (
-                RateLimitError("rate limited", response=rate_limit_response, body=None),
-                "WARNING",
-            ),
-            "connection": (APIConnectionError(request=GROQ_REQUEST), "WARNING"),
+            "artifacts": ArtifactsError("model.pt not found"),
+            "generic": RuntimeError("boom"),
         }
-        for failure_name, (error, log_level) in failures.items():
+        for failure_name, error in failures.items():
             with self.subTest(failure=failure_name):
-                mock_client.return_value.chat.completions.create.side_effect = error
+                mock_classifier.return_value.predict.side_effect = error
                 mock_mongo.reset_mock()
 
-                with self.assertLogs("core.services.document_ai_service", level=log_level):
+                with self.assertLogs("core.services.document_ai_service", level="ERROR"):
                     result = suggest_document_metadata(TEMP_FILE_ID)
 
                 self.assertEqual(result, NULL_SUGGESTION)
@@ -255,8 +230,8 @@ class SuggestDocumentMetadataTests(TestCase):
                     {"temp_file_id": TEMP_FILE_ID}, {"$set": {"ai_suggestion": result}}
                 )
 
-    def test_given_no_extracted_text_when_suggested_then_skips_ai_and_saves_null_fields(
-        self, mock_client, mock_record, mock_mongo
+    def test_given_no_extracted_text_when_suggested_then_skips_classifier_and_saves_null_fields(
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
         for extracted_text in (None, "", "   \n\t"):
@@ -267,21 +242,21 @@ class SuggestDocumentMetadataTests(TestCase):
                 result = suggest_document_metadata(TEMP_FILE_ID)
 
                 self.assertEqual(result, NULL_SUGGESTION)
-                mock_client.return_value.chat.completions.create.assert_not_called()
+                mock_classifier.return_value.predict.assert_not_called()
                 mock_mongo.return_value.__getitem__.return_value.update_one.assert_called_once_with(
                     {"temp_file_id": TEMP_FILE_ID}, {"$set": {"ai_suggestion": result}}
                 )
 
     def test_given_mongo_write_fails_when_suggested_then_response_is_not_blocked(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _happy_path_answer()
+        mock_classifier.return_value.predict.return_value = predictions()
         mock_mongo.return_value.__getitem__.return_value.update_one.side_effect = Exception("boom")
 
-        result = suggest_document_metadata(TEMP_FILE_ID)  # should not raise
+        result = suggest_document_metadata(TEMP_FILE_ID)
 
-        self.assertEqual(result["description"], "Descrição breve do documento.")
+        self.assertEqual(result["discipline"]["name"], "Estruturas")
 
 
 @mock.patch("core.services.document_ai_service.get_mongo_db")
@@ -289,7 +264,7 @@ class SuggestDocumentMetadataTests(TestCase):
     "core.services.document_ai_service.get_temp_upload_record",
     return_value={"extracted_text": "texto processado"},
 )
-@mock.patch("core.services.document_ai_service.get_groq_client")
+@mock.patch("core.services.document_ai_service.get_classifier")
 class SuggestDocumentMetadataViewTests(TestCase):
     def setUp(self):
         self.client = Client()
@@ -298,12 +273,14 @@ class SuggestDocumentMetadataViewTests(TestCase):
         self.settings_override = override_settings(TEMP_UPLOAD_DIR=self.temp_dir)
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
+        self.ollama = mock.patch(
+            "core.services.document_ai_service.ask_ollama", side_effect=OSError("offline")
+        ).start()
+        self.addCleanup(mock.patch.stopall)
 
-        discipline = Discipline.objects.create(code="EST", name="Estruturas")
-        DocumentType.objects.create(code="DWG", name="Desenho Técnico")
+        Discipline.objects.create(code="EST", name="Estruturas")
+        DocumentType.objects.create(code="ESP", name="Especificação Técnica")
         Area.objects.create(acronym="EST", name="Engenharia Estrutural")
-        project = Project.objects.create(code="AK-2100", name="Fuselagem")
-        project.disciplines.add(discipline)
 
     def _temp_file(self, extension="pdf"):
         path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.{extension}"
@@ -311,31 +288,30 @@ class SuggestDocumentMetadataViewTests(TestCase):
         return path
 
     def test_given_valid_pdf_when_posted_then_returns_200_with_expected_shape(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.return_value = _happy_path_answer()
+        mock_classifier.return_value.predict.return_value = predictions()
 
         response = self.client.post(f"/documents/{TEMP_FILE_ID}/suggestions")
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["title"], "Relatório de fadiga estrutural")
-        self.assertEqual(body["project"]["name"], "Fuselagem")
+        self.assertEqual(set(body), set(NULL_SUGGESTION))
         self.assertEqual(body["discipline"]["name"], "Estruturas")
-        self.assertEqual(body["document_type"]["name"], "Desenho Técnico")
+        self.assertEqual(body["document_type"]["name"], "Especificação Técnica")
         self.assertEqual(body["area"]["name"], "Engenharia Estrutural")
-        self.assertEqual(body["description"], "Descrição breve do documento.")
+        self.assertIsNone(body["title"])
         mock_mongo.return_value.__getitem__.return_value.update_one.assert_called_once()
 
     def test_given_missing_temp_file_when_posted_then_returns_404(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         response = self.client.post(f"/documents/{TEMP_FILE_ID}/suggestions")
         self.assertEqual(response.status_code, 404)
 
     def test_given_unsupported_extension_when_posted_then_returns_422(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file(extension="png")
 
@@ -343,16 +319,16 @@ class SuggestDocumentMetadataViewTests(TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_given_get_request_when_called_then_returns_405(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         response = self.client.get(f"/documents/{TEMP_FILE_ID}/suggestions")
         self.assertEqual(response.status_code, 405)
 
-    def test_given_groq_failure_when_posted_then_returns_200_with_null_suggestion_fields(
-        self, mock_client, mock_record, mock_mongo
+    def test_given_classifier_failure_when_posted_then_returns_200_with_null_suggestion_fields(
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
-        mock_client.return_value.chat.completions.create.side_effect = Exception("boom")
+        mock_classifier.return_value.predict.side_effect = Exception("boom")
 
         with self.assertLogs("core.services.document_ai_service", level="ERROR"):
             response = self.client.post(f"/documents/{TEMP_FILE_ID}/suggestions")
@@ -361,7 +337,7 @@ class SuggestDocumentMetadataViewTests(TestCase):
         self.assertEqual(response.json(), NULL_SUGGESTION)
 
     def test_given_unexpected_error_when_posted_then_returns_500_with_exception_name_only(
-        self, mock_client, mock_record, mock_mongo
+        self, mock_classifier, mock_record, mock_mongo
     ):
         self._temp_file()
         mock_record.side_effect = RuntimeError("mongodb://admin:secret@internal-host")

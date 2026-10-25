@@ -34,7 +34,6 @@ class DocumentsViewTests(TestCase):
         self.area = Area.objects.create(acronym="ENG", name="Engenharia")
         self.discipline = Discipline.objects.create(code="CIV", name="Civil")
         self.project = Project.objects.create(code="PRJ", name="Projeto")
-        self.project.disciplines.add(self.discipline)
         self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
         self.user = User.objects.create_user(
             email="user@example.com",

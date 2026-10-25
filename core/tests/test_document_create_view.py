@@ -45,7 +45,6 @@ class CreateDocumentViewTests(TestCase):
         )
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
-        self.project.disciplines.add(self.discipline)
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
         self.url = reverse("document-list")
 
@@ -226,9 +225,8 @@ class CreateDocumentViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        entry = AuditLog.objects.get()
+        entry = AuditLog.objects.get(action=AuditAction.DOC_SUBMIT_SUCCESS)
         self.assertEqual(entry.user, self.user)
-        self.assertEqual(entry.action, AuditAction.DOC_SUBMIT_SUCCESS)
         self.assertEqual(entry.entity, "document")
         self.assertEqual(entry.entity_id, response.json()["id"])
         self.assertEqual(entry.ip_address, "203.0.113.7")

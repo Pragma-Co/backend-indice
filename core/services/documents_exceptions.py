@@ -18,5 +18,9 @@ class AlreadyHasAccessError(Exception):
     pass
 
 
+class ArchivePermissionDeniedError(Exception):
+    pass
+
+
 class DocumentFileNotFoundError(Exception):
     pass

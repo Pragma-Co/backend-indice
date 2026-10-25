@@ -1,0 +1,18 @@
+{
+  "discipline": {
+    "MECHANICAL": "EST",
+    "ELECTRICAL": "ELE",
+    "MATERIALS": "MAT"
+  },
+  "document_type": {
+    "SPECIFICATION": "ESP",
+    "STANDARD": "NOR",
+    "HANDBOOK": "GPR",
+    "COMMERCIAL_ITEM": "ESP"
+  },
+  "area": {
+    "DESIGN": "EST",
+    "MATERIALS": "MFG",
+    "OTHER_STAGE": "QUA"
+  }
+}

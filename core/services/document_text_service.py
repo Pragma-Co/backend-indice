@@ -1,34 +1,18 @@
 import logging
 import re
+import unicodedata
 from pathlib import Path
 
-import nltk
 from docx import Document as DocxDocument
 from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-from nltk.tokenize import word_tokenize
 from PyPDF2 import PdfReader
+
+from classifier.text_preprocessing import ensure_nltk_resources, preprocess_for_llm
 
 logger = logging.getLogger(__name__)
 
 AI_TEXT_EXTENSIONS = {"pdf", "docx"}
 MAX_CHARS_SENT_TO_MODEL = 20000
-
-NLTK_RESOURCES = {
-    "stopwords": "corpora/stopwords",
-    "punkt": "tokenizers/punkt",
-    "punkt_tab": "tokenizers/punkt_tab",
-    "wordnet": "corpora/wordnet",
-    "omw-1.4": "corpora/omw-1.4",
-}
-
-
-def _ensure_nltk_resources() -> None:
-    for package, resource_path in NLTK_RESOURCES.items():
-        try:
-            nltk.data.find(resource_path)
-        except LookupError:
-            nltk.download(package, quiet=True)
 
 
 def _extract_from_pdf(path: Path) -> str:
@@ -53,35 +37,46 @@ def extract_raw_text(path: Path, extension: str) -> str:
     return ""
 
 
-def clean_and_normalize_text(text: str) -> str:
-    text = re.sub(r"\s+", " ", text)
-    text = text.replace("\n", " ").replace("\f", " ")
-    return text.lower().strip()
+def _searchable_char(char: str) -> str:
+    category = unicodedata.category(char)
+    if category == "Cc":
+        return " "
+    return "" if category.startswith("C") else char
 
 
-def preprocess_for_llm(text: str) -> str:
-    _ensure_nltk_resources()
+def normalize_for_search(text: str) -> str:
+    text = "".join(_searchable_char(char) for char in unicodedata.normalize("NFC", text))
+    return re.sub(r"\s+", " ", text).strip()
 
-    text = clean_and_normalize_text(text)
-    text = re.sub(r"https?://\S+|www\.\S+", "", text)
-    text = re.sub(r"[\W_]+", " ", text)
 
-    words = word_tokenize(text)
-    stop_words = set(stopwords.words("english"))
-    words = [word for word in words if word not in stop_words]
+def search_stopwords() -> set[str]:
+    ensure_nltk_resources()
+    return set(stopwords.words("portuguese")) | set(stopwords.words("english"))
 
-    lemmatizer = WordNetLemmatizer()
-    words = [lemmatizer.lemmatize(word) for word in words]
 
-    return " ".join(words)
+EXTRACTION_SUCCESS = "SUCCESS"
+EXTRACTION_EMPTY = "EMPTY"
+EXTRACTION_SKIPPED = "SKIPPED"
+EXTRACTION_FAILURE = "FAILURE"
+
+
+def _ingestion(text: str, extraction: str, detail: str | None) -> dict:
+    return {"text": text, "extraction": extraction, "detail": detail}
+
+
+def ingest_text(path: Path, extension: str) -> dict:
+    if extension not in AI_TEXT_EXTENSIONS:
+        return _ingestion("", EXTRACTION_SKIPPED, f"No text extraction for {extension} files.")
+    try:
+        raw_text = extract_raw_text(path, extension)
+        text = preprocess_for_llm(raw_text)[:MAX_CHARS_SENT_TO_MODEL]
+    except Exception as exc:
+        logger.exception("Failed to extract text from %s for AI suggestions", path.name)
+        return _ingestion("", EXTRACTION_FAILURE, f"Text extraction failed: {type(exc).__name__}.")
+    if not text:
+        return _ingestion("", EXTRACTION_EMPTY, "No text found in the file.")
+    return _ingestion(text, EXTRACTION_SUCCESS, None)
 
 
 def extract_text_for_ai(path: Path, extension: str) -> str:
-    if extension not in AI_TEXT_EXTENSIONS:
-        return ""
-    try:
-        raw_text = extract_raw_text(path, extension)
-        return preprocess_for_llm(raw_text)[:MAX_CHARS_SENT_TO_MODEL]
-    except Exception:
-        logger.exception("Failed to extract text from %s for AI suggestions", path.name)
-        return ""
+    return ingest_text(path, extension)["text"]
