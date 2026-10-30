@@ -58,7 +58,6 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     ports:
-      # Localhost only; the API reaches it through the Docker network (http://ollama:11434)
       - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -68,7 +67,6 @@ services:
       start_period: 10s
 
   ollama-pull:
-    # One-shot job: downloads the model into the ollama_data volume (no-op once present)
     image: ollama/ollama
     container_name: api6-ollama-pull
     restart: "no"
@@ -92,7 +90,6 @@ services:
       POSTGRES_PORT: "5432"
       MONGO_HOST: mongodb
       MONGO_PORT: "27017"
-      OLLAMA_BASE_URL: http://ollama:11434
     volumes:
       - .:/app
     ports:
@@ -102,8 +99,6 @@ services:
       postgres:
         condition: service_healthy
       mongodb:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
 
 volumes:
