@@ -30,6 +30,7 @@ from core.models.legal import (
     UserClauseConsent,
     UserLegalAcceptance,
 )
+from core.models.library import SavedDocument
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
 from core.models.search import DocumentContent
@@ -60,6 +61,7 @@ __all__ = [
     "Revision",
     "RevisionStatus",
     "Role",
+    "SavedDocument",
     "Tag",
     "User",
     "UserClauseConsent",

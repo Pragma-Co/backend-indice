@@ -33,6 +33,7 @@ from core.views.legal_consent_view import (
     revoke_legal_acceptance_view,
 )
 from core.views.manager_activity_view import manager_activities_view
+from core.views.personal_library_view import personal_library
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
@@ -44,6 +45,7 @@ urlpatterns = [
     path("dev/login", dev_login_view, name="dev-login"),
     path("auth/logout", logout_view, name="auth-logout"),
     path("users/me", user_me, name="user-me"),
+    path("users/me/library", personal_library, name="personal-library"),
     path(
         "users/me/request-deletion",
         request_user_deletion,
