@@ -5,6 +5,17 @@ def _isoformat(value):
     return value.isoformat() if value else None
 
 
+def serialize_access_request(access: DocumentAccess) -> dict:
+    return {
+        "id": access.id,
+        "document_id": access.document_id,
+        "status": access.status,
+        "access_type": access.access_type,
+        "expires_on": _isoformat(access.expires_on),
+        "requested_at": _isoformat(access.requested_at),
+    }
+
+
 def serialize_pending_access_request(access: DocumentAccess) -> dict:
     document = access.document
     requester = access.user
@@ -12,6 +23,8 @@ def serialize_pending_access_request(access: DocumentAccess) -> dict:
         "id": access.id,
         "status": access.status,
         "justification": access.justification,
+        "access_type": access.access_type,
+        "expires_on": _isoformat(access.expires_on),
         "requested_at": _isoformat(access.requested_at),
         "requester": {
             "id": requester.id,
@@ -46,6 +59,8 @@ def serialize_access_decision(access: DocumentAccess) -> dict:
         "document_id": access.document_id,
         "requester": {"id": access.user_id, "name": access.user.name},
         "status": access.status,
+        "access_type": access.access_type,
+        "expires_on": _isoformat(access.expires_on),
         "approver": {"id": access.approver_id, "name": access.approver.name},
         "requested_at": _isoformat(access.requested_at),
         "decided_at": _isoformat(access.decided_at),

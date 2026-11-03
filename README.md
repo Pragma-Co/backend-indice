@@ -441,9 +441,9 @@ Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "
 
 Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
 
-Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED`) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
+Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED` and not expired) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
 
-`access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
+`access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "access_type", "expires_on", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
 
 ### `DELETE /documents/<id>`
 
@@ -465,7 +465,25 @@ Streams one file of a revision inline (stored MIME type, original file name, `Ca
 
 ### `POST /documents/<id>/request-access`
 
-Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access request and answers `201 {"id", "status": "PENDING", "created": true}`; a second call while the request is still pending answers `201` with `"created": false` and the same `id`. A viewer who can already read the document (responsible or approved grant) gets `409 {"error": "AlreadyHasAccess"}` and no row is created. `400 MissingUser`, `404 UserNotFound`, `404 DocumentNotFound`.
+Also answers at `POST /documentos/<id>/solicitar-acesso`. The requester is the user of the session (`401 AuthenticationRequired` without one, CSRF header required); a `user_id` in the body is ignored.
+
+Body `{"justification": "<text>", "access_type": "PERMANENT" | "TEMPORARY", "expires_on": "YYYY-MM-DD"}`:
+
+- `justification`: required, 20 to 1000 characters after trimming.
+- `access_type`: required.
+- `expires_on`: last day of the access, required for `TEMPORARY` (today or later) and refused for `PERMANENT`.
+
+Answers `201 {"id", "document_id", "status": "PENDING", "access_type", "expires_on", "requested_at"}`. The request enters the queue of `GET /manager/pending-access-requests` for the manager of the document's areas and for its responsible, and is written to `audit_log` (`action = DOC_ACCESS_REQUESTED`).
+
+| Answer | When |
+| --- | --- |
+| `400 {"errors": {"body" \| "justification" \| "access_type" \| "expires_on": {"code", "message"}}}` | invalid payload |
+| `400 {"error": "InvalidJSON"}` | malformed body |
+| `404 {"error": "DocumentNotFound"}` | unknown or archived document |
+| `409 {"error": "AccessRequestAlreadyPending", "id"}` | the user already has a pending request for this document; nothing changes |
+| `409 {"error": "AlreadyHasAccess"}` | the user is the responsible or holds an active grant |
+
+After a `REJECTED` decision or an expired grant, a new request reopens the same row as `PENDING`. A `TEMPORARY` grant allows reading through `expires_on` (inclusive, `TIME_ZONE` calendar day); after that the document detail, file view and content search treat the user as having no grant.
 
 ### `POST /users/me/request-deletion`
 

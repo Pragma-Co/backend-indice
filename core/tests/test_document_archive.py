@@ -289,10 +289,16 @@ class ArchivedDocumentVisibilityTests(DocumentArchiveFixtureMixin, TestCase):
 
     def test_should_refuse_access_requests_and_file_views_for_an_archived_document(self):
         file = self.current.files.get()
+        self.client.force_login(self.other_manager)
 
         access = self.client.post(
             reverse("document-request-access", args=[self.document.pk]),
-            data=json.dumps({"user_id": self.other_manager.pk, "justification": "Preciso"}),
+            data=json.dumps(
+                {
+                    "justification": "Preciso do documento para a auditoria.",
+                    "access_type": "PERMANENT",
+                }
+            ),
             content_type="application/json",
         )
         view = self.client.get(

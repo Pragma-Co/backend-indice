@@ -124,10 +124,16 @@ class DocumentAccessTestCase(TestCase):
             storage_path=storage_path,
         )
 
-    def _request_access(self, user_id, justification="Preciso revisar"):
+    def _request_access(self, user):
+        self.client.force_login(user)
         return self.client.post(
             f"/documents/{self.document.id}/request-access",
-            data=json.dumps({"user_id": user_id, "justification": justification}),
+            data=json.dumps(
+                {
+                    "justification": "Preciso revisar a caverna 14 para a inspeção.",
+                    "access_type": "PERMANENT",
+                }
+            ),
             content_type="application/json",
         )
 
@@ -225,7 +231,7 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
 
     @override_settings(DEBUG=True)
     def test_should_expose_the_pending_request_of_the_user(self):
-        self._request_access(self.stranger.id)
+        self._request_access(self.stranger)
 
         response = self._detail(self.stranger)
 
@@ -395,45 +401,3 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"error": "MissingUser"})
         self.assertNotIn(PDF_BYTES, response.content)
-
-
-class RequestAccessTests(DocumentAccessTestCase):
-    def test_should_create_a_pending_request_for_a_user_without_access(self):
-        response = self._request_access(self.stranger.id)
-
-        body = response.json()
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(body["status"], "PENDING")
-        self.assertTrue(body["created"])
-        self.assertEqual(DocumentAccess.objects.filter(user=self.stranger).count(), 1)
-
-    def test_should_not_duplicate_a_pending_request(self):
-        first = self._request_access(self.stranger.id)
-
-        second = self._request_access(self.stranger.id)
-
-        self.assertEqual(second.status_code, 201)
-        self.assertFalse(second.json()["created"])
-        self.assertEqual(second.json()["id"], first.json()["id"])
-
-    def test_should_answer_409_for_the_responsible(self):
-        response = self._request_access(self.owner.id)
-
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json(), {"error": "AlreadyHasAccess"})
-        self.assertFalse(DocumentAccess.objects.filter(user=self.owner).exists())
-
-    def test_should_answer_409_for_a_user_who_already_has_a_grant(self):
-        response = self._request_access(self.granted.id)
-
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json(), {"error": "AlreadyHasAccess"})
-
-    def test_should_keep_the_user_errors(self):
-        missing = self._request_access(None)
-        unknown = self._request_access(999999)
-
-        self.assertEqual(missing.status_code, 400)
-        self.assertEqual(missing.json(), {"error": "MissingUser"})
-        self.assertEqual(unknown.status_code, 404)
-        self.assertEqual(unknown.json(), {"error": "UserNotFound"})

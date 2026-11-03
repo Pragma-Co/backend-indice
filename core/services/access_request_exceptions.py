@@ -1,7 +1,13 @@
 class AccessRequestValidationError(Exception):
     def __init__(self, errors: dict):
         self.errors = errors
-        super().__init__(f"Invalid access request review payload: {sorted(errors)}")
+        super().__init__(f"Invalid access request payload: {sorted(errors)}")
+
+
+class AccessRequestAlreadyPendingError(Exception):
+    def __init__(self, access):
+        self.access = access
+        super().__init__(f"Access request {access.pk} is still pending")
 
 
 class AccessRequestNotFoundError(Exception):
