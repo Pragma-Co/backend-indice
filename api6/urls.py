@@ -15,6 +15,7 @@ from core.views.document_ai_view import suggest_document_metadata_view, summariz
 from core.views.documents_view import (
     archived_documents_view,
     create_revision_view,
+    document_recommendations_view,
     document_resource,
     documents_collection,
     request_access,
@@ -77,6 +78,11 @@ urlpatterns = [
     path("documents/archived", archived_documents_view, name="document-archived-list"),
     path("documents/<int:document_id>", document_resource, name="document-detail"),
     path("documents/<int:document_id>/restore", restore_document_view, name="document-restore"),
+    path(
+        "documents/<int:document_id>/recommendations",
+        document_recommendations_view,
+        name="document-recommendations",
+    ),
     path(
         "documents/<int:document_id>/revisions",
         create_revision_view,

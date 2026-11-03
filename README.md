@@ -445,6 +445,64 @@ Only a viewer who **can read the document** (its responsible, or a user whose `D
 
 `access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "access_type", "expires_on", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
 
+### `GET /documents/<id>/recommendations`
+
+Thematic collections of documents related to the one being read, meant for the "recommended" carousels of the document screen. Public like the listing: it exposes the same metadata as `GET /documents`, never file contents. `limit` (optional, default 8, at most 20) caps the items of each collection.
+
+Candidates are the active, non-archived documents that share at least one of these with the open document: project, discipline, a tag, an area, or a thematic tag of the indexed content (`document_content.thematic_tags`, see `GET /documents/search`). Each candidate receives an affinity score, the sum of: same project `3`, same discipline `2`, same document type `1`, `2` per shared tag, `1` per shared area and `1` per shared thematic tag. Collections are ordered by score (ties: most recently updated first), and a document may belong to more than one collection.
+
+| `key` | `title` | Members |
+|-------|---------|---------|
+| `theme` | Temas relacionados | at least one shared tag or thematic tag |
+| `project` | Mesmo projeto | same project |
+| `discipline` | Mesma disciplina | same discipline |
+| `area` | Mesma área | at least one shared area |
+
+Response `200`, always with the four collections (an empty one has `count: 0` and `items: []`):
+
+```json
+{
+  "document": { "id": 12, "code": "AK-2100-EST-DWG-0001", "title": "Desenho da caverna 14" },
+  "limit": 8,
+  "collections": [
+    {
+      "key": "theme",
+      "title": "Temas relacionados",
+      "count": 2,
+      "items": [
+        {
+          "id": 15,
+          "code": "AK-2100-EST-MEM-0002",
+          "title": "Memorial de cálculo da caverna 14",
+          "description": "",
+          "type": { "code": "MEM", "name": "Memorial de Cálculo" },
+          "discipline": { "code": "EST", "name": "Estruturas" },
+          "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+          "revision": { "version": 1, "label": "REV01" },
+          "status": "APPROVED",
+          "updated_at": "2026-10-20T14:02:11.000000+00:00",
+          "created_by": { "id": 3, "name": "Caio Bertoni" },
+          "updated_by": { "id": null, "name": null },
+          "score": 8.0,
+          "matches": {
+            "project": true,
+            "discipline": true,
+            "type": false,
+            "tags": ["fadiga"],
+            "areas": ["EST"],
+            "themes": []
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+`count` is the number of related documents of the collection before `limit`. `matches` tells which criteria the item shares with the open document, so the interface can explain the recommendation. A document without tags and without indexed content still gets the `project`, `discipline` and `area` collections; one with nothing in common answers the four collections empty. Errors: `400 {"errors": {"limit": {"code": "invalid", ...}}}` for a non-positive or non-numeric `limit`, `404 {"error": "DocumentNotFound"}` for an unknown, archived or inactive-type document.
+
+Two things to know when testing it. The payload shape (collections instead of a flat list, `score`, `matches`) was defined with this card because no contract existed yet; it is the reference until the team decides otherwise. And the thematic tags generated for documents written in English still include common words such as "shall" or "specified" (see the indexing of `GET /documents/search`), so the `theme` collection of those documents is wider than it should be until that generator is adjusted.
+
 ### `DELETE /documents/<id>`
 
 Logical archiving (soft delete) of a document. Requires the `csrftoken` cookie value in the `X-CSRFToken` header (without it the CSRF middleware answers `403` before the view, like `PUT /users/me`) and a session: `401 {"error": "AuthenticationRequired"}` without one. Only a technical manager of one of the document's areas may archive it: a user with role `AUDITOR` or `ADMIN` (the same roles that review revisions) whose area is one of the document's areas. Anyone else gets `403 {"error": "PermissionDenied"}` and nothing changes.
