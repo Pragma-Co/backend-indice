@@ -301,43 +301,8 @@ The response includes the summary and a `fallback` flag. If Ollama is unavailabl
 
 #### Ollama configuration
 
-`docker compose up --build` already starts an `ollama` container (volume `ollama_data`) and an `ollama-pull` job that downloads `OLLAMA_MODEL` (default `llama3.2`) on the first run, so no extra setup is needed. The `api` service is pointed at `http://ollama:11434` automatically, overriding `OLLAMA_BASE_URL` from `.env`. The first startup waits for the model download. GPU is not enabled by default.
-
-The settings below apply only if you prefer to run Ollama outside Compose (remove the `ollama` service and its `depends_on` entry).
-
-Add these settings to the backend `.env` file used by each developer:
-
-Linux (replace the example IP if your Docker gateway is different):
-
-```dotenv
-OLLAMA_BASE_URL=http://172.19.0.1:11434
-OLLAMA_MODEL=llama3.2
-OLLAMA_TIMEOUT=120
-```
-
-To find the Docker gateway on Linux, run this command and use its output in `OLLAMA_BASE_URL`:
-
-```bash
-docker network inspect api-6_default --format '{{(index .IPAM.Config 0).Gateway}}'
-```
-
-Windows with Docker Desktop:
-
-```dotenv
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=llama3.2
-OLLAMA_TIMEOUT=120
-```
-
-Install the model once on the machine running Ollama:
-
-```bash
-ollama pull llama3.2
-```
-
-When the model runs on a remote machine, open an SSH tunnel on the host (`ssh -N -L 11434:127.0.0.1:11434 <user>@<vm>`) and keep `OLLAMA_BASE_URL` pointing at the host as above. The same Ollama instance also generates the suggested title and description (subtitle) in `POST /documents/<temp_file_id>/suggestions`; if it is unreachable, those two fields come back `null` and the classification is unaffected.
-
-The API runs in a container, so `localhost` points to the container itself. Use the Docker gateway on Linux or `host.docker.internal` on Windows to reach Ollama. If the API cannot connect, configure Ollama to listen on an address reachable from Docker and restrict access to trusted local networks. 
+`docker compose up --build` already starts an `ollama` container (volume `ollama_data`) and an `ollama-pull` job that downloads `OLLAMA_MODEL` (default `llama3.2:1b`) on the first run, so no extra setup is needed. You will need to explicitly set the Ollama provider for your application, setting `OLLAMA_BASE_URL`. 
+If you are using Docker, use `http://ollama:11434`.
 
 After changing `.env`, recreate the API container with `docker compose up -d --force-recreate api`.
 
