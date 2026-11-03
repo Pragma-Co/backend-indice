@@ -33,6 +33,7 @@ from core.services.document_exceptions import (
     DuplicateRevisionUploadError,
     TempFileNotFoundError,
 )
+from core.services.document_recommendation_service import get_document_recommendations
 from core.services.document_search_service import search_documents
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
@@ -252,6 +253,19 @@ def document_detail(request, document_id):
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
     except Exception as exc:
         logger.exception("Failed to retrieve document detail")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@require_GET
+def document_recommendations_view(request, document_id):
+    try:
+        return JsonResponse(get_document_recommendations(document_id, request.GET))
+    except DocumentQueryError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
+    except DocumentNotFoundError:
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except Exception as exc:
+        logger.exception("Failed to recommend related documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
