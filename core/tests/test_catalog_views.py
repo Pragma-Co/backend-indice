@@ -5,8 +5,19 @@ from django.urls import reverse
 
 from core.models import Area, Discipline, Document, DocumentType, Project, User
 
+SESSION_QUERIES = 2
 
-class ListProjectsViewTests(TestCase):
+
+class SignedInTestCase(TestCase):
+    def setUp(self):
+        hidden_area = Area.objects.create(acronym="QA", name="Quality Assurance", active=False)
+        self.user = User.objects.create_user(
+            email="reader@example.com", password="secret", name="Reader", area=hidden_area
+        )
+        self.client.force_login(self.user)
+
+
+class ListProjectsViewTests(SignedInTestCase):
     def test_should_return_projects_ordered_by_name(self):
         pilone = Project.objects.create(code="AK-3100", name="Pilone de Motor")
         fuselagem = Project.objects.create(
@@ -85,7 +96,7 @@ class ListProjectsViewTests(TestCase):
         for index in range(5):
             Project.objects.create(code=f"AK-{index}", name=f"Projeto {index}")
 
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(SESSION_QUERIES + 2):
             response = self.client.get(reverse("project-list"))
         self.assertEqual(len(response.json()), 5)
 
@@ -117,6 +128,7 @@ class ListProjectsViewTests(TestCase):
 
     def test_should_answer_405_even_with_csrf_checks_enforced(self):
         client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
 
         response = client.post(reverse("project-list"), {"name": "New"})
 
@@ -140,7 +152,7 @@ class ListProjectsViewTests(TestCase):
         self.assertIn(internal_detail, "\n".join(logs.output))
 
 
-class ListDisciplinesViewTests(TestCase):
+class ListDisciplinesViewTests(SignedInTestCase):
     def test_should_return_disciplines_ordered_by_name(self):
         materiais = Discipline.objects.create(code="MAT", name="Materiais e Processos")
         estruturas = Discipline.objects.create(code="EST", name="Estruturas")
@@ -187,6 +199,7 @@ class ListDisciplinesViewTests(TestCase):
 
     def test_should_answer_405_even_with_csrf_checks_enforced(self):
         client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
 
         response = client.post(reverse("discipline-list"), {"name": "New"})
 
@@ -210,7 +223,7 @@ class ListDisciplinesViewTests(TestCase):
         self.assertIn(internal_detail, "\n".join(logs.output))
 
 
-class ListAreasViewTests(TestCase):
+class ListAreasViewTests(SignedInTestCase):
     def test_should_return_areas_ordered_by_name(self):
         sistemas = Area.objects.create(acronym="SIS", name="Sistemas de Voo")
         combustivel = Area.objects.create(acronym="COM", name="Sistemas de Combustível")
@@ -255,6 +268,7 @@ class ListAreasViewTests(TestCase):
 
     def test_should_answer_405_even_with_csrf_checks_enforced(self):
         client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
 
         response = client.post(reverse("area-list"), {"name": "New"})
 

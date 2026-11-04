@@ -207,3 +207,16 @@ class LoginViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+    def test_should_keep_the_session_until_logout(self):
+        self._post({"email": "titular@example.com", "password": PASSWORD})
+
+        profile = self.client.get("/users/me")
+        logout = self.client.post("/auth/logout")
+        after_logout = self.client.get("/users/me")
+
+        self.assertEqual(profile.status_code, 200)
+        self.assertEqual(profile.json()["id"], self.user.pk)
+        self.assertEqual(logout.status_code, 204)
+        self.assertEqual(after_logout.status_code, 401)
+        self.assertEqual(after_logout.json(), {"error": "AuthenticationRequired"})

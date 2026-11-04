@@ -257,7 +257,7 @@ class UserMeViewTests(TestCase):
         )
         for response in responses:
             self.assertEqual(response.status_code, 401)
-            self.assertEqual(response.json()["error"], "Authentication required.")
+            self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
 
     def test_put_requires_a_csrf_token_for_session_authenticated_requests(self):
         client = Client(enforce_csrf_checks=True)

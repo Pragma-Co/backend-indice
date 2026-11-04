@@ -268,6 +268,10 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
 
 
 class DocumentRecommendationViewTests(DocumentRecommendationFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.author)
+
     def url(self, document_id):
         return reverse("document-recommendations", args=[document_id])
 

@@ -57,6 +57,7 @@ class DocumentRevisionSubmissionTests(TestCase):
             updated_by=self.author,
         )
         self.current_revision = self._audited_revision(1, RevisionStatus.APPROVED)
+        self.client.force_login(self.author)
 
     def _audited_revision(self, version, status):
         return Revision.objects.create(
