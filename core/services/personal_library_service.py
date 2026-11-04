@@ -1,4 +1,4 @@
-from django.db.models import F, OuterRef, Q
+from django.db.models import F, Q
 
 from core.models import Document, SavedDocument
 from core.services.documents_service import (

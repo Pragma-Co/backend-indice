@@ -34,9 +34,18 @@ class PersonalLibraryFixtureMixin:
     def _create_document_type(self, code="DOC", name="Documento", active=True):
         return DocumentType.objects.create(code=code, name=name, active=active)
 
-    def _create_document(self, code, title, project=None, discipline=None,
-                         document_type=None, responsible=None, created_by=None,
-                         updated_by=None, archived_at=None):
+    def _create_document(
+        self,
+        code,
+        title,
+        project=None,
+        discipline=None,
+        document_type=None,
+        responsible=None,
+        created_by=None,
+        updated_by=None,
+        archived_at=None,
+    ):
         if project is None:
             project = self.project
         if discipline is None:
@@ -63,8 +72,9 @@ class PersonalLibraryFixtureMixin:
         )
         return document
 
-    def _create_revision(self, document, version=1, status=RevisionStatus.APPROVED,
-                        author=None, auditor=None):
+    def _create_revision(
+        self, document, version=1, status=RevisionStatus.APPROVED, author=None, auditor=None
+    ):
         if author is None:
             author = self.owner
         if auditor is None:
@@ -117,8 +127,15 @@ class PersonalLibraryViewTests(PersonalLibraryFixtureMixin, TestCase):
     def _item_url(self, document_id=None):
         return f"/users/me/library/{document_id or self.document.id}"
 
-    def _extra_document(self, code, title=None, has_access=True, archived=False,
-                       document_type=None, active_type=True):
+    def _extra_document(
+        self,
+        code,
+        title=None,
+        has_access=True,
+        archived=False,
+        document_type=None,
+        active_type=True,
+    ):
         if document_type is None:
             if active_type:
                 document_type = self.document_type
@@ -292,10 +309,6 @@ class PersonalLibraryViewTests(PersonalLibraryFixtureMixin, TestCase):
         doc1 = self._extra_document("DOC-001")
         doc2 = self._extra_document("DOC-002")
         doc3 = self._extra_document("DOC-003")
-
-        saved1 = SavedDocument.objects.create(user=self.user, document=doc1)
-        saved2 = SavedDocument.objects.create(user=self.user, document=doc2)
-        saved3 = SavedDocument.objects.create(user=self.user, document=doc3)
 
         response = self.client.get("/users/me/library")
 
