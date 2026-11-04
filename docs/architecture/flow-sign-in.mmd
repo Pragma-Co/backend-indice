@@ -5,13 +5,26 @@ sequenceDiagram
     participant A as Django API
     participant DB as PostgreSQL
 
-    B->>P: POST /api/dev/login {user_id}
-    P->>A: POST /dev/login
-    A->>DB: load active user
-    A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + csrftoken
+    B->>P: GET /api/auth/csrf
+    P->>A: GET /auth/csrf
+    A-->>B: 204 · Set-Cookie csrftoken
+    B->>P: POST /api/auth/login {email, password} (X-CSRFToken)
+    P->>A: POST /auth/login · Origin localhost:5173
+    A->>A: CSRF check (cookie + header + trusted origin)
+    A->>DB: load user by email, check PBKDF2 hash and active flag
+    alt invalid credentials, inactive or anonymized
+        A-->>B: 401 InvalidCredentials
+    else valid
+        A->>DB: create session + audit_log LOGIN
+        A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + rotated csrftoken
+    end
     B->>B: store profile in Pinia, apply route guards
     B->>P: PUT /api/users/me (X-CSRFToken from the cookie)
-    P->>A: PUT /users/me · Origin localhost:5173
-    A->>A: CSRF check (cookie + header + trusted origin), session user
+    P->>A: PUT /users/me
+    A->>A: LoginRequiredJsonMiddleware (401 AuthenticationRequired without a session), CSRF check
     A->>DB: update user + audit_log (required, same transaction)
     A-->>B: 200 user · or 503 AuditUnavailable when the audit entry fails
+    B->>P: POST /api/auth/logout (X-CSRFToken)
+    P->>A: POST /auth/logout
+    A->>DB: delete session
+    A-->>B: 204 · sessionid expired

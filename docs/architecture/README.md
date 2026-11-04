@@ -76,7 +76,7 @@ SVG export: [overview.svg](./overview.svg)
 
 **Authentication and authorization.**
 
-- The session is a Django session: the backend sets an `HttpOnly` `sessionid` cookie and a `csrftoken` cookie. Until the real login exists, the frontend opens the session through the provisional `POST /dev/login {"user_id"}` (available only with `DJANGO_DEBUG` on) and closes it with `POST /auth/logout`.
+- The session is a Django session: the backend sets an `HttpOnly` `sessionid` cookie and a `csrftoken` cookie. The frontend fetches the CSRF cookie with `GET /auth/csrf`, opens the session with `POST /auth/login {"email", "password"}` and closes it with `POST /auth/logout`. Every other route except `/health/`, the read-only `/legal-documents` routes and the admin answers `401 AuthenticationRequired` without a session (`LoginRequiredJsonMiddleware`).
 - Django's CSRF protection stays on: every write (`POST`, `PUT`, `DELETE`) carries the `csrftoken` cookie value in the `X-CSRFToken` header, added automatically by the API client (`src/api/client.js`), and `DJANGO_CSRF_TRUSTED_ORIGINS` / `DJANGO_CORS_ALLOWED_ORIGINS` list the frontend origins.
 - Roles live in `app_user.role`: `AUTHOR` and `VIEWER` are collaborators; `AUDITOR` and `ADMIN` are technical managers (they review revisions, decide access requests, archive documents and read the activity feed). `ADMIN` also enters the Django admin. The frontend mirrors this with the `managerOnly` / `collaboratorOnly` route guards and the `public` flag of the login route.
 - Reading a document's content is a separate rule, checked on the server for the detail and for every file: the responsible user, a user with an approved access request, or a manager while the revision is pending.
@@ -85,7 +85,7 @@ SVG export: [overview.svg](./overview.svg)
 
 | Frontend screen (route) | API endpoints |
 |---|---|
-| Login (`/login`) | `POST /dev/login`, `GET /users/me` |
+| Login (`/login`) | `GET /auth/csrf`, `POST /auth/login`, `GET /users/me` |
 | Home and results (`/home`, `/results`) | `GET /documents` (filters, pagination), `GET /documents/simple-filters`, `GET /documents/search` |
 | Documents list and details (`/documents`, `/documents/:id`) | `GET /documents`, `GET /documents/<id>`, `GET /files/<id>/view`, `POST /documents/<id>/request-access` |
 | New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions` (local classifier), `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `POST /documents` |
@@ -108,16 +108,29 @@ sequenceDiagram
     participant A as Django API
     participant DB as PostgreSQL
 
-    B->>P: POST /api/dev/login {user_id}
-    P->>A: POST /dev/login
-    A->>DB: load active user
-    A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + csrftoken
+    B->>P: GET /api/auth/csrf
+    P->>A: GET /auth/csrf
+    A-->>B: 204 · Set-Cookie csrftoken
+    B->>P: POST /api/auth/login {email, password} (X-CSRFToken)
+    P->>A: POST /auth/login · Origin localhost:5173
+    A->>A: CSRF check (cookie + header + trusted origin)
+    A->>DB: load user by email, check PBKDF2 hash and active flag
+    alt invalid credentials, inactive or anonymized
+        A-->>B: 401 InvalidCredentials
+    else valid
+        A->>DB: create session + audit_log LOGIN
+        A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + rotated csrftoken
+    end
     B->>B: store profile in Pinia, apply route guards
     B->>P: PUT /api/users/me (X-CSRFToken from the cookie)
-    P->>A: PUT /users/me · Origin localhost:5173
-    A->>A: CSRF check (cookie + header + trusted origin), session user
+    P->>A: PUT /users/me
+    A->>A: LoginRequiredJsonMiddleware (401 AuthenticationRequired without a session), CSRF check
     A->>DB: update user + audit_log (required, same transaction)
     A-->>B: 200 user · or 503 AuditUnavailable when the audit entry fails
+    B->>P: POST /api/auth/logout (X-CSRFToken)
+    P->>A: POST /auth/logout
+    A->>DB: delete session
+    A-->>B: 204 · sessionid expired
 ```
 
 SVG export: [flow-sign-in.svg](./flow-sign-in.svg)
@@ -255,19 +268,19 @@ Notes on the data layer:
 ```mermaid
 flowchart TB
     subgraph Routes["api6/urls.py"]
-        R1["/dev/login · /auth/logout · /users/me/*"]
+        R1["/auth/* · /users/me/*"]
         R2["/documents/* · /files/*"]
         R3["/manager/*"]
         R4["/legal-documents/* · /projects/ · /areas/ · /disciplines/"]
     end
     subgraph ViewsLayer["core/views"]
-        V1["user_view · dev_login_view · auth_view"]
+        V1["user_view · auth_view"]
         V2["documents_view · upload_view · file_view · document_ai_view"]
         V3["revision_review_view · access_request_view · manager_activity_view"]
         V4["legal_consent_view · catalog_view"]
     end
     subgraph ServicesLayer["core/services"]
-        S1["user_anonymization · excluded_identifier · legal_consent"]
+        S1["auth · user_anonymization · excluded_identifier · legal_consent"]
         S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
         S3["documents (listing) · document_search · document_index · document_archive"]
         S4["revision_review · access_request · manager_activity · audit"]
