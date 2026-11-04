@@ -1007,3 +1007,36 @@ LEGAL_CLAUSES = [
         "[localização da empresa].",
     ),
 ]
+
+ACCESS_GROUPS = [
+    (
+        "Engenharia Estrutural — sigiloso",
+        "AREA",
+        "EST",
+        None,
+        "CONFIDENTIAL",
+        "marina.duarte",
+        ["samuel.rocha", "helena.tavares"],
+        "Engenheiros de outras áreas que acompanham a documentação sigilosa de estruturas.",
+    ),
+    (
+        "Fuselagem central — restrito",
+        "PROJECT",
+        None,
+        "AK-2100",
+        "SECRET",
+        "marina.duarte",
+        ["caio.bertoni", "thiago.serpa"],
+        "Usuários autorizados a consultar os documentos restritos do programa AK-2100.",
+    ),
+    (
+        "Qualidade e Inspeção — sigiloso",
+        "AREA",
+        "QUA",
+        None,
+        "CONFIDENTIAL",
+        "thiago.serpa",
+        ["bruno.kimura"],
+        "Apoio da manufatura aos documentos sigilosos de qualidade.",
+    ),
+]
