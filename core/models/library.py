@@ -6,7 +6,6 @@ from core.models.document import Document
 
 
 class SavedDocument(models.Model):
-
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
