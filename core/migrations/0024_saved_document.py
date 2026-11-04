@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0022_english_search_config"),
+        ("core", "0023_document_access_type_and_expiry"),
     ]
 
     operations = [

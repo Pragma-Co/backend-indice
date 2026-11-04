@@ -1,7 +1,13 @@
-from django.db.models import F, OuterRef, Subquery
+from django.db.models import Exists, F, OuterRef, Q
 
-from core.models import Document, Revision, SavedDocument
-from core.services.documents_service import can_view_document, serialize_document
+from core.models import AccessStatus, Document, DocumentAccess, SavedDocument
+from core.services.documents_service import (
+    can_view_document,
+    filter_documents,
+    paginate_documents,
+    parse_document_query,
+    serialize_document,
+)
 
 
 class SavedDocumentNotFoundError(Exception):
@@ -36,35 +42,23 @@ def save_document(user, document_id):
 
 
 def remove_document(user, document_id):
-    deleted, _ = SavedDocument.objects.filter(user=user, document_id=document_id).delete()
-    if not deleted:
-        raise SavedDocumentNotFoundError()
+    SavedDocument.objects.filter(user=user, document_id=document_id).delete()
 
 
-def list_saved_documents(user):
-    latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
+def _serialize_saved(document):
+    return {**serialize_document(document), "saved_at": document.saved_at.isoformat()}
+
+
+def list_saved_documents(user, params):
+    query = parse_document_query(params)
+    approved_access = DocumentAccess.objects.filter(
+        document=OuterRef("pk"), user=user, status=AccessStatus.APPROVED
+    )
     documents = (
-        Document.objects.filter(
-            saved_by_users__user=user,
-            archived_at__isnull=True,
-            document_type__active=True,
-        )
-        .annotate(
-            status=Subquery(latest_revision.values("status")[:1]),
-            latest_version=Subquery(latest_revision.values("version")[:1]),
-            saved_at=F("saved_by_users__created_at"),
-        )
-        .select_related("document_type", "discipline", "created_by", "updated_by")
-        .prefetch_related("areas")
+        filter_documents(query, user=user)
+        .filter(saved_by_users__user=user)
+        .filter(Q(responsible=user) | Exists(approved_access))
+        .annotate(saved_at=F("saved_by_users__created_at"))
         .order_by("-saved_at", "-id")
     )
-    results = []
-    for document in documents:
-        if can_view_document(document, user):
-            results.append(
-                {
-                    **serialize_document(document),
-                    "saved_at": document.saved_at.isoformat(),
-                }
-            )
-    return {"count": len(results), "results": results}
+    return paginate_documents(documents, query, _serialize_saved)
