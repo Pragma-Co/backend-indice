@@ -233,14 +233,15 @@ class PersonalLibraryViewTests(PersonalLibraryFixtureMixin, TestCase):
         self.assertTrue(response.json()["results"][0]["is_favorite"])
 
     def test_user_can_save_a_public_document_without_direct_access(self):
-        # A user without DocumentAccess can still favorite public documents
         public_doc = self._extra_document("PUB-001", has_access=False)
         self.client.force_login(self.other_user)
 
         response = self.client.post(f"/users/me/library/{public_doc.id}")
 
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(SavedDocument.objects.filter(user=self.other_user, document=public_doc).exists())
+        self.assertTrue(
+            SavedDocument.objects.filter(user=self.other_user, document=public_doc).exists()
+        )
 
     def test_user_cannot_remove_another_users_saved_document(self):
         SavedDocument.objects.create(user=self.other_user, document=self.document)
@@ -314,8 +315,7 @@ class PersonalLibraryViewTests(PersonalLibraryFixtureMixin, TestCase):
         doc1 = self._extra_document("DOC-001")
         doc2 = self._extra_document("DOC-002")
         doc3 = self._extra_document("DOC-003")
-        
-        # Save documents in forward order to test descending sort
+
         SavedDocument.objects.create(user=self.user, document=doc1)
         SavedDocument.objects.create(user=self.user, document=doc2)
         SavedDocument.objects.create(user=self.user, document=doc3)
@@ -325,7 +325,6 @@ class PersonalLibraryViewTests(PersonalLibraryFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         results = response.json()["results"]
         returned_ids = [item["id"] for item in results]
-        # Should be in reverse order of save time (most recent first)
         self.assertEqual(returned_ids, [doc3.id, doc2.id, doc1.id])
 
     def test_listing_respects_pagination_with_multiple_pages(self):
@@ -372,7 +371,6 @@ class PersonalLibraryViewTests(PersonalLibraryFixtureMixin, TestCase):
         self.assertEqual(item["id"], self.document.id)
 
     def test_can_save_document_even_without_direct_access(self):
-        # User can favorite any public document, even without DocumentAccess
         no_access_doc = self._extra_document("NO-ACCESS-001", has_access=False)
 
         response = self.client.post(f"/users/me/library/{no_access_doc.id}")
