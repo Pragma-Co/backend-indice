@@ -1,6 +1,7 @@
 from django.db.models import Exists, F, OuterRef, Q
 
-from core.models import AccessStatus, Document, DocumentAccess, SavedDocument
+from core.models import Document, DocumentAccess, SavedDocument
+from core.services.access_request_service import active_grant_filter
 from core.services.documents_service import (
     can_view_document,
     filter_documents,
@@ -52,7 +53,7 @@ def _serialize_saved(document):
 def list_saved_documents(user, params):
     query = parse_document_query(params)
     approved_access = DocumentAccess.objects.filter(
-        document=OuterRef("pk"), user=user, status=AccessStatus.APPROVED
+        active_grant_filter(), document=OuterRef("pk"), user=user
     )
     documents = (
         filter_documents(query, user=user)

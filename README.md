@@ -218,15 +218,30 @@ Response `200`, ordered by most recent first:
       "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
       "revision": { "version": 1, "label": "REV01" },
       "status": "PENDING",
+      "is_favorite": false,
       "updated_at": "2026-09-18T21:30:04.000000+00:00"
     }
   ]
 }
 ```
 
+`is_favorite` is `true` when the session user saved the document in their personal library (see `GET /users/me/library`); it is always `false` for anonymous requests. `GET /documents/search` returns it too.
+
 `revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
 
 Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
+
+### `GET /users/me/library`
+
+Personal library of the session user: the documents they saved, most recently saved first. Requires a session (`401` otherwise). Accepts the same filters and pagination as `GET /documents` and answers the same paginated shape, with `saved_at` (ISO 8601) added to each item. Only documents the user can still read are listed: the user is the responsible, or holds an active access grant (approved and not expired). Archived documents are not listed.
+
+### `POST /users/me/library/<id>`
+
+Saves the document in the personal library. Requires a session. `201 {"document_id", "saved": true}` when newly saved, `200` with the same body when already saved, `404 DocumentNotFound` for an unknown, archived or inactive-type document, `403 AccessDenied` when the user cannot view it (including an expired grant).
+
+### `DELETE /users/me/library/<id>`
+
+Removes the document from the personal library. Requires a session. Always `204`, even if it was not saved.
 
 ### `GET /documents/search`
 
