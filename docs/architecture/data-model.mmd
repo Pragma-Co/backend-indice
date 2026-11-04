@@ -21,6 +21,12 @@ erDiagram
     APP_USER ||--o{ USER_LEGAL_ACCEPTANCE : "accepts"
     LEGAL_DOCUMENT_VERSION ||--o{ USER_LEGAL_ACCEPTANCE : ""
     USER_LEGAL_ACCEPTANCE ||--o{ USER_CLAUSE_CONSENT : "per clause"
+    SECRECY_LEVEL ||--o{ DOCUMENT : "confidentiality_level"
+    SECRECY_LEVEL ||--o{ ACCESS_GROUP : "grants up to"
+    AREA ||--o{ ACCESS_GROUP : "area groups"
+    PROJECT ||--o{ ACCESS_GROUP : "project groups"
+    ACCESS_GROUP ||--o{ ACCESS_GROUP_MEMBER : "members"
+    APP_USER ||--o{ ACCESS_GROUP_MEMBER : "member / added_by"
 
     DOCUMENT {
         string code
@@ -50,4 +56,14 @@ erDiagram
     }
     EXCLUDED_IDENTIFIER {
         string identifier_hash
+    }
+    SECRECY_LEVEL {
+        string code "PUBLIC / CONFIDENTIAL / SECRET"
+        int rank
+        string visibility "EVERYONE / AREA / SELECTED_USERS"
+    }
+    ACCESS_GROUP {
+        string name
+        string scope "AREA / PROJECT"
+        bool active
     }
