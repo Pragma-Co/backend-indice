@@ -243,7 +243,9 @@ def search_documents(params, user=None):
     search_query = build_search_query(query["terms"])
     english_query = build_search_query(query["terms"], ENGLISH_SEARCH_CONFIG)
     content_query = search_query | english_query
-    queryset = apply_full_text_search(filter_documents(query), search_query, content_query, user)
+    queryset = apply_full_text_search(
+        filter_documents(query, user=user), search_query, content_query, user
+    )
     page = paginate_documents(queryset, query, _serialize_result)
 
     document_ids = [result["id"] for result in page["results"]]
