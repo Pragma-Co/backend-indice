@@ -273,14 +273,6 @@ class RequestAccessEndpointTests(AccessRequestEndpointTestCase):
         self.assertEqual(access.access_type, AccessType.TEMPORARY)
         self.assertEqual(access.expires_on, expires_on)
 
-    def test_should_answer_on_the_route_defined_by_the_card(self):
-        url = f"/documentos/{self.document.pk}/solicitar-acesso"
-
-        response = self._post(url=url)
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["status"], "PENDING")
-
     def test_should_not_grant_access_while_the_request_is_pending(self):
         self._post()
 

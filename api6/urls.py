@@ -92,11 +92,6 @@ urlpatterns = [
         "documents/<int:document_id>/request-access", request_access, name="document-request-access"
     ),
     path(
-        "documentos/<int:document_id>/solicitar-acesso",
-        request_access,
-        name="documento-solicitar-acesso",
-    ),
-    path(
         "documents/<str:temp_file_id>/suggestions",
         suggest_document_metadata_view,
         name="document-ai-suggestions",

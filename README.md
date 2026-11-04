@@ -523,7 +523,7 @@ Streams one file of a revision inline (stored MIME type, original file name, `Ca
 
 ### `POST /documents/<id>/request-access`
 
-Also answers at `POST /documentos/<id>/solicitar-acesso`. The requester is the user of the session (`401 AuthenticationRequired` without one, CSRF header required); a `user_id` in the body is ignored.
+The requester is the user of the session (`401 AuthenticationRequired` without one, CSRF header required); a `user_id` in the body is ignored.
 
 Body `{"justification": "<text>", "access_type": "PERMANENT" | "TEMPORARY", "expires_on": "YYYY-MM-DD"}`:
 
