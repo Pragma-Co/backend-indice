@@ -5,7 +5,6 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from core.services.document_exceptions import DocumentQueryError
 from core.services.personal_library_service import (
-    LibraryAccessDeniedError,
     SavedDocumentNotFoundError,
     list_saved_documents,
     remove_document,
@@ -27,7 +26,7 @@ def personal_library(request):
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
-        logger.exception("Failed to list the personal library")
+        logger.exception("Failed to list saved documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
@@ -37,17 +36,19 @@ def personal_library_document(request, document_id):
     if user is None:
         return _unauthorized()
 
-    try:
-        if request.method == "DELETE":
+    if request.method == "DELETE":
+        try:
             remove_document(user, document_id)
             return HttpResponse(status=204)
+        except Exception as exc:
+            logger.exception("Failed to remove saved document")
+            return JsonResponse({"error": type(exc).__name__}, status=500)
 
+    try:
         _, created = save_document(user, document_id)
     except SavedDocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
-    except LibraryAccessDeniedError:
-        return JsonResponse({"error": "AccessDenied"}, status=403)
     except Exception as exc:
-        logger.exception("Failed to update the personal library")
+        logger.exception("Failed to save document")
         return JsonResponse({"error": type(exc).__name__}, status=500)
     return JsonResponse({"document_id": document_id, "saved": True}, status=201 if created else 200)

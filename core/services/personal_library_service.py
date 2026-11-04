@@ -1,9 +1,7 @@
-from django.db.models import Exists, F, OuterRef, Q
+from django.db.models import F, OuterRef, Q
 
-from core.models import Document, DocumentAccess, SavedDocument
-from core.services.access_request_service import active_grant_filter
+from core.models import Document, SavedDocument
 from core.services.documents_service import (
-    can_view_document,
     filter_documents,
     paginate_documents,
     parse_document_query,
@@ -26,6 +24,7 @@ def _available_document(document_id):
             archived_at__isnull=True,
             document_type__active=True,
         )
+        .filter(Q(areas__active=True) | Q(areas__isnull=True))
         .select_related("document_type", "discipline", "created_by", "updated_by")
         .prefetch_related("areas")
         .first()
@@ -36,8 +35,6 @@ def save_document(user, document_id):
     document = _available_document(document_id)
     if document is None:
         raise SavedDocumentNotFoundError()
-    if not can_view_document(document, user):
-        raise LibraryAccessDeniedError()
     saved_document, created = SavedDocument.objects.get_or_create(user=user, document=document)
     return saved_document, created
 
@@ -52,13 +49,9 @@ def _serialize_saved(document):
 
 def list_saved_documents(user, params):
     query = parse_document_query(params)
-    approved_access = DocumentAccess.objects.filter(
-        active_grant_filter(), document=OuterRef("pk"), user=user
-    )
     documents = (
         filter_documents(query, user=user)
         .filter(saved_by_users__user=user)
-        .filter(Q(responsible=user) | Exists(approved_access))
         .annotate(saved_at=F("saved_by_users__created_at"))
         .order_by("-saved_at", "-id")
     )

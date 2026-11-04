@@ -218,8 +218,10 @@ Response `200`, ordered by most recent first:
       "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
       "revision": { "version": 1, "label": "REV01" },
       "status": "PENDING",
-      "is_favorite": false,
-      "updated_at": "2026-09-18T21:30:04.000000+00:00"
+      "updated_at": "2026-09-18T21:30:04.000000+00:00",
+      "created_by": { "id": 1, "name": "João Silva" },
+      "updated_by": { "id": null, "name": null },
+      "is_favorite": false
     }
   ]
 }
@@ -263,7 +265,16 @@ Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `disc
       "id": 3,
       "code": "AK-2100-EST-MEM-0002",
       "title": "Memorial de cálculo do revestimento inferior",
-      "...": "same fields as GET /documents",
+      "description": "Verificação de tensões e vida em fadiga do revestimento inferior",
+      "type": { "code": "MEM", "name": "Memorial de Cálculo" },
+      "discipline": { "code": "EST", "name": "Estruturas" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
+      "status": "APPROVED",
+      "updated_at": "2026-10-20T14:02:11.000000+00:00",
+      "created_by": { "id": 3, "name": "Caio Bertoni" },
+      "updated_by": { "id": null, "name": null },
+      "is_favorite": false,
       "score": 0.6687,
       "tags": ["fadiga", "junção estrutural"],
       "thematic_tags": ["revestimento", "tensões"],
@@ -557,6 +568,56 @@ Answers `201 {"id", "document_id", "status": "PENDING", "access_type", "expires_
 | `409 {"error": "AlreadyHasAccess"}` | the user is the responsible or holds an active grant |
 
 After a `REJECTED` decision or an expired grant, a new request reopens the same row as `PENDING`. A `TEMPORARY` grant allows reading through `expires_on` (inclusive, `TIME_ZONE` calendar day); after that the document detail, file view and content search treat the user as having no grant.
+
+### `GET /users/me/library`
+
+Personal library: the list of documents saved by the logged-in user. Requires a session (`401 {"error": "AuthenticationRequired"}` without one). Accepts all the same query parameters as `GET /documents` for filtering and pagination. Response `200`, ordered by most recent save first:
+
+```json
+{
+  "count": 5,
+  "total_pages": 1,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 3,
+      "code": "AK-2100-EST-MEM-0002",
+      "title": "Memorial de cálculo do revestimento inferior",
+      "description": "Verificação de tensões e vida em fadiga do revestimento inferior",
+      "type": { "code": "MEM", "name": "Memorial de Cálculo" },
+      "discipline": { "code": "EST", "name": "Estruturas" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
+      "status": "APPROVED",
+      "updated_at": "2026-10-20T14:02:11.000000+00:00",
+      "created_by": { "id": 3, "name": "Caio Bertoni" },
+      "updated_by": { "id": null, "name": null },
+      "is_favorite": true,
+      "saved_at": "2026-10-25T10:15:30.000000+00:00"
+    }
+  ]
+}
+```
+
+Only documents the user can read are listed: the responsible user or a user with an active (non-expired) access grant. The response includes `saved_at`, the timestamp when the document was added to the library. Invalid parameters answer `400 {"errors": {...}}` like `GET /documents`.
+
+### `POST /users/me/library/<document_id>`
+
+Saves a document to the user's personal library. Requires a session (`401 {"error": "AuthenticationRequired"}` without one). The user must have access to the document (be the responsible or have an active access grant).
+
+Answers:
+- `201 {"document_id": <id>, "saved": true}` when the document is newly saved.
+- `200 {"document_id": <id>, "saved": true}` when it was already saved (idempotent).
+- `404 {"error": "DocumentNotFound"}` for an unknown or archived document.
+- `403 {"error": "AccessDenied"}` when the user cannot read the document.
+
+### `DELETE /users/me/library/<document_id>`
+
+Removes a document from the user's personal library. Requires a session (`401 {"error": "AuthenticationRequired"}` without one). The document doesn't need to be readable at the time of deletion.
+
+Answers:
+- `204` (no body) when the document is removed or was not in the library.
 
 ### `POST /users/me/request-deletion`
 
