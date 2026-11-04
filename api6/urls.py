@@ -10,7 +10,6 @@ from core.views.access_request_view import (
 from core.views.api_root_view import api_root
 from core.views.auth_view import csrf_view, login_view, logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
-from core.views.dev_login_view import dev_login_view
 from core.views.document_ai_view import suggest_document_metadata_view, summarize_search_view
 from core.views.documents_view import (
     archived_documents_view,
@@ -41,7 +40,6 @@ urlpatterns = [
     path("", api_root, name="api-root"),
     path("health/", health_check, name="health-check"),
     path("admin/", admin.site.urls),
-    path("dev/login", dev_login_view, name="dev-login"),
     path("auth/csrf", csrf_view, name="auth-csrf"),
     path("auth/login", login_view, name="auth-login"),
     path("auth/logout", logout_view, name="auth-logout"),
