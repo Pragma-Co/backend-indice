@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta
 
 from django.core.cache import cache
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import OuterRef, Prefetch, Q, Subquery
 from django.utils import timezone
 
@@ -16,6 +17,11 @@ from core.models import (
 )
 from core.models.choices import AccessStatus, RevisionStatus
 from core.serializers.document_serializer import revision_label
+from core.services.access_request_exceptions import AccessRequestAlreadyPendingError
+from core.services.access_request_service import (
+    active_grant_filter,
+    validate_access_request_payload,
+)
 from core.services.document_exceptions import DocumentQueryError
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
@@ -342,7 +348,7 @@ def _compute_access_status(document, user):
         return ACCESS_APPROVED
 
     has_grant = DocumentAccess.objects.filter(
-        document=document, user=user, status=AccessStatus.APPROVED
+        active_grant_filter(), document=document, user=user
     ).exists()
     if has_grant:
         return ACCESS_APPROVED
@@ -377,6 +383,8 @@ def _latest_access_request(document, user):
     return {
         "id": access.id,
         "status": access.status,
+        "access_type": access.access_type,
+        "expires_on": access.expires_on.isoformat() if access.expires_on else None,
         "created_at": requested.isoformat() if requested else None,
     }
 
@@ -484,27 +492,51 @@ def get_document_detail(document_id, user_id=None):
     )
 
 
-def request_document_access(document_id, user_id, justification=""):
+def _reopen_access_request(access, cleaned):
+    access.status = AccessStatus.PENDING
+    access.justification = cleaned["justification"]
+    access.access_type = cleaned["access_type"]
+    access.expires_on = cleaned["expires_on"]
+    access.requested_at = timezone.now()
+    access.approver = None
+    access.decided_at = None
+    access.save(
+        update_fields=[
+            "status",
+            "justification",
+            "access_type",
+            "expires_on",
+            "requested_at",
+            "approver",
+            "decided_at",
+        ]
+    )
+
+
+def request_document_access(document_id, user, payload):
     document = _get_document_or_none(document_id)
     if document is None:
         raise DocumentNotFoundError()
 
-    user = resolve_user(user_id)
+    cleaned = validate_access_request_payload(payload)
     if can_view_document(document, user):
         raise AlreadyHasAccessError()
 
-    access, created = DocumentAccess.objects.get_or_create(
-        document=document,
-        user=user,
-        defaults={
-            "status": AccessStatus.PENDING,
-            "justification": justification,
-            "requested_at": timezone.now(),
-        },
-    )
-
-    return {
-        "id": access.id,
-        "status": access.status,
-        "created": created,
-    }
+    with transaction.atomic():
+        access, created = DocumentAccess.objects.select_for_update().get_or_create(
+            document=document,
+            user=user,
+            defaults={
+                **cleaned,
+                "status": AccessStatus.PENDING,
+                "requested_at": timezone.now(),
+            },
+        )
+        if created:
+            return access
+        if access.status == AccessStatus.PENDING:
+            raise AccessRequestAlreadyPendingError(access)
+        if DocumentAccess.objects.filter(active_grant_filter(), pk=access.pk).exists():
+            raise AlreadyHasAccessError()
+        _reopen_access_request(access, cleaned)
+    return access

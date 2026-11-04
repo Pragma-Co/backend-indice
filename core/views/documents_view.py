@@ -7,12 +7,17 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.models import AuditAction
+from core.serializers.access_request_serializer import serialize_access_request
 from core.serializers.document_serializer import (
     serialize_archived_document,
     serialize_created_document,
     serialize_restored_document,
 )
 from core.services import audit_service
+from core.services.access_request_exceptions import (
+    AccessRequestAlreadyPendingError,
+    AccessRequestValidationError,
+)
 from core.services.document_archive_service import (
     archive_document,
     is_manager,
@@ -39,8 +44,6 @@ from core.services.documents_exceptions import (
     AlreadyHasAccessError,
     ArchivePermissionDeniedError,
     DocumentNotFoundError,
-    MissingUserError,
-    UserNotFoundError,
 )
 from core.services.documents_service import (
     get_document_detail,
@@ -363,31 +366,32 @@ def restore_document_view(request, document_id):
     return JsonResponse(serialize_restored_document(document))
 
 
-@csrf_exempt
 @require_POST
 def request_access(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
     try:
-        payload = json.loads(request.body or "{}")
-    except json.JSONDecodeError:
+        payload = json.loads(request.body or b"")
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return JsonResponse({"error": "InvalidJSON"}, status=400)
 
-    user_id = payload.get("user_id")
-    justification = payload.get("justification", "")
-
     try:
-        result = request_document_access(document_id, user_id, justification)
-        audit_service.log_access_requested(
-            request, document_id, "", user_id, justification, result["created"]
-        )
-        return JsonResponse(result, status=201)
+        access = request_document_access(document_id, user, payload)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
-    except MissingUserError:
-        return JsonResponse({"error": "MissingUser"}, status=400)
-    except UserNotFoundError:
-        return JsonResponse({"error": "UserNotFound"}, status=404)
+    except AccessRequestValidationError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
     except AlreadyHasAccessError:
         return JsonResponse({"error": "AlreadyHasAccess"}, status=409)
+    except AccessRequestAlreadyPendingError as exc:
+        return JsonResponse(
+            {"error": "AccessRequestAlreadyPending", "id": exc.access.pk}, status=409
+        )
     except Exception as exc:
         logger.exception("Failed to request document access")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+
+    audit_service.log_access_requested(request, access)
+    return JsonResponse(serialize_access_request(access), status=201)

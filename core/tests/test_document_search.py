@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from unittest import mock
@@ -11,6 +12,7 @@ from django.utils import timezone
 from docx import Document as DocxDocument
 
 from core.models import (
+    AccessType,
     Area,
     Discipline,
     Document,
@@ -278,6 +280,23 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         response = self._search(q="estacas")
 
         self.assertEqual(self._codes(response), ["MEM-001"])
+
+    def test_should_not_send_content_snippets_to_users_with_an_expired_grant(self):
+        document = self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)
+        DocumentAccess.objects.create(
+            document=document,
+            user=self.reader,
+            status=AccessStatus.APPROVED,
+            access_type=AccessType.TEMPORARY,
+            expires_on=timezone.localdate() - timedelta(days=1),
+            approver=self.owner,
+            decided_at=timezone.now(),
+        )
+        self.client.force_login(self.reader)
+
+        response = self._search(q="ponte")
+
+        self.assertEqual(response.json()["results"][0]["highlights"]["content"], [])
 
     def test_should_not_send_content_snippets_to_users_without_access(self):
         self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)

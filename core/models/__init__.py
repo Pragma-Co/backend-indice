@@ -13,6 +13,7 @@ from core.models.catalog import (
 )
 from core.models.choices import (
     AccessStatus,
+    AccessType,
     AuditAction,
     ConfidentialityLevel,
     FileExtension,
@@ -36,6 +37,7 @@ from core.models.search import DocumentContent
 __all__ = [
     "MAX_FILE_SIZE_BYTES",
     "AccessStatus",
+    "AccessType",
     "Area",
     "AuditAction",
     "AuditLog",

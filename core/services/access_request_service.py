@@ -1,9 +1,11 @@
+from datetime import date
+
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from core.models import AccessStatus, Area, Document, DocumentAccess
+from core.models import AccessStatus, AccessType, Area, Document, DocumentAccess
 from core.services.access_request_exceptions import (
     AccessRequestAlreadyDecidedError,
     AccessRequestNotFoundError,
@@ -15,10 +17,94 @@ DECISIONS = (AccessStatus.APPROVED, AccessStatus.REJECTED)
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+JUSTIFICATION_MIN_LENGTH = 20
+JUSTIFICATION_MAX_LENGTH = 1000
 
 
 def _error(code, message):
     return {"code": code, "message": message}
+
+
+def active_grant_filter() -> Q:
+    return Q(status=AccessStatus.APPROVED) & (
+        Q(expires_on__isnull=True) | Q(expires_on__gte=timezone.localdate())
+    )
+
+
+def _justification_error(justification):
+    if justification is None or (isinstance(justification, str) and not justification.strip()):
+        return _error("required", "Justification is required.")
+    if not isinstance(justification, str):
+        return _error("invalid", "justification must be a string.")
+    length = len(justification.strip())
+    if length < JUSTIFICATION_MIN_LENGTH:
+        return _error(
+            "too_short", f"justification must have at least {JUSTIFICATION_MIN_LENGTH} characters."
+        )
+    if length > JUSTIFICATION_MAX_LENGTH:
+        return _error(
+            "too_long", f"justification must have at most {JUSTIFICATION_MAX_LENGTH} characters."
+        )
+    return None
+
+
+def _clean_access_type(raw_access_type, errors):
+    if raw_access_type is None or (
+        isinstance(raw_access_type, str) and not raw_access_type.strip()
+    ):
+        errors["access_type"] = _error("required", "access_type is required.")
+        return None
+    normalized = raw_access_type.strip().upper() if isinstance(raw_access_type, str) else None
+    if normalized not in AccessType.values:
+        errors["access_type"] = _error(
+            "invalid_choice", f"access_type must be one of {AccessType.values}."
+        )
+        return None
+    return AccessType(normalized)
+
+
+def _clean_expires_on(raw_expires_on, access_type, errors):
+    if access_type == AccessType.PERMANENT and raw_expires_on is not None:
+        errors["expires_on"] = _error(
+            "not_allowed", "expires_on is only accepted for TEMPORARY access."
+        )
+        return None
+    if access_type != AccessType.TEMPORARY:
+        return None
+    if raw_expires_on is None or raw_expires_on == "":
+        errors["expires_on"] = _error("required", "expires_on is required for TEMPORARY access.")
+        return None
+    try:
+        expires_on = date.fromisoformat(raw_expires_on)
+    except (TypeError, ValueError):
+        errors["expires_on"] = _error("invalid", "expires_on must be a date in YYYY-MM-DD format.")
+        return None
+    if expires_on < timezone.localdate():
+        errors["expires_on"] = _error("in_the_past", "expires_on cannot be in the past.")
+        return None
+    return expires_on
+
+
+def validate_access_request_payload(payload) -> dict:
+    if not isinstance(payload, dict):
+        raise AccessRequestValidationError(
+            {"body": _error("invalid", "Request body must be a JSON object.")}
+        )
+
+    errors = {}
+    justification = payload.get("justification")
+    justification_error = _justification_error(justification)
+    if justification_error is not None:
+        errors["justification"] = justification_error
+    access_type = _clean_access_type(payload.get("access_type"), errors)
+    expires_on = _clean_expires_on(payload.get("expires_on"), access_type, errors)
+    if errors:
+        raise AccessRequestValidationError(errors)
+    return {
+        "justification": justification.strip(),
+        "access_type": access_type,
+        "expires_on": expires_on,
+    }
 
 
 def decidable_documents(approver):

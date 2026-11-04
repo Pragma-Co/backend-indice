@@ -5,7 +5,7 @@ import logging
 from django.conf import settings
 from django.db import transaction
 
-from core.models import AuditAction, AuditLog, Document, User
+from core.models import AuditAction, AuditLog, User
 from core.services.document_code_service import revision_label
 
 logger = logging.getLogger(__name__)
@@ -229,22 +229,18 @@ def log_document_revision_created(request, revision, temp_file_ids):
 
 
 @never_raises
-def log_access_requested(request, document_id, document_code, user_id, justification, created):
-    if not document_code:
-        document_code = (
-            Document.objects.filter(pk=document_id).values_list("code", flat=True).first()
-        )
+def log_access_requested(request, access):
     log_event(
         request,
         AuditAction.DOC_ACCESS_REQUESTED,
         ENTITY_DOCUMENT,
-        document_id,
+        access.document_id,
         {
-            "document_code": document_code,
-            "justification": justification,
-            "already_requested": not created,
+            "document_code": access.document.code,
+            "justification": access.justification,
+            "access_type": access.access_type,
+            "expires_on": access.expires_on.isoformat() if access.expires_on else None,
         },
-        {"user_id": user_id},
     )
 
 

@@ -170,8 +170,17 @@ class FileAdmin(admin.ModelAdmin):
 
 @admin.register(DocumentAccess)
 class DocumentAccessAdmin(admin.ModelAdmin):
-    list_display = ("document", "user", "status", "requested_at", "approver", "decided_at")
-    list_filter = ("status",)
+    list_display = (
+        "document",
+        "user",
+        "status",
+        "access_type",
+        "expires_on",
+        "requested_at",
+        "approver",
+        "decided_at",
+    )
+    list_filter = ("status", "access_type")
     search_fields = ("document__code", "user__email")
     autocomplete_fields = ("document", "user", "approver")
 
