@@ -381,12 +381,12 @@ Responses:
 - `409` when the same file (by SHA-256) is already attached to a registered document.
 - `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
 
-**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the responsible, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
+**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the session user, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
 
-Known limitations of the audit entry, all tied to the absence of authentication and of a production proxy:
+Known limitations of the audit entry:
 
 - **The IP is only as trustworthy as the proxy in front of the API.** `X-Forwarded-For` is sent by the client, so a caller reaching Django directly can forge it. In production the reverse proxy must overwrite (not append to) that header; until then treat `ip_address` as informative, not as evidence.
-- **The author is the declared responsible, not the caller.** There is no login yet and the endpoint is public, so `user` is the `responsible_id` of the payload and any caller can attribute the event to any active user. It becomes the session user once authentication exists.
+- **The author is the session user.** The endpoint requires a session, so `user` is the signed-in caller; the `responsible_id` of the payload is only the fallback when no session user is available.
 - **A failed write leaves only the server log.** This is deliberate: the card requires that auditing never aborts or reverts the publication. The failure is logged with `logger.exception` under `core.services.audit_service`, which is the hook for an alert when monitoring is in place.
 
 **Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
@@ -400,13 +400,21 @@ Creates the next revision of an existing document with status `PENDING` (awaitin
 
 In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
 
-### `POST /dev/login`
+### Authentication
 
-Provisional sign in, used by the frontend while the real authentication does not exist. JSON body `{"user_id": <int>}`; opens a Django session for that active user and answers `200` with the same payload as `GET /users/me`. Signing in again replaces the session user. `400 {"error": "MissingUser"}` when `user_id` is missing or not an integer, `400 {"error": "InvalidJSON"}`, `404 {"error": "UserNotFound"}` for an unknown or inactive user. It asks for no credentials, so it only exists while `DJANGO_DEBUG` is on: with it off every call answers `404 {"error": "NotFound"}`. Remove it when the real login lands.
+Every route requires a Django session except `/`, `/health/`, `/auth/csrf`, `/auth/login`, `/auth/logout`, the read-only `/legal-documents` routes and the Django admin (which has its own login). Without a session of an active user, `LoginRequiredJsonMiddleware` (`core/middleware/`) answers `401 {"error": "AuthenticationRequired"}` before the view runs; unknown paths still answer `404`. Role checks (`403`) stay in the views.
+
+### `GET /auth/csrf`
+
+Sets the `csrftoken` cookie and answers `204` with no body. The frontend calls it before the first write, so `POST /auth/login` can carry the token in the `X-CSRFToken` header.
+
+### `POST /auth/login`
+
+JSON body `{"email": "<email>", "password": "<password>"}`, with the CSRF header like every other write (`403` without it). Checks the password against the PBKDF2 hash in `app_user.password_hash`, opens the Django session (`sessionid` cookie, `HttpOnly`), rotates the `csrftoken` cookie and answers `200` with the same payload as `GET /users/me`. Writes `audit_log` (`action = LOGIN`, `entity = "app_user"`, `record.user_agent`). Errors: `400 {"errors": {"email": "Email is required." | "Enter a valid email address.", "password": "Password is required."}}`, `400 {"error": "InvalidJSON"}`, `405` for other methods and `401 {"error": "InvalidCredentials"}` with the same body for an unknown email, a wrong password, an inactive user or an anonymized account, so the answer does not reveal which accounts exist.
 
 ### `POST /auth/logout`
 
-Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
+Ends the Django session of the caller (public, so an expired session can still call it): the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
 
 ### `GET /legal-documents/<slug>/current`
 
@@ -465,7 +473,7 @@ Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "
 
 ### `GET /documents/<id>`
 
-Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
+Detail of one document. The viewer is the session user. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
 
 Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED` and not expired) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
 
@@ -545,7 +553,7 @@ Undoes the archiving. Same rules as `DELETE /documents/<id>`: session, CSRF head
 
 ### `GET /files/<id>/view`
 
-Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document, or to a revision reviewer (role `AUDITOR` or `ADMIN`) while the revision of the file is still `PENDING`, so the file can be inspected before the decision. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). The viewer is the user of the session; the `user_id` query parameter is only read as a fallback while `DJANGO_DEBUG` is on and there is no session. Other answers: `400 MissingUser` without a session (or, in debug, without `user_id`), `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
+Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document, or to a revision reviewer (role `AUDITOR` or `ADMIN`) while the revision of the file is still `PENDING`, so the file can be inspected before the decision. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). The viewer is the user of the session (`401 AuthenticationRequired` without one; a `user_id` query parameter never replaces it). Other answers: `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
 
 ### `POST /documents/<id>/request-access`
 

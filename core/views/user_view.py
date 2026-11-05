@@ -21,7 +21,7 @@ from core.services.user_anonymization_service import (
 
 
 def _unauthorized():
-    return JsonResponse({"error": "Authentication required."}, status=401)
+    return JsonResponse({"error": "AuthenticationRequired"}, status=401)
 
 
 def _active_user(request):

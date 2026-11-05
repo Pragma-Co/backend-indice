@@ -25,6 +25,8 @@ from core.services.documents_service import (
     get_document_detail,
 )
 
+SESSION_QUERIES = 2
+
 
 class DocumentsViewTests(TestCase):
     def setUp(self):
@@ -53,6 +55,7 @@ class DocumentsViewTests(TestCase):
         )
         self.document.areas.add(self.area)
         self.client = Client()
+        self.client.force_login(self.user)
 
     def test_returns_all_active_documents_without_filters(self):
         response = self.client.get("/documents")
@@ -137,7 +140,7 @@ class DocumentsViewTests(TestCase):
             document = self._other_document(f"DOC-10{index}")
             Revision.objects.create(document=document, version=1, author=self.user)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(SESSION_QUERIES + 4):
             response = self.client.get("/documents")
 
         self.assertEqual(len(response.json()["results"]), 5)
@@ -155,6 +158,7 @@ class DocumentsSearchAndPaginationTests(TestCase):
             email="ana@example.com", password="test-password", name="Ana", area=self.structures
         )
         self.client = Client()
+        self.client.force_login(self.user)
 
     def _document(self, code, title, document_type=None, area=None, days_ago=0):
         moment = timezone.now() - timedelta(days=days_ago)
@@ -355,7 +359,7 @@ class DocumentsSearchAndPaginationTests(TestCase):
         for index in range(12):
             self._document(f"DOC-{index:02d}", f"Documento {index}", days_ago=index)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(SESSION_QUERIES + 4):
             response = self.client.get("/documents", {"page_size": 10})
 
         self.assertEqual(len(response.json()["results"]), 10)
@@ -379,6 +383,7 @@ class DocumentsAdvancedFiltersTests(TestCase):
             email="bruno@example.com", password="test-password", name="Bruno", area=self.quality
         )
         self.client = Client()
+        self.client.force_login(self.ana)
 
     def _document(
         self,
@@ -626,7 +631,7 @@ class DocumentsAdvancedFiltersTests(TestCase):
                 description="caverna",
             )
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(SESSION_QUERIES + 4):
             response = self.client.get(
                 "/documents",
                 {
@@ -670,11 +675,19 @@ class DocumentsAdvancedFiltersTests(TestCase):
 class SimpleFiltersViewTests(TestCase):
     def setUp(self):
         cache.clear()
-        Area.objects.create(acronym="ENG", name="Engenharia", active=True)
+        engineering = Area.objects.create(acronym="ENG", name="Engenharia", active=True)
         Area.objects.create(acronym="OLD", name="Desativada", active=False)
         DocumentType.objects.create(code="PDF", name="Relatório", active=True)
         DocumentType.objects.create(code="OLD", name="Desativado", active=False)
         self.client = Client()
+        self.client.force_login(
+            User.objects.create_user(
+                email="reader@example.com",
+                password="test-password",
+                name="Reader",
+                area=engineering,
+            )
+        )
 
     def test_returns_active_filter_groups(self):
         response = self.client.get("/documents/simple-filters")
@@ -869,6 +882,7 @@ class DocumentDetailViewTests(TestCase):
             audited_at=timezone.now(),
         )
         self.client = Client()
+        self.client.force_login(self.responsible)
 
     def test_should_return_200_with_document_metadata(self):
         response = self.client.get(f"/documents/{self.document.id}")

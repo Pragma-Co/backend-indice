@@ -46,10 +46,10 @@ class UploadAuditTests(TestCase):
         self.user = User.objects.create_user(
             email="audit@example.com", password="secret", name="Auditora", area=area
         )
+        self.client.force_login(self.user)
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_should_record_upload_success_for_the_logged_in_user(self, mongo):
-        self.client.force_login(self.user)
         uploaded = SimpleUploadedFile("relatorio.pdf", PDF_HEADER)
 
         response = self.client.post("/documents/upload", {"file": uploaded})
@@ -65,14 +65,17 @@ class UploadAuditTests(TestCase):
         self.assertEqual(entry.ip_address, "127.0.0.1")
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
-    def test_should_record_the_declared_user_when_nobody_is_logged_in(self, mongo):
+    def test_should_record_the_session_user_instead_of_a_declared_user(self, mongo):
+        declared = User.objects.create_user(
+            email="declared@example.com", password="secret", name="Declarada", area=self.user.area
+        )
         uploaded = SimpleUploadedFile("relatorio.pdf", PDF_HEADER)
 
-        self.client.post("/documents/upload", {"file": uploaded, "user_id": str(self.user.id)})
+        self.client.post("/documents/upload", {"file": uploaded, "user_id": str(declared.id)})
 
         entry = AuditLog.objects.get()
         self.assertEqual(entry.user, self.user)
-        self.assertFalse(entry.record["actor"]["authenticated"])
+        self.assertTrue(entry.record["actor"]["authenticated"])
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_should_not_record_anything_when_the_upload_is_rejected(self, mongo):
