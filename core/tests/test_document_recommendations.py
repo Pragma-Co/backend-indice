@@ -307,6 +307,7 @@ class DocumentRecommendationViewTests(DocumentRecommendationFixtureMixin, TestCa
                     "updated_at",
                     "created_by",
                     "updated_by",
+                    "is_favorite",
                     "score",
                     "matches",
                 ]

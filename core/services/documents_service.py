@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import OuterRef, Prefetch, Q, Subquery
+from django.db.models import BooleanField, Exists, OuterRef, Prefetch, Q, Subquery, Value
 from django.utils import timezone
 
 from core.models import (
@@ -13,6 +13,7 @@ from core.models import (
     DocumentAccess,
     DocumentType,
     Revision,
+    SavedDocument,
     User,
 )
 from core.models.choices import AccessStatus, RevisionStatus
@@ -201,14 +202,24 @@ def _start_of_day(day):
     return timezone.make_aware(datetime.combine(day, time.min))
 
 
-def filter_documents(query, archived=False):
+def filter_documents(query, archived=False, user=None):
     latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
+    favorite = (
+        SavedDocument.objects.filter(user=user, document=OuterRef("pk"))
+        if user is not None
+        else None
+    )
     queryset = (
         Document.objects.filter(document_type__active=True, archived_at__isnull=not archived)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
         .annotate(
             status=Subquery(latest_revision.values("status")[:1]),
             latest_version=Subquery(latest_revision.values("version")[:1]),
+            is_favorite=(
+                Exists(favorite)
+                if favorite is not None
+                else Value(False, output_field=BooleanField())
+            ),
         )
         .select_related("document_type", "discipline", "project", "created_by", "updated_by")
         .prefetch_related("areas", "tags")
@@ -255,9 +266,9 @@ def filter_documents(query, archived=False):
     return queryset
 
 
-def get_documents(params):
+def get_documents(params, user=None):
     query = parse_document_query(params)
-    return paginate_documents(filter_documents(query), query, serialize_document)
+    return paginate_documents(filter_documents(query, user=user), query, serialize_document)
 
 
 def paginate_documents(queryset, query, serialize):
@@ -308,6 +319,7 @@ def serialize_document(document):
             "id": document.updated_by_id,
             "name": document.updated_by.name if document.updated_by else None,
         },
+        "is_favorite": getattr(document, "is_favorite", False),
     }
 
 
