@@ -8,6 +8,7 @@ from django.utils import timezone
 from core.models import AccessStatus, AccessType, Area, Document, DocumentAccess
 from core.services.access_request_exceptions import (
     AccessRequestAlreadyDecidedError,
+    AccessRequestExpiredError,
     AccessRequestNotFoundError,
     AccessRequestValidationError,
     OwnAccessRequestReviewError,
@@ -108,7 +109,7 @@ def validate_access_request_payload(payload) -> dict:
 
 
 def decidable_documents(approver):
-    return Document.objects.filter(document_type__active=True).filter(
+    return Document.objects.filter(document_type__active=True, archived_at__isnull=True).filter(
         Q(responsible=approver) | Q(areas__manager=approver, areas__active=True)
     )
 
@@ -158,6 +159,29 @@ def pending_access_requests(approver):
         )
         .order_by("requested_at", "id")
     )
+
+
+def get_access_request_detail(access_id, approver) -> DocumentAccess:
+    access = (
+        DocumentAccess.objects.filter(
+            pk=access_id,
+            document__in=decidable_documents(approver).values("pk"),
+        )
+        .exclude(user=approver)
+        .select_related(
+            "user__area",
+            "approver",
+            "document__project",
+            "document__discipline",
+            "document__document_type",
+            "document__responsible",
+        )
+        .prefetch_related("document__areas")
+        .first()
+    )
+    if access is None:
+        raise AccessRequestNotFoundError()
+    return access
 
 
 def list_pending_access_requests(approver, params) -> dict:
@@ -213,6 +237,12 @@ def decide_access_request(access_id, approver, payload) -> DocumentAccess:
             raise OwnAccessRequestReviewError()
         if access.status != AccessStatus.PENDING:
             raise AccessRequestAlreadyDecidedError(access.status)
+        if (
+            cleaned["decision"] == AccessStatus.APPROVED
+            and access.expires_on is not None
+            and access.expires_on < timezone.localdate()
+        ):
+            raise AccessRequestExpiredError(access.expires_on)
 
         access.status = cleaned["decision"]
         access.approver = approver

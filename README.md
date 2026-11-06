@@ -471,6 +471,20 @@ Records the manager's decision on a pending revision. Same permission rules as t
 
 Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
 
+### `GET /manager/pending-access-requests`
+
+Access requests tab of the manager panel. The approver is the session user and must manage an active area or be the responsible of a document: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` otherwise. Lists the `PENDING` requests of documents the approver can decide (documents of the areas they manage, or that they are responsible for, with an active type and not archived), excluding the approver's own requests, oldest first. Paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `status`, `justification`, `access_type`, `expires_on`, `requested_at`, `requester` (`id`, `name`, `area`; no e-mail) and `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
+
+### `GET /manager/access-requests/<id>`
+
+Detail of one access request, for the detail view of the panel. Same permission rules and scope as the queue, but it also answers for requests already decided. Answers `200` with the queue item fields plus `document.responsible` (`id`, `name`), `document.areas` (`acronym`, `name`), `approver` (`id`, `name`, or `null` while pending) and `decided_at`. `404 {"error": "AccessRequestNotFound"}` for an unknown request, one outside the approver's scope or the approver's own request.
+
+### `POST /manager/access-requests/<id>/decision`
+
+Records the approver's decision. Same permission rules and scope as the queue. Body `{"decision": "APPROVED" | "REJECTED"}`. Approval grants access right away with the terms the collaborator requested (`access_type`, `expires_on`): document detail, file view and content search treat the requester as having access from the next request on. Rejection keeps the document locked; the collaborator can send a new request later.
+
+Answers `200 {"id", "document_id", "requester", "status", "access_type", "expires_on", "approver", "requested_at", "decided_at"}`. Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnAccessRequest"}`; `404 {"error": "AccessRequestNotFound"}`; `409 {"error": "AccessRequestAlreadyDecided", "status"}`; `409 {"error": "AccessRequestExpired", "expires_on"}` when approving a `TEMPORARY` request whose last day has already passed (it can still be rejected). Every decision is written to `audit_log` (`action = UPDATE`, `entity = "document_access"`, `record.event = "ACCESS_APPROVED" | "ACCESS_REJECTED"`).
+
 ### `GET /documents/<id>`
 
 Detail of one document. The viewer is the session user. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
