@@ -4,6 +4,7 @@ Split by subject so each module stays readable; the app label remains `core`.
 """
 
 from core.models.access import DocumentAccess
+from core.models.access_group import AccessGroup, AccessGroupMember, SecrecyLevel
 from core.models.audit import AuditLog
 from core.models.catalog import (
     Discipline,
@@ -12,6 +13,7 @@ from core.models.catalog import (
     Tag,
 )
 from core.models.choices import (
+    AccessGroupScope,
     AccessStatus,
     AccessType,
     AuditAction,
@@ -19,6 +21,7 @@ from core.models.choices import (
     FileExtension,
     RevisionStatus,
     Role,
+    VisibilityScope,
 )
 from core.models.document import Document, DocumentArea, DocumentTag
 from core.models.excluded_identifier import ExcludedIdentifier
@@ -37,6 +40,9 @@ from core.models.search import DocumentContent
 
 __all__ = [
     "MAX_FILE_SIZE_BYTES",
+    "AccessGroup",
+    "AccessGroupMember",
+    "AccessGroupScope",
     "AccessStatus",
     "AccessType",
     "Area",
@@ -62,8 +68,10 @@ __all__ = [
     "RevisionStatus",
     "Role",
     "SavedDocument",
+    "SecrecyLevel",
     "Tag",
     "User",
     "UserClauseConsent",
     "UserLegalAcceptance",
+    "VisibilityScope",
 ]

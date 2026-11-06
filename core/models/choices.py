@@ -40,6 +40,17 @@ class AccessType(models.TextChoices):
     PERMANENT = "PERMANENT", "Permanent"
 
 
+class VisibilityScope(models.TextChoices):
+    EVERYONE = "EVERYONE", "Everyone"
+    AREA = "AREA", "Users of the document areas"
+    SELECTED_USERS = "SELECTED_USERS", "Selected users"
+
+
+class AccessGroupScope(models.TextChoices):
+    AREA = "AREA", "Area"
+    PROJECT = "PROJECT", "Project"
+
+
 class AuditAction(models.TextChoices):
     CREATE = "CREATE", "Create"
     READ = "READ", "Read"

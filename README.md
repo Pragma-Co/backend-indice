@@ -695,7 +695,7 @@ docker compose exec api python -m classifier.train --csv training_export/quickse
 
 `manage.py seed` fills the database with a fictional aerostructures dataset —
 areas, engineers, aircraft programs, technical documents with revisions and
-files, access requests and an audit trail. It covers all three confidentiality
+files, access requests, access groups and an audit trail. It covers all three confidentiality
 levels and every revision status, so the search, permission and approval flows
 have something realistic to run against.
 
@@ -711,6 +711,26 @@ Every seeded user gets the same password: `SEED_PASSWORD` from your `.env` if
 set, `--password` if you pass it, otherwise a random one printed once at the
 end. Log in with an **email** (e.g. `marina.duarte@akaer.local`, role `ADMIN`).
 The command refuses to run when `DEBUG` is off unless you pass `--force`.
+
+## Access groups and secrecy levels
+
+Migration `0024` models the need-to-know rules of the library in three tables:
+
+| Table | Purpose |
+|-------|---------|
+| `secrecy_level` | One row per confidentiality level, written by the migration itself: `PUBLIC` (Público, rank 0, visible to everyone), `CONFIDENTIAL` (Sigiloso, rank 1, visible to the users of the document areas) and `SECRET` (Restrito, rank 2, visible to selected users only). `document.confidentiality_level` references it through a foreign key, so a level in use cannot be removed and a document cannot carry an unknown level. |
+| `access_group` | A group of users organized by **area** (`scope = AREA`, `area_id`) or by **project** (`scope = PROJECT`, `project_id`), which grants its members the documents of that area or project up to its `secrecy_level`. A check constraint ties the target to the scope, there is at most one group per target and level, and a group can be deactivated (`active`) instead of deleted. |
+| `access_group_member` | The users of each group (`group_id` + `user_id` unique), with who added them and when. Memberships disappear with the group or with the user. |
+
+`core/services/access_group_service.py` evaluates the rules for one document and one user, `can_user_view_document(document, user)`:
+
+- the responsible always sees the document;
+- `PUBLIC` is visible to every active user;
+- `CONFIDENTIAL` is visible to the users whose area is one of the document areas;
+- any level above public is also visible to a user with an approved, unexpired `document_access` grant, or who belongs to an active group of one of the document areas or of the document project whose level rank is at least the document's (a `CONFIDENTIAL` group never reaches a `SECRET` document);
+- anonymous and inactive users get `False`.
+
+The endpoints keep their current behaviour: applying this rule to the file view and to the document detail is the scope of the access-management cards (RF4). Until an API for groups exists they are managed in the Django admin (`/admin/`, groups with their members inline; the levels are read-only there), and `manage.py seed` creates three example groups.
 
 ## LGPD & security notes
 
