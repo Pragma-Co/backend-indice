@@ -92,7 +92,8 @@ class DocumentAccessTestCase(TestCase):
         self.client = Client()
 
     def _detail(self, user):
-        return self.client.get(f"/documents/{self.document.id}", {"user_id": user.id})
+        self.client.force_login(user)
+        return self.client.get(f"/documents/{self.document.id}")
 
     def _file(self, user=None, file_id=None, user_id=None, **headers):
         query = {}
@@ -256,13 +257,14 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         self.assertEqual(response.json()["access_request"]["status"], "REJECTED")
         self.assertNotIn("description", response.json())
 
-    @override_settings(DEBUG=False)
-    def test_should_not_trust_query_user_id_outside_debug_mode(self):
-        response = self._detail(self.owner)
+    @override_settings(DEBUG=True)
+    def test_should_refuse_a_query_user_id_without_a_session(self):
+        url = f"/documents/{self.document.id}"
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["access_status"], "PENDING")
-        self.assertNotIn("files", response.json()["revision"])
+        response = self.client.get(url, {"user_id": self.owner.id})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
 
 
 class DocumentFileViewTests(DocumentAccessTestCase):
@@ -307,21 +309,18 @@ class DocumentFileViewTests(DocumentAccessTestCase):
 
         self.assertEqual(AuditLog.objects.count(), 0)
 
-    def test_should_require_a_user(self):
+    def test_should_require_a_session(self):
         response = self._file()
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json(), {"error": "MissingUser"})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
+        self.assertNotIn(PDF_BYTES, response.content)
 
-    @override_settings(DEBUG=True)
-    def test_should_answer_404_in_json_for_an_unknown_user_or_file(self):
-        unknown_user = self._file(user_id=999999)
-        unknown_file = self._file(self.owner, file_id=999999)
+    def test_should_answer_404_in_json_for_an_unknown_file(self):
+        response = self._file(self.owner, file_id=999999)
 
-        self.assertEqual(unknown_user.status_code, 404)
-        self.assertEqual(unknown_user.json(), {"error": "UserNotFound"})
-        self.assertEqual(unknown_file.status_code, 404)
-        self.assertEqual(unknown_file.json(), {"error": "FileNotFound"})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": "FileNotFound"})
 
     def test_should_answer_404_when_the_file_is_missing_from_storage(self):
         (Path(self.storage_dir) / self.storage_path).unlink()
@@ -341,24 +340,25 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         self.assertEqual(response.json(), {"error": "FileNotFound"})
 
     def test_should_reject_other_methods(self):
+        self.client.force_login(self.owner)
+
         response = self.client.post(f"/files/{self.stored_file.id}/view")
 
         self.assertEqual(response.status_code, 405)
 
-    @override_settings(DEBUG=False)
-    def test_should_not_trust_query_user_id_outside_debug_mode(self):
-        response = self._file(user_id=self.owner.id)
+    def test_should_refuse_a_query_user_id_without_a_session(self):
+        debug_modes = [False, True]
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json(), {"error": "MissingUser"})
-        self.assertNotIn(PDF_BYTES, response.content)
+        responses = []
+        for debug in debug_modes:
+            with override_settings(DEBUG=debug):
+                responses.append(self._file(user_id=self.owner.id))
 
-    @override_settings(DEBUG=True)
-    def test_should_accept_query_user_id_only_as_a_debug_fallback(self):
-        response = self._file(user_id=self.owner.id)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(b"".join(response.streaming_content), PDF_BYTES)
+        for debug, response in zip(debug_modes, responses, strict=True):
+            with self.subTest(debug=debug):
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
+                self.assertNotIn(PDF_BYTES, response.content)
 
     @override_settings(DEBUG=True)
     def test_should_prefer_the_session_user_over_query_user_id(self):
@@ -398,6 +398,6 @@ class DocumentFileViewTests(DocumentAccessTestCase):
 
         response = self._file(file_id=pending_file.id, user_id=self.manager.id)
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json(), {"error": "MissingUser"})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
         self.assertNotIn(PDF_BYTES, response.content)

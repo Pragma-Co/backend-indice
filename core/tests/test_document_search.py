@@ -217,6 +217,10 @@ class DocumentIndexServiceTests(DocumentSearchTestCase):
 
 
 class DocumentSearchViewTests(DocumentSearchTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.reader)
+
     def test_should_return_content_matches_with_highlighted_snippets_to_the_owner(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
         self.client.force_login(self.owner)
@@ -257,14 +261,14 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         self.assertEqual(result["thematic_tags"], [])
         self.assertNotIn("can_read", result)
 
-    def test_should_flag_content_matches_without_exposing_content_to_anonymous_users(self):
+    def test_should_refuse_anonymous_users(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
+        self.client.logout()
 
         response = self._search(q="estacas")
 
-        result = response.json()["results"][0]
-        self.assertTrue(result["content_match"])
-        self.assertEqual(result["highlights"]["content"], [])
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
 
     def test_should_return_content_matches_to_users_with_approved_access(self):
         document = self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)

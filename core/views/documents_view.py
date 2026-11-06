@@ -67,7 +67,8 @@ ENTITY_DOCUMENT = "document"
 @require_GET
 def documents(request):
     try:
-        return JsonResponse(get_documents(request.GET))
+        user = request.user if request.user.is_authenticated and request.user.is_active else None
+        return JsonResponse(get_documents(request.GET, user))
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
