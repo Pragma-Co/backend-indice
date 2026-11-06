@@ -231,7 +231,7 @@ Response `200`, ordered by most recent first:
 
 `revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
 
-Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
+Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`, and neither do documents the viewer cannot see (see *Document visibility*).
 
 ### `GET /users/me/library`
 
@@ -404,6 +404,18 @@ In both formats `change_description` is required, 20 to 255 characters, and is s
 
 Every route requires a Django session except `/`, `/health/`, `/auth/csrf`, `/auth/login`, `/auth/logout`, the read-only `/legal-documents` routes and the Django admin (which has its own login). Without a session of an active user, `LoginRequiredJsonMiddleware` (`core/middleware/`) answers `401 {"error": "AuthenticationRequired"}` before the view runs; unknown paths still answer `404`. Role checks (`403`) stay in the views.
 
+### Document visibility
+
+`DocumentVisibilityMiddleware` (same package, right after the login check) resolves the viewer of every request into `request.viewer`: the active session user, or nobody (while `DJANGO_DEBUG` is on, `?user_id=<id>` on a `GET` is still accepted as a fallback). The document services then filter every query by what that viewer may see, following the secrecy levels (see *Access groups and secrecy levels*):
+
+- `PUBLIC`: everyone;
+- `CONFIDENTIAL`: users whose area is one of the document areas;
+- `SECRET`: only selected users;
+- at any level, the responsible, a user with an approved and unexpired `document_access` grant, and the members of an active access group of one of the document areas or of the document project whose level reaches the document's.
+
+The filter is applied inside `filter_documents`, so it covers `GET /documents`, `GET /documents/search` (and the AI summary built on it), `GET /documents/<id>/recommendations`, `GET /documents/archived` and `GET /users/me/library`: hidden documents are left out of `results` and of `count`, as if they did not exist. `GET /documents/<id>` answers `404 {"error": "DocumentNotFound"}` for a hidden document, so the response does not reveal that it exists. Without a viewer nothing is visible, and the login middleware already answers `401` before that. `GET /files/<id>/view` keeps its own, stricter rule (responsible, approved grant or reviewer of a pending revision), so seeing a document in a list never implies being able to open its file.
+
+
 ### `GET /auth/csrf`
 
 Sets the `csrftoken` cookie and answers `204` with no body. The frontend calls it before the first write, so `POST /auth/login` can carry the token in the `X-CSRFToken` header.
@@ -473,7 +485,7 @@ Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "
 
 ### `GET /documents/<id>`
 
-Detail of one document. The viewer is the session user. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
+Detail of one document. The viewer is the session user (`?user_id=<id>` is still accepted as a fallback while `DJANGO_DEBUG` is on). A document the viewer cannot see (see *Document visibility*) answers `404 {"error": "DocumentNotFound"}`, exactly like an unknown one. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
 
 Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED` and not expired) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
 
@@ -481,7 +493,7 @@ Only a viewer who **can read the document** (its responsible, or a user whose `D
 
 ### `GET /documents/<id>/recommendations`
 
-Thematic collections of documents related to the one being read, meant for the "recommended" carousels of the document screen. Public like the listing: it exposes the same metadata as `GET /documents`, never file contents. `limit` (optional, default 8, at most 20) caps the items of each collection.
+Thematic collections of documents related to the one being read, meant for the "recommended" carousels of the document screen. It exposes the same metadata as `GET /documents`, never file contents, and only documents the viewer can see (see *Document visibility*): a hidden base document answers `404`, and hidden candidates are left out of every collection. `limit` (optional, default 8, at most 20) caps the items of each collection.
 
 Candidates are the active, non-archived documents that share at least one of these with the open document: project, discipline, a tag, an area, or a thematic tag of the indexed content (`document_content.thematic_tags`, see `GET /documents/search`). Each candidate receives an affinity score, the sum of: same project `3`, same discipline `2`, same document type `1`, `2` per shared tag, `1` per shared area and `1` per shared thematic tag. Collections are ordered by score (ties: most recently updated first), and a document may belong to more than one collection.
 
@@ -730,7 +742,7 @@ Migration `0024` models the need-to-know rules of the library in three tables:
 - any level above public is also visible to a user with an approved, unexpired `document_access` grant, or who belongs to an active group of one of the document areas or of the document project whose level rank is at least the document's (a `CONFIDENTIAL` group never reaches a `SECRET` document);
 - anonymous and inactive users get `False`.
 
-The endpoints keep their current behaviour: applying this rule to the file view and to the document detail is the scope of the access-management cards (RF4). Until an API for groups exists they are managed in the Django admin (`/admin/`, groups with their members inline; the levels are read-only there), and `manage.py seed` creates three example groups.
+The listing, search, detail, recommendations, archived list and personal library apply this rule through `visible_documents` (see *Document visibility* under *Authentication*); the file view keeps its own rule. Until an API for groups exists they are managed in the Django admin (`/admin/`, groups with their members inline; the levels are read-only there), and `manage.py seed` creates three example groups.
 
 ## LGPD & security notes
 
