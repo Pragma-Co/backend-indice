@@ -24,6 +24,8 @@ from django.utils import timezone
 
 from core.management.commands import _seed_data as data
 from core.models import (
+    AccessGroup,
+    AccessGroupMember,
     Area,
     AuditAction,
     AuditLog,
@@ -39,6 +41,7 @@ from core.models import (
     Project,
     Revision,
     RevisionStatus,
+    SecrecyLevel,
     Tag,
     User,
 )
@@ -88,6 +91,7 @@ class Command(BaseCommand):
         revisions = self._seed_revisions(documents, users)
         self._seed_files(documents, revisions)
         accesses = self._seed_document_access(documents, users)
+        self._seed_access_groups(areas, projects, users)
         self._seed_legal_documents(users)
         self._seed_audit_log(users, documents, revisions, accesses)
 
@@ -352,6 +356,38 @@ class Command(BaseCommand):
             self._count("document_access", created)
             accesses.append(access)
         return accesses
+
+    def _seed_access_groups(self, areas, projects, users):
+        levels = {level.code: level for level in SecrecyLevel.objects.all()}
+        for (
+            name,
+            scope,
+            area_acronym,
+            project_code,
+            level,
+            creator_key,
+            member_keys,
+            description,
+        ) in data.ACCESS_GROUPS:
+            group, created = AccessGroup.objects.get_or_create(
+                name=name,
+                defaults={
+                    "description": description,
+                    "scope": scope,
+                    "area": areas[area_acronym] if area_acronym else None,
+                    "project": projects[project_code] if project_code else None,
+                    "secrecy_level": levels[level],
+                    "created_by": users[creator_key],
+                },
+            )
+            self._count("access_group", created)
+            for member_key in member_keys:
+                _membership, member_created = AccessGroupMember.objects.get_or_create(
+                    group=group,
+                    user=users[member_key],
+                    defaults={"added_by": users[creator_key]},
+                )
+                self._count("access_group_member", member_created)
 
     # -- legal documents ------------------------------------------------------
 
