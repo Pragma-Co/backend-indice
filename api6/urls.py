@@ -5,6 +5,7 @@ from django.urls import path
 
 from core.views.access_request_view import (
     access_request_decision_view,
+    access_request_detail_view,
     pending_access_requests_view,
 )
 from core.views.api_root_view import api_root
@@ -114,6 +115,11 @@ urlpatterns = [
         "manager/pending-access-requests",
         pending_access_requests_view,
         name="manager-pending-access-requests",
+    ),
+    path(
+        "manager/access-requests/<int:access_id>",
+        access_request_detail_view,
+        name="manager-access-request-detail",
     ),
     path(
         "manager/access-requests/<int:access_id>/decision",

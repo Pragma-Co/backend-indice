@@ -46,6 +46,25 @@ def serialize_pending_access_request(access: DocumentAccess) -> dict:
     }
 
 
+def _serialize_person(user):
+    if user is None:
+        return None
+    return {"id": user.id, "name": user.name}
+
+
+def serialize_access_request_detail(access: DocumentAccess) -> dict:
+    detail = serialize_pending_access_request(access)
+    document = access.document
+    detail["document"]["responsible"] = _serialize_person(document.responsible)
+    detail["document"]["areas"] = [
+        {"acronym": area.acronym, "name": area.name}
+        for area in sorted(document.areas.all(), key=lambda area: area.acronym)
+    ]
+    detail["approver"] = _serialize_person(access.approver)
+    detail["decided_at"] = _isoformat(access.decided_at)
+    return detail
+
+
 def serialize_pending_access_page(page: dict) -> dict:
     return {
         **page,
