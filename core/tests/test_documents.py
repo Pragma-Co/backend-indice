@@ -778,10 +778,9 @@ class DocumentDetailServiceTests(TestCase):
         with self.assertRaises(DocumentNotFoundError):
             get_document_detail(self.document.id)
 
-    def test_should_return_pending_access_when_no_user_is_given(self):
-        detail = get_document_detail(self.document.id)
-
-        self.assertEqual(detail["access_status"], "PENDING")
+    def test_should_hide_the_document_when_no_user_is_given(self):
+        with self.assertRaises(DocumentNotFoundError):
+            get_document_detail(self.document.id)
 
     def test_should_return_approved_access_for_the_document_responsible(self):
         detail = get_document_detail(self.document.id, user_id=self.responsible.id)
