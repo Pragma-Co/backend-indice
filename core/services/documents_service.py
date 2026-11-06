@@ -24,6 +24,7 @@ from core.services.access_request_service import (
     validate_access_request_payload,
 )
 from core.services.document_exceptions import DocumentQueryError
+from core.services.document_visibility_service import is_visible, visible_documents
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
     DocumentNotFoundError,
@@ -226,6 +227,7 @@ def filter_documents(query, archived=False, user=None):
         .order_by("-updated_at", "-id")
         .distinct()
     )
+    queryset = visible_documents(queryset, user)
 
     criteria = Q()
     if query["search_term"]:
@@ -496,6 +498,8 @@ def get_document_detail(document_id, user_id=None):
     user = None
     if user_id:
         user = User.objects.filter(pk=user_id).first()
+    if not is_visible(document, user):
+        raise DocumentNotFoundError()
 
     access_status = _compute_access_status(document, user)
     can_read = access_status == ACCESS_APPROVED
