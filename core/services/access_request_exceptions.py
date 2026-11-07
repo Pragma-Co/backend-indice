@@ -22,3 +22,9 @@ class AccessRequestAlreadyDecidedError(Exception):
 
 class OwnAccessRequestReviewError(Exception):
     pass
+
+
+class AccessRequestExpiredError(Exception):
+    def __init__(self, expires_on):
+        self.expires_on = expires_on
+        super().__init__(f"Access request expired on {expires_on}")
