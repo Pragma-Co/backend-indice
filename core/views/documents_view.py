@@ -50,6 +50,7 @@ from core.services.documents_service import (
     get_simple_filters,
     request_document_access,
 )
+from core.services.search_history_service import record_search
 from core.services.upload_exceptions import (
     DuplicateFileError,
     FileTooLargeError,
@@ -140,12 +141,17 @@ def documents_collection(request):
 @require_GET
 def search_documents_view(request):
     try:
-        return JsonResponse(search_documents(request.GET, request.viewer))
+        result = search_documents(request.GET, request.viewer)
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
         logger.exception("Failed to search documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+    try:
+        record_search(request.user, result["query"])
+    except Exception:
+        logger.exception("Failed to record search history")
+    return JsonResponse(result)
 
 
 @require_GET

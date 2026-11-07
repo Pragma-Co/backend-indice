@@ -37,6 +37,7 @@ from core.models.library import SavedDocument
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
 from core.models.search import DocumentContent
+from core.models.search_history import SearchHistory
 
 __all__ = [
     "MAX_FILE_SIZE_BYTES",
@@ -68,6 +69,7 @@ __all__ = [
     "RevisionStatus",
     "Role",
     "SavedDocument",
+    "SearchHistory",
     "SecrecyLevel",
     "Tag",
     "User",
