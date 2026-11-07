@@ -617,15 +617,13 @@ class TemporaryGrantTests(AccessRequestEndpointTestCase):
 
         self.assertFalse(allowed)
 
-    def test_should_hide_the_description_after_the_grant_expires(self):
+    def test_should_hide_the_document_after_the_grant_expires(self):
         self._grant(_yesterday())
 
         response = self.client.get(reverse("document-detail", args=[self.document.pk]))
 
-        body = response.json()
-        self.assertNotIn("description", body)
-        self.assertEqual(body["access_status"], "PENDING")
-        self.assertEqual(body["access_request"]["expires_on"], _yesterday().isoformat())
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": "DocumentNotFound"})
 
     def test_should_refuse_a_temporary_row_without_expiry_at_the_database_level(self):
         with self.assertRaises(IntegrityError), transaction.atomic():

@@ -1,7 +1,6 @@
 import json
 import logging
 
-from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -67,8 +66,7 @@ ENTITY_DOCUMENT = "document"
 @require_GET
 def documents(request):
     try:
-        user = request.user if request.user.is_authenticated and request.user.is_active else None
-        return JsonResponse(get_documents(request.GET, user))
+        return JsonResponse(get_documents(request.GET, request.viewer))
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
@@ -141,9 +139,8 @@ def documents_collection(request):
 
 @require_GET
 def search_documents_view(request):
-    user = request.user if request.user.is_authenticated and request.user.is_active else None
     try:
-        return JsonResponse(search_documents(request.GET, user))
+        return JsonResponse(search_documents(request.GET, request.viewer))
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
@@ -248,11 +245,9 @@ def create_revision_view(request, document_id):
 
 @require_GET
 def document_detail(request, document_id):
-    user_id = request.user.id if request.user.is_authenticated else None
-    if user_id is None and settings.DEBUG:
-        user_id = request.GET.get("user_id")
+    viewer = request.viewer
     try:
-        return JsonResponse(get_document_detail(document_id, user_id))
+        return JsonResponse(get_document_detail(document_id, viewer.id if viewer else None))
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
     except Exception as exc:
@@ -263,7 +258,7 @@ def document_detail(request, document_id):
 @require_GET
 def document_recommendations_view(request, document_id):
     try:
-        return JsonResponse(get_document_recommendations(document_id, request.GET))
+        return JsonResponse(get_document_recommendations(document_id, request.GET, request.viewer))
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except DocumentNotFoundError:

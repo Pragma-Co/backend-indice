@@ -121,7 +121,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
             tags=[self.titanium],
         )
 
-        payload = get_document_recommendations(self.document.id, {})
+        payload = get_document_recommendations(self.document.id, {}, self.author)
 
         self.assertEqual(
             codes(payload, "theme"),
@@ -139,7 +139,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
             tags=[self.titanium, self.fatigue],
         )
 
-        payload = get_document_recommendations(self.document.id, {})
+        payload = get_document_recommendations(self.document.id, {}, self.author)
 
         item = collection(payload, "theme")["items"][0]
         self.assertEqual(item["score"], 7.0)
@@ -165,7 +165,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
             themes=["ponte", "carga"],
         )
 
-        payload = get_document_recommendations(self.document.id, {})
+        payload = get_document_recommendations(self.document.id, {}, self.author)
 
         self.assertEqual(codes(payload, "theme"), ["AK-3100-HID-MEM-0001"])
         self.assertEqual(collection(payload, "theme")["items"][0]["matches"]["themes"], ["carga"])
@@ -181,7 +181,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
             document_type=self.memo,
         )
 
-        payload = get_document_recommendations(self.document.id, {})
+        payload = get_document_recommendations(self.document.id, {}, self.author)
 
         self.assertEqual(codes(payload, "project"), ["AK-2100-HID-MEM-0001"])
         self.assertEqual(codes(payload, "discipline"), ["AK-3100-EST-MEM-0001"])
@@ -192,7 +192,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
         bare = self._document("AK-2100-EST-DWG-0002")
         self._document("AK-2100-HID-MEM-0001", discipline=self.hydraulics, area=self.manufacturing)
 
-        payload = get_document_recommendations(bare.id, {})
+        payload = get_document_recommendations(bare.id, {}, self.author)
 
         self.assertEqual(collection(payload, "theme")["count"], 0)
         self.assertEqual(
@@ -202,7 +202,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
     def test_should_return_empty_collections_when_nothing_is_related(self):
         alone = self._unrelated("AK-3100-HID-MEM-0001")
 
-        payload = get_document_recommendations(alone.id, {})
+        payload = get_document_recommendations(alone.id, {}, self.author)
 
         self.assertEqual(
             [(item["key"], item["count"], item["items"]) for item in payload["collections"]],
@@ -218,7 +218,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
         self._document("AK-2100-EST-OLD-0001", document_type=inactive_type)
         self._document("AK-2100-EST-MEM-0001", document_type=self.memo)
 
-        payload = get_document_recommendations(self.document.id, {})
+        payload = get_document_recommendations(self.document.id, {}, self.author)
 
         self.assertEqual(codes(payload, "project"), ["AK-2100-EST-MEM-0001"])
 
@@ -226,7 +226,7 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
         self._document("AK-2100-EST-MEM-0001", document_type=self.memo)
         self._document("AK-2100-EST-MEM-0002", document_type=self.memo)
 
-        payload = get_document_recommendations(self.document.id, {})
+        payload = get_document_recommendations(self.document.id, {}, self.author)
 
         self.assertEqual(
             codes(payload, "project"), ["AK-2100-EST-MEM-0002", "AK-2100-EST-MEM-0001"]
@@ -236,22 +236,24 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
         for number in range(1, 4):
             self._document(f"AK-2100-EST-MEM-000{number}", document_type=self.memo)
 
-        payload = get_document_recommendations(self.document.id, {"limit": "1"})
+        payload = get_document_recommendations(self.document.id, {"limit": "1"}, self.author)
 
         self.assertEqual(payload["limit"], 1)
         self.assertEqual(collection(payload, "project")["count"], 3)
         self.assertEqual(codes(payload, "project"), ["AK-2100-EST-MEM-0003"])
 
     def test_should_use_the_default_limit_and_cap_the_maximum(self):
-        default_payload = get_document_recommendations(self.document.id, {})
-        capped_payload = get_document_recommendations(self.document.id, {"limit": "500"})
+        default_payload = get_document_recommendations(self.document.id, {}, self.author)
+        capped_payload = get_document_recommendations(
+            self.document.id, {"limit": "500"}, self.author
+        )
 
         self.assertEqual(default_payload["limit"], DEFAULT_LIMIT)
         self.assertEqual(capped_payload["limit"], MAX_LIMIT)
 
     def test_should_reject_an_invalid_limit(self):
         with self.assertRaises(DocumentQueryError) as raised:
-            get_document_recommendations(self.document.id, {"limit": "0"})
+            get_document_recommendations(self.document.id, {"limit": "0"}, self.author)
 
         self.assertEqual(raised.exception.errors["limit"]["code"], "invalid")
 
@@ -262,9 +264,9 @@ class DocumentRecommendationServiceTests(DocumentRecommendationFixtureMixin, Tes
         )
 
         with self.assertRaises(DocumentNotFoundError):
-            get_document_recommendations(archived.id, {})
+            get_document_recommendations(archived.id, {}, self.author)
         with self.assertRaises(DocumentNotFoundError):
-            get_document_recommendations(999999, {})
+            get_document_recommendations(999999, {}, self.author)
 
 
 class DocumentRecommendationViewTests(DocumentRecommendationFixtureMixin, TestCase):

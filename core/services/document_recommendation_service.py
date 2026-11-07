@@ -6,6 +6,7 @@ from core.serializers.document_recommendation_serializer import (
     serialize_recommendations,
 )
 from core.services.document_exceptions import DocumentQueryError
+from core.services.document_visibility_service import visible_documents
 from core.services.documents_exceptions import DocumentNotFoundError
 from core.services.documents_service import filter_documents, parse_document_query
 
@@ -43,10 +44,13 @@ def parse_limit(params):
     return min(int(raw), MAX_LIMIT)
 
 
-def get_document_or_raise(document_id):
+def get_document_or_raise(document_id, user):
     document = (
-        Document.objects.filter(
-            pk=document_id, document_type__active=True, archived_at__isnull=True
+        visible_documents(
+            Document.objects.filter(
+                pk=document_id, document_type__active=True, archived_at__isnull=True
+            ),
+            user,
         )
         .select_related("indexed_content")
         .prefetch_related("tags", "areas")
@@ -70,7 +74,7 @@ def affinity_profile(document):
     }
 
 
-def related_candidates(document, profile):
+def related_candidates(document, profile, user):
     criteria = Q(project_id=document.project_id) | Q(discipline_id=document.discipline_id)
     if profile["tag_ids"]:
         criteria |= Q(tags__in=profile["tag_ids"])
@@ -79,7 +83,7 @@ def related_candidates(document, profile):
     if profile["themes"]:
         criteria |= Q(indexed_content__thematic_tags__overlap=profile["themes"])
     return (
-        filter_documents(parse_document_query({}))
+        filter_documents(parse_document_query({}), user=user)
         .exclude(pk=document.pk)
         .filter(criteria)
         .annotate(themes=F("indexed_content__thematic_tags"))
@@ -113,10 +117,10 @@ def affinity(candidate, document, profile):
     }
 
 
-def rank_candidates(document, profile):
+def rank_candidates(document, profile, user):
     scored = [
         (candidate, affinity(candidate, document, profile))
-        for candidate in related_candidates(document, profile)
+        for candidate in related_candidates(document, profile, user)
     ]
     scored.sort(
         key=lambda entry: (
@@ -144,8 +148,8 @@ def build_collections(ranked, limit):
     return collections
 
 
-def get_document_recommendations(document_id, params):
+def get_document_recommendations(document_id, params, user=None):
     limit = parse_limit(params)
-    document = get_document_or_raise(document_id)
-    ranked = rank_candidates(document, affinity_profile(document))
+    document = get_document_or_raise(document_id, user)
+    ranked = rank_candidates(document, affinity_profile(document), user)
     return serialize_recommendations(document, limit, build_collections(ranked, limit))
