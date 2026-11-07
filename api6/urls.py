@@ -3,6 +3,11 @@
 from django.contrib import admin
 from django.urls import path
 
+from core.views.access_group_view import (
+    access_group_user_view,
+    access_group_users_view,
+    access_groups_view,
+)
 from core.views.access_request_view import (
     access_request_decision_view,
     access_request_detail_view,
@@ -105,6 +110,17 @@ urlpatterns = [
         name="document-ai-suggestions",
     ),
     path("manager/activities", manager_activities_view, name="manager-activities"),
+    path("manager/access-groups", access_groups_view, name="manager-access-groups"),
+    path(
+        "manager/access-groups/<int:group_id>/users",
+        access_group_users_view,
+        name="manager-access-group-users",
+    ),
+    path(
+        "manager/access-groups/<int:group_id>/users/<int:user_id>",
+        access_group_user_view,
+        name="manager-access-group-user",
+    ),
     path("manager/pending-revisions", pending_revisions_view, name="manager-pending-revisions"),
     path(
         "manager/revisions/<int:revision_id>/decision",

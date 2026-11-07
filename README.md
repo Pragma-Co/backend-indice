@@ -758,6 +758,22 @@ Migration `0024` models the need-to-know rules of the library in three tables:
 
 The listing, search, detail, recommendations, archived list and personal library apply this rule through `visible_documents` (see *Document visibility* under *Authentication*); the file view keeps its own rule. Until an API for groups exists they are managed in the Django admin (`/admin/`, groups with their members inline; the levels are read-only there), and `manage.py seed` creates three example groups.
 
+### Area group API
+
+These session-authenticated endpoints require an active `AUDITOR` or `ADMIN` in an active area. They manage only area groups belonging to the caller's area; groups from another area and project groups return `404`. The data model does not associate projects with an owning area, so project group management is not exposed here. State-changing requests require the usual CSRF token.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/manager/access-groups` | List the caller's area groups, including inactive groups, in `results`. |
+| `POST` | `/manager/access-groups` | Create an area group; returns `201` and the group. |
+| `GET` | `/manager/access-groups/{group_id}/users` | List members in `results`. |
+| `POST` | `/manager/access-groups/{group_id}/users` | Add an active user; returns `201` and the membership. |
+| `DELETE` | `/manager/access-groups/{group_id}/users/{user_id}` | Remove a member; returns `204`. |
+
+For group creation, send `{"name": "Engineering secret", "description": "Engineering team", "secrecy_level": "SECRET"}`. `description` is optional, `secrecy_level` is an existing level code, and the area and creator come from the authenticated user. Names are globally unique and there can be only one group per area and secrecy level. To add a member, send `{"user_id": 123}`. Active users from other areas may also be added. Inactive groups cannot receive new members, but members can still be removed.
+
+The API returns `400` for invalid JSON or payloads, `401` without an active session, `403` for insufficient privileges or an inactive area, `404` for inaccessible groups or missing users/members, and `409` for duplicate names, duplicate area/level combinations, existing memberships or additions to an inactive group.
+
 ## LGPD & security notes
 
 This project handles personal data topics this semester, so the environment was configured with LGPD in mind:
