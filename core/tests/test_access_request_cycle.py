@@ -52,7 +52,7 @@ class AccessRequestCycleTests(TestCase):
             project=Project.objects.create(code="AK-2100", name="Fuselagem"),
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="REL", name="Relatório"),
-            confidentiality_level="SECRET",
+            confidentiality_level="PUBLIC",
             responsible=responsible,
             created_by=responsible,
         )
