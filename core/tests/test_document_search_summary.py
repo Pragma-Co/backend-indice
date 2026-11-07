@@ -1,9 +1,10 @@
 import json
 from unittest import mock
 
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
+from core.models import Area, User
 from core.services.document_search_summary_service import (
     FALLBACK_SUMMARY,
     InvalidSearchSummaryInput,
@@ -98,7 +99,16 @@ class SearchSummaryServiceTests(SimpleTestCase):
                     summarize_search(query, snippets)
 
 
-class SearchSummaryViewTests(SimpleTestCase):
+class SignedInTestCase(TestCase):
+    def setUp(self):
+        area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.user = User.objects.create_user(
+            email="reader@example.com", password="secret", name="Reader", area=area
+        )
+        self.client.force_login(self.user)
+
+
+class SearchSummaryViewTests(SignedInTestCase):
     def test_should_resolve_the_english_summary_route(self):
         self.assertEqual(reverse("document-search-ai-summary"), "/documents/search/ai-summary")
 
@@ -153,7 +163,7 @@ class SearchSummaryViewTests(SimpleTestCase):
         mock_summarize.assert_not_called()
 
 
-class SearchSummaryFromFiltersTests(SimpleTestCase):
+class SearchSummaryFromFiltersTests(SignedInTestCase):
     def test_should_search_and_summarize_when_only_filters_are_sent(self):
         expected = {"query": "Termo: ponte", "summary": "Resumo.", "fallback": False}
         with mock.patch(

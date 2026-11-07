@@ -1,5 +1,6 @@
 import json
 from datetime import timedelta
+from unittest import mock
 
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -7,6 +8,7 @@ from django.utils import timezone
 
 from core.models import (
     AccessStatus,
+    AccessType,
     Area,
     AuditAction,
     AuditLog,
@@ -21,12 +23,14 @@ from core.models import (
 )
 from core.services.access_request_exceptions import (
     AccessRequestAlreadyDecidedError,
+    AccessRequestExpiredError,
     AccessRequestNotFoundError,
     AccessRequestValidationError,
     OwnAccessRequestReviewError,
 )
 from core.services.access_request_service import (
     decide_access_request,
+    get_access_request_detail,
     is_access_approver,
     pending_access_requests,
 )
@@ -72,6 +76,16 @@ class AccessRequestFixtureMixin:
         )
         DocumentArea.objects.create(document=document, area=area)
         return document
+
+    def _archive(self, document):
+        document.archived_at = timezone.now()
+        document.archived_by = self.manager
+        document.save(update_fields=["archived_at", "archived_by"])
+
+    def _make_temporary(self, access, expires_on):
+        access.access_type = AccessType.TEMPORARY
+        access.expires_on = expires_on
+        access.save(update_fields=["access_type", "expires_on"])
 
     def _access(self, document, user, days_ago=1):
         return DocumentAccess.objects.create(
@@ -159,6 +173,48 @@ class PendingAccessRequestsServiceTests(AccessRequestFixtureMixin, TestCase):
 
         self.assertEqual(result, [])
 
+    def test_should_not_list_requests_of_archived_documents(self):
+        self._archive(self.document)
+
+        result = list(pending_access_requests(self.manager))
+
+        self.assertEqual(result, [])
+
+
+class AccessRequestDetailServiceTests(AccessRequestFixtureMixin, TestCase):
+    def test_should_return_a_pending_request_of_a_managed_document(self):
+        access = get_access_request_detail(self.request.pk, self.manager)
+
+        self.assertEqual(access, self.request)
+
+    def test_should_return_a_request_that_was_already_decided(self):
+        decide_access_request(self.request.pk, self.manager, {"decision": "REJECTED"})
+
+        access = get_access_request_detail(self.request.pk, self.responsible)
+
+        self.assertEqual(access.status, AccessStatus.REJECTED)
+        self.assertEqual(access.approver, self.manager)
+
+    def test_should_hide_requests_of_documents_outside_the_approver_scope(self):
+        with self.assertRaises(AccessRequestNotFoundError):
+            get_access_request_detail(self.request.pk, self.other_manager)
+
+    def test_should_hide_the_approver_own_request(self):
+        own_request = self._access(self.document, self.manager)
+
+        with self.assertRaises(AccessRequestNotFoundError):
+            get_access_request_detail(own_request.pk, self.manager)
+
+    def test_should_hide_requests_of_archived_documents(self):
+        self._archive(self.document)
+
+        with self.assertRaises(AccessRequestNotFoundError):
+            get_access_request_detail(self.request.pk, self.manager)
+
+    def test_should_refuse_an_unknown_request(self):
+        with self.assertRaises(AccessRequestNotFoundError):
+            get_access_request_detail(999999, self.manager)
+
 
 class DecideAccessRequestServiceTests(AccessRequestFixtureMixin, TestCase):
     def test_should_approve_the_request_and_grant_access_to_the_requester(self):
@@ -226,6 +282,38 @@ class DecideAccessRequestServiceTests(AccessRequestFixtureMixin, TestCase):
 
         self.assertIn("body", context.exception.errors)
 
+    def test_should_refuse_approving_a_temporary_request_that_already_expired(self):
+        expired_on = timezone.localdate() - timedelta(days=1)
+        self._make_temporary(self.request, expired_on)
+
+        with self.assertRaises(AccessRequestExpiredError) as context:
+            decide_access_request(self.request.pk, self.manager, {"decision": "APPROVED"})
+
+        self.request.refresh_from_db()
+        self.assertEqual(context.exception.expires_on, expired_on)
+        self.assertEqual(self.request.status, AccessStatus.PENDING)
+
+    def test_should_reject_a_temporary_request_that_already_expired(self):
+        self._make_temporary(self.request, timezone.localdate() - timedelta(days=1))
+
+        access = decide_access_request(self.request.pk, self.manager, {"decision": "REJECTED"})
+
+        self.assertEqual(access.status, AccessStatus.REJECTED)
+
+    def test_should_approve_a_temporary_request_expiring_today(self):
+        self._make_temporary(self.request, timezone.localdate())
+
+        access = decide_access_request(self.request.pk, self.manager, {"decision": "APPROVED"})
+
+        self.assertEqual(access.status, AccessStatus.APPROVED)
+        self.assertTrue(can_view_document(self.document, self.requester))
+
+    def test_should_refuse_deciding_a_request_of_an_archived_document(self):
+        self._archive(self.document)
+
+        with self.assertRaises(AccessRequestNotFoundError):
+            decide_access_request(self.request.pk, self.manager, {"decision": "APPROVED"})
+
 
 class PendingAccessRequestsViewTests(AccessRequestFixtureMixin, TestCase):
     def test_should_return_the_paginated_pending_queue(self):
@@ -272,6 +360,120 @@ class PendingAccessRequestsViewTests(AccessRequestFixtureMixin, TestCase):
         response = self.client.post(reverse("manager-pending-access-requests"))
 
         self.assertEqual(response.status_code, 405)
+
+
+class AccessRequestDetailViewTests(AccessRequestFixtureMixin, TestCase):
+    def _get(self, access_id):
+        return self.client.get(reverse("manager-access-request-detail", args=[access_id]))
+
+    def test_should_return_the_details_of_a_pending_request(self):
+        self.client.force_login(self.manager)
+
+        response = self._get(self.request.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "id": self.request.pk,
+                "status": "PENDING",
+                "justification": "Preciso do relatório para o plano de inspeção.",
+                "access_type": "PERMANENT",
+                "expires_on": None,
+                "requested_at": self.request.requested_at.isoformat(),
+                "requester": {
+                    "id": self.requester.pk,
+                    "name": "requester",
+                    "area": {"acronym": "AER", "name": "Aerodinâmica"},
+                },
+                "document": {
+                    "id": self.document.pk,
+                    "code": "AK-2100-EST-REL-0001",
+                    "title": "Relatório AK-2100-EST-REL-0001",
+                    "confidentiality_level": "CONFIDENTIAL",
+                    "project": {"code": "AK-2100", "name": "Fuselagem"},
+                    "discipline": {"code": "EST", "name": "Estruturas"},
+                    "document_type": {"code": "REL", "name": "Relatório"},
+                    "responsible": {"id": self.responsible.pk, "name": "responsible"},
+                    "areas": [{"acronym": "EST", "name": "Engenharia Estrutural"}],
+                },
+                "approver": None,
+                "decided_at": None,
+            },
+        )
+
+    def test_should_return_the_decision_of_a_decided_request(self):
+        self.client.force_login(self.manager)
+        access = decide_access_request(self.request.pk, self.manager, {"decision": "APPROVED"})
+
+        response = self._get(self.request.pk)
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["status"], "APPROVED")
+        self.assertEqual(body["approver"], {"id": self.manager.pk, "name": "manager"})
+        self.assertEqual(body["decided_at"], access.decided_at.isoformat())
+
+    def test_should_not_expose_the_requester_email(self):
+        self.client.force_login(self.manager)
+
+        response = self._get(self.request.pk)
+
+        self.assertNotIn("email", response.json()["requester"])
+
+    def test_should_require_authentication(self):
+        response = self._get(self.request.pk)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
+
+    def test_should_forbid_users_who_cannot_decide_access_requests(self):
+        self.client.force_login(self.requester)
+
+        response = self._get(self.request.pk)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": "PermissionDenied"})
+
+    def test_should_answer_not_found_for_a_request_outside_the_approver_scope(self):
+        self.client.force_login(self.other_manager)
+
+        response = self._get(self.request.pk)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": "AccessRequestNotFound"})
+
+    def test_should_answer_not_found_for_an_unknown_request(self):
+        self.client.force_login(self.manager)
+
+        response = self._get(999999)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": "AccessRequestNotFound"})
+
+    def test_should_reject_methods_other_than_get(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.post(
+            reverse("manager-access-request-detail", args=[self.request.pk])
+        )
+
+        self.assertEqual(response.status_code, 405)
+
+    def test_should_answer_500_without_leaking_details(self):
+        self.client.force_login(self.manager)
+
+        with (
+            mock.patch(
+                "core.views.access_request_view.get_access_request_detail",
+                side_effect=RuntimeError("password=secret host=db"),
+            ),
+            self.assertLogs("core.views.access_request_view", level="ERROR"),
+        ):
+            response = self._get(self.request.pk)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"error": "RuntimeError"})
 
 
 class AccessRequestDecisionViewTests(AccessRequestFixtureMixin, TestCase):
@@ -348,6 +550,20 @@ class AccessRequestDecisionViewTests(AccessRequestFixtureMixin, TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["errors"]["decision"]["code"], "invalid_choice")
+
+    def test_should_answer_conflict_for_approving_an_expired_temporary_request(self):
+        expired_on = timezone.localdate() - timedelta(days=1)
+        self._make_temporary(self.request, expired_on)
+        self.client.force_login(self.manager)
+
+        response = self._post(self.request.pk, {"decision": "APPROVED"})
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json(),
+            {"error": "AccessRequestExpired", "expires_on": expired_on.isoformat()},
+        )
+        self.assertFalse(AuditLog.objects.filter(entity="document_access").exists())
 
     def test_should_reject_a_malformed_json_body(self):
         self.client.force_login(self.manager)

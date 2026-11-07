@@ -14,6 +14,8 @@ from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 from django.core.exceptions import ValidationError
 
 from core.models import (
+    AccessGroup,
+    AccessGroupMember,
     Area,
     AuditLog,
     Discipline,
@@ -23,6 +25,7 @@ from core.models import (
     File,
     Project,
     Revision,
+    SecrecyLevel,
     Tag,
     User,
 )
@@ -170,10 +173,49 @@ class FileAdmin(admin.ModelAdmin):
 
 @admin.register(DocumentAccess)
 class DocumentAccessAdmin(admin.ModelAdmin):
-    list_display = ("document", "user", "status", "requested_at", "approver", "decided_at")
-    list_filter = ("status",)
+    list_display = (
+        "document",
+        "user",
+        "status",
+        "access_type",
+        "expires_on",
+        "requested_at",
+        "approver",
+        "decided_at",
+    )
+    list_filter = ("status", "access_type")
     search_fields = ("document__code", "user__email")
     autocomplete_fields = ("document", "user", "approver")
+
+
+@admin.register(SecrecyLevel)
+class SecrecyLevelAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "rank", "visibility")
+    ordering = ("rank",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class AccessGroupMemberInline(admin.TabularInline):
+    model = AccessGroupMember
+    fk_name = "group"
+    extra = 0
+    autocomplete_fields = ("user", "added_by")
+    readonly_fields = ("added_at",)
+
+
+@admin.register(AccessGroup)
+class AccessGroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "scope", "area", "project", "secrecy_level", "active", "created_by")
+    list_filter = ("scope", "secrecy_level", "active")
+    search_fields = ("name", "area__acronym", "project__code")
+    autocomplete_fields = ("project", "created_by")
+    readonly_fields = ("created_at",)
+    inlines = [AccessGroupMemberInline]
 
 
 @admin.register(AuditLog)

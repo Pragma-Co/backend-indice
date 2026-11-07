@@ -5,6 +5,17 @@ def _isoformat(value):
     return value.isoformat() if value else None
 
 
+def serialize_access_request(access: DocumentAccess) -> dict:
+    return {
+        "id": access.id,
+        "document_id": access.document_id,
+        "status": access.status,
+        "access_type": access.access_type,
+        "expires_on": _isoformat(access.expires_on),
+        "requested_at": _isoformat(access.requested_at),
+    }
+
+
 def serialize_pending_access_request(access: DocumentAccess) -> dict:
     document = access.document
     requester = access.user
@@ -12,6 +23,8 @@ def serialize_pending_access_request(access: DocumentAccess) -> dict:
         "id": access.id,
         "status": access.status,
         "justification": access.justification,
+        "access_type": access.access_type,
+        "expires_on": _isoformat(access.expires_on),
         "requested_at": _isoformat(access.requested_at),
         "requester": {
             "id": requester.id,
@@ -33,6 +46,25 @@ def serialize_pending_access_request(access: DocumentAccess) -> dict:
     }
 
 
+def _serialize_person(user):
+    if user is None:
+        return None
+    return {"id": user.id, "name": user.name}
+
+
+def serialize_access_request_detail(access: DocumentAccess) -> dict:
+    detail = serialize_pending_access_request(access)
+    document = access.document
+    detail["document"]["responsible"] = _serialize_person(document.responsible)
+    detail["document"]["areas"] = [
+        {"acronym": area.acronym, "name": area.name}
+        for area in sorted(document.areas.all(), key=lambda area: area.acronym)
+    ]
+    detail["approver"] = _serialize_person(access.approver)
+    detail["decided_at"] = _isoformat(access.decided_at)
+    return detail
+
+
 def serialize_pending_access_page(page: dict) -> dict:
     return {
         **page,
@@ -46,6 +78,8 @@ def serialize_access_decision(access: DocumentAccess) -> dict:
         "document_id": access.document_id,
         "requester": {"id": access.user_id, "name": access.user.name},
         "status": access.status,
+        "access_type": access.access_type,
+        "expires_on": _isoformat(access.expires_on),
         "approver": {"id": access.approver_id, "name": access.approver.name},
         "requested_at": _isoformat(access.requested_at),
         "decided_at": _isoformat(access.decided_at),
