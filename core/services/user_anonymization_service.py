@@ -114,6 +114,7 @@ def delete_user_account(user):
 def anonymize_user(user):
     """Soft delete for a dismissed user who did not ask for deletion."""
     with transaction.atomic():
+        User.objects.select_for_update().get(pk=user.pk)
         replacement = _require_replacement(user)
         store_excluded_identifier(user.email)
 
@@ -122,6 +123,7 @@ def anonymize_user(user):
             user=user, status=AccessStatus.PENDING
         ).delete()
         DocumentAccess.objects.filter(user=user).update(justification="")
+        user.search_history.all().delete()
 
         user.name = ANONYMOUS_NAME
         user.email = anonymized_email(user.pk)
