@@ -320,3 +320,43 @@ def record_document_access_denied(document, user, request):
         },
         ip_address=client_ip(request),
     )
+
+
+SEVERITY_HIGH = "HIGH"
+SEVERITY_INFO = "INFO"
+
+INFO_CAPTURE_EVENTS = frozenset({"FOCUS_LOST", "TAB_HIDDEN"})
+HIGH_CAPTURE_EVENTS = frozenset(
+    {
+        "DIRECT_FILE_NAVIGATION",
+        "PRINT_SCREEN_KEY",
+        "PRINT_ATTEMPT",
+        "SAVE_ATTEMPT",
+        "VIEW_SOURCE_ATTEMPT",
+        "DEVTOOLS_SHORTCUT",
+        "COPY_ATTEMPT",
+        "CUT_ATTEMPT",
+        "CONTEXT_MENU",
+        "DRAG_ATTEMPT",
+    }
+)
+CAPTURE_EVENTS = HIGH_CAPTURE_EVENTS | INFO_CAPTURE_EVENTS
+CAPTURE_DETAIL_MAX_LENGTH = 200
+
+
+@never_raises
+def record_capture_attempt(request, document, event, file_id=None, detail=None):
+    return log_event(
+        request,
+        AuditAction.DOC_CAPTURE_ATTEMPT,
+        ENTITY_DOCUMENT,
+        document.id,
+        {
+            "event": event,
+            "severity": SEVERITY_INFO if event in INFO_CAPTURE_EVENTS else SEVERITY_HIGH,
+            "document_code": document.code,
+            "file_id": file_id,
+            "detail": (detail or "")[:CAPTURE_DETAIL_MAX_LENGTH] or None,
+            "user_agent": client_user_agent(request),
+        },
+    )

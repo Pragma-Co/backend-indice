@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from core.models import AuditAction
+from core.models import AuditAction, Document
 from core.serializers.access_request_serializer import serialize_access_request
 from core.serializers.document_serializer import (
     serialize_archived_document,
@@ -45,11 +45,13 @@ from core.services.documents_exceptions import (
     DocumentNotFoundError,
 )
 from core.services.documents_service import (
+    can_view_document,
     get_document_detail,
     get_documents,
     get_simple_filters,
     request_document_access,
 )
+from core.services.revision_review_service import is_revision_reviewer
 from core.services.search_history_service import record_search
 from core.services.upload_exceptions import (
     DuplicateFileError,
@@ -397,3 +399,33 @@ def request_access(request, document_id):
 
     audit_service.log_access_requested(request, access)
     return JsonResponse(serialize_access_request(access), status=201)
+
+
+@require_POST
+def document_security_event_view(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
+    try:
+        payload = json.loads(request.body or b"")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({"error": "InvalidJSON"}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "InvalidJSON"}, status=400)
+
+    event = payload.get("event")
+    if event not in audit_service.CAPTURE_EVENTS:
+        return JsonResponse({"error": "InvalidEvent"}, status=400)
+    file_id = payload.get("file_id")
+    if isinstance(file_id, bool) or not isinstance(file_id, int):
+        file_id = None
+    detail = payload.get("detail")
+    detail = detail if isinstance(detail, str) else None
+
+    document = Document.objects.filter(pk=document_id).first()
+    if document is None or not (can_view_document(document, user) or is_revision_reviewer(user)):
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+
+    audit_service.record_capture_attempt(request, document, event, file_id=file_id, detail=detail)
+    return JsonResponse({"logged": True}, status=201)

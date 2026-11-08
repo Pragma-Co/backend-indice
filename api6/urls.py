@@ -22,6 +22,7 @@ from core.views.documents_view import (
     create_revision_view,
     document_recommendations_view,
     document_resource,
+    document_security_event_view,
     documents_collection,
     request_access,
     restore_document_view,
@@ -105,6 +106,11 @@ urlpatterns = [
     ),
     path(
         "documents/<int:document_id>/request-access", request_access, name="document-request-access"
+    ),
+    path(
+        "documents/<int:document_id>/security-events",
+        document_security_event_view,
+        name="document-security-event",
     ),
     path(
         "documents/<str:temp_file_id>/suggestions",
