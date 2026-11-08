@@ -102,7 +102,9 @@ def _create_acceptance(request, user):
                 ENTITY_LEGAL_ACCEPTANCE,
                 acceptance.pk,
                 {
-                    "event": "LEGAL_TERMS_ACCEPTED",
+                    "event": (
+                        "LEGAL_TERMS_ACCEPTED" if acceptance.accepted else "LEGAL_TERMS_DECLINED"
+                    ),
                     "document": acceptance.version.document.slug,
                     "version": acceptance.version.version,
                     "declined_clauses": [
