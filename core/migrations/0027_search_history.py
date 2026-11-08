@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0025_merge_access_groups_and_saved_document"),
+        ("core", "0026_legal_acceptance_outcome"),
     ]
 
     operations = [
