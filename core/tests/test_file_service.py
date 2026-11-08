@@ -8,6 +8,8 @@ from django.utils import timezone
 from core.models import (
     AccessStatus,
     Area,
+    AuditAction,
+    AuditLog,
     Discipline,
     Document,
     DocumentAccess,
@@ -188,3 +190,64 @@ class ReviewerFileAccessTests(StoredFileFixtureMixin, TestCase):
 
         with self.assertRaises(AccessDeniedError):
             get_document_file_for_view(self.pending_file.id, self.reviewer.id)
+
+
+class DocumentFileViewCaptureProtectionTests(StoredFileFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.owner)
+        self.url = f"/api/files/{self.stored_file.id}/view"
+
+    def test_should_serve_the_file_to_fetch_requests_with_hardening_headers(self):
+        response = self.client.get(self.url, HTTP_SEC_FETCH_DEST="empty")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertIn("no-store", response["Cache-Control"])
+
+    def test_should_refuse_and_log_when_the_file_is_opened_as_a_document(self):
+        response = self.client.get(self.url, HTTP_SEC_FETCH_DEST="document")
+
+        self.assertEqual(response.status_code, 403)
+        entry = AuditLog.objects.get(action=AuditAction.DOC_CAPTURE_ATTEMPT)
+        self.assertEqual(entry.record["event"], "DIRECT_FILE_NAVIGATION")
+        self.assertEqual(entry.user, self.owner)
+
+
+class DocumentSecurityEventViewTests(StoredFileFixtureMixin, TestCase):
+    def post(self, payload):
+        return self.client.post(
+            f"/api/documents/{self.document.id}/security-events",
+            payload,
+            content_type="application/json",
+        )
+
+    def test_should_log_a_known_event_for_a_viewer(self):
+        self.client.force_login(self.reader)
+
+        response = self.post({"event": "PRINT_SCREEN_KEY", "file_id": self.stored_file.id})
+
+        self.assertEqual(response.status_code, 201)
+        entry = AuditLog.objects.get(action=AuditAction.DOC_CAPTURE_ATTEMPT)
+        self.assertEqual(entry.record["event"], "PRINT_SCREEN_KEY")
+        self.assertEqual(entry.record["severity"], "HIGH")
+        self.assertEqual(entry.user, self.reader)
+
+    def test_should_log_focus_loss_as_info_severity(self):
+        self.client.force_login(self.reader)
+
+        self.post({"event": "FOCUS_LOST"})
+
+        entry = AuditLog.objects.get(action=AuditAction.DOC_CAPTURE_ATTEMPT)
+        self.assertEqual(entry.record["severity"], "INFO")
+
+    def test_should_reject_unknown_events(self):
+        self.client.force_login(self.reader)
+
+        self.assertEqual(self.post({"event": "ANYTHING"}).status_code, 400)
+
+    def test_should_not_log_for_users_without_access(self):
+        self.client.force_login(self.stranger)
+
+        self.assertEqual(self.post({"event": "PRINT_SCREEN_KEY"}).status_code, 404)
+        self.assertFalse(AuditLog.objects.filter(action=AuditAction.DOC_CAPTURE_ATTEMPT).exists())
