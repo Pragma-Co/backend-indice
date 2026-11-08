@@ -40,6 +40,7 @@ from core.views.legal_consent_view import (
 from core.views.manager_activity_view import manager_activities_view
 from core.views.personal_library_view import personal_library, personal_library_document
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
+from core.views.search_history_view import search_history_view
 from core.views.upload_view import upload_document
 from core.views.user_view import request_user_deletion, user_me
 
@@ -51,6 +52,7 @@ urlpatterns = [
     path("auth/login", login_view, name="auth-login"),
     path("auth/logout", logout_view, name="auth-logout"),
     path("users/me", user_me, name="user-me"),
+    path("users/me/search-history", search_history_view, name="user-search-history"),
     path("users/me/library", personal_library, name="personal-library"),
     path(
         "users/me/library/<int:document_id>",

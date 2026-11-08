@@ -245,9 +245,15 @@ Saves the document in the personal library. Requires a session. `201 {"document_
 
 Removes the document from the personal library. Requires a session. Always `204`, even if it was not saved.
 
+### `GET /users/me/search-history`
+
+Requires a session. Returns up to 10 unique recent search queries, most recent first, as `{"results": ["bridge", "concrete"]}`. An empty history returns `{"results": []}`. Searches differing only in letter case or whitespace are treated as the same query; repeating one moves it to the front and preserves the latest spelling. Pagination and filter requests to the search endpoint also count as searches. History is removed when the account is anonymized or deleted.
+
 ### `GET /documents/search`
 
 Full-text search for the document library. Takes a free-text query in `q` (required, up to 200 characters) and matches it against the title, code, description, manual tags, the thematic tags generated from the content and the normalized content of the latest revision. Matching uses PostgreSQL full-text search with the `portuguese_unaccent` configuration (Portuguese stemming, accents ignored), so `calculo viga` finds `Memorial de Cálculo das Vigas`. Query words are alternatives (OR): documents matching more words, or matching them in the title and tags, rank higher.
+
+Successful searches are recorded for the authenticated user and can be retrieved with `GET /users/me/search-history`. Failed searches are not recorded; a failure to record history does not prevent the search response.
 
 Content is confidential: a match inside the content (and its snippets) only counts for the responsible user or a user with an approved access grant, identified by the session. Everyone else finds documents through their metadata only, as in the listing.
 
