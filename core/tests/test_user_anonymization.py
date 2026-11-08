@@ -17,6 +17,7 @@ from core.models import (
     User,
 )
 from core.services.excluded_identifier_service import is_identifier_excluded
+from core.services.search_history_service import list_search_history, record_search
 from core.services.user_anonymization_service import (
     ANONYMOUS_NAME,
     NoReplacementManagerError,
@@ -103,6 +104,15 @@ class UserAnonymizationTests(TestCase):
         self.assertFalse(self.author.is_active)
         self.assertTrue(is_anonymized(self.author))
         self.assertTrue(is_identifier_excluded(self.original_email))
+
+    def test_soft_delete_removes_search_history(self):
+        record_search(self.author, "private search")
+        record_search(self.manager, "manager search")
+
+        self._anonymize()
+
+        self.assertEqual(list_search_history(self.author), [])
+        self.assertEqual(list_search_history(self.manager), ["manager search"])
 
     def test_soft_delete_keeps_the_archive_and_authorship(self):
         self._anonymize()
