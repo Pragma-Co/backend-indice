@@ -196,7 +196,7 @@ class DocumentFileViewCaptureProtectionTests(StoredFileFixtureMixin, TestCase):
     def setUp(self):
         super().setUp()
         self.client.force_login(self.owner)
-        self.url = f"/api/files/{self.stored_file.id}/view"
+        self.url = f"/files/{self.stored_file.id}/view"
 
     def test_should_serve_the_file_to_fetch_requests_with_hardening_headers(self):
         response = self.client.get(self.url, HTTP_SEC_FETCH_DEST="empty")
@@ -217,7 +217,7 @@ class DocumentFileViewCaptureProtectionTests(StoredFileFixtureMixin, TestCase):
 class DocumentSecurityEventViewTests(StoredFileFixtureMixin, TestCase):
     def post(self, payload):
         return self.client.post(
-            f"/api/documents/{self.document.id}/security-events",
+            f"/documents/{self.document.id}/security-events",
             payload,
             content_type="application/json",
         )

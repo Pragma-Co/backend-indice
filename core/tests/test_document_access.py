@@ -274,9 +274,29 @@ class DocumentFileViewTests(DocumentAccessTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn('filename="caverna-14.pdf"', response["Content-Disposition"])
-        self.assertEqual(response["Cache-Control"], "private, no-store")
-        self.assertNotIn("X-Frame-Options", response)
+        self.assertEqual(response["Cache-Control"], "private, no-store, max-age=0")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response["Content-Security-Policy"], "sandbox; default-src 'none'")
         self.assertEqual(b"".join(response.streaming_content), PDF_BYTES)
+
+    def test_should_refuse_and_log_when_the_file_is_opened_outside_a_fetch(self):
+        for destination in ["document", "iframe", "embed", "image"]:
+            with self.subTest(destination=destination):
+                response = self._file(self.owner, HTTP_SEC_FETCH_DEST=destination)
+
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json(), {"error": "DirectAccessForbidden"})
+                self.assertNotIn(PDF_BYTES, response.content)
+        entries = AuditLog.objects.filter(action=AuditAction.DOC_CAPTURE_ATTEMPT)
+        self.assertEqual(entries.count(), 4)
+        self.assertEqual(entries[0].record["event"], "DIRECT_FILE_NAVIGATION")
+        self.assertEqual(entries[0].record["severity"], "HIGH")
+
+    def test_should_serve_the_file_to_a_fetch_request(self):
+        response = self._file(self.owner, HTTP_SEC_FETCH_DEST="empty")
+
+        self.assertEqual(response.status_code, 200)
 
     def test_should_serve_the_file_to_a_user_with_a_grant(self):
         response = self._file(self.granted)
