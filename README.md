@@ -442,11 +442,11 @@ Full text of one specific version, same payload as `GET /legal-documents/<slug>/
 
 ### `POST /users/me/legal-acceptances`
 
-Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, required clauses must be accepted, and only the current published version can be accepted. Answers `201` with the acceptance (`id`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes `audit_log` (`CREATE`, `user_legal_acceptance`, `LEGAL_TERMS_ACCEPTED`) and sets the user's `terms_accepted_at`. Errors: `400 {"errors": ...}` with codes such as `required_clause_declined`, `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
+Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, and only the current published version can be answered. A response is an overall acceptance only when every required clause is accepted; otherwise the disagreement is still saved in the history and does not set `terms_accepted_at`. Answers `201` with the manifestation (`id`, `accepted`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes an audit event (`LEGAL_TERMS_ACCEPTED` or `LEGAL_TERMS_DECLINED`) and updates the user's `terms_accepted_at` only for an overall acceptance. Errors: `400 {"errors": ...}` with codes such as `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
 
 ### `GET /users/me/legal-acceptances`
 
-History of the caller's acceptances, newest first, revoked ones included: `{"count", "results": [acceptance, ...]}` with the same acceptance payload as the `POST`. Requires a session; IP address and user agent are never exposed.
+History of the caller's manifestations, newest first, including declined and revoked ones: `{"count", "results": [manifestation, ...]}` with the same payload as the `POST`. Requires a session; IP address and user agent are never exposed.
 
 ### `POST /users/me/legal-acceptances/<id>/revoke`
 
