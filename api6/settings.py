@@ -133,8 +133,8 @@ TEMP_UPLOAD_DIR = Path(os.environ.get("TEMP_UPLOAD_DIR", BASE_DIR / "tmp_uploads
 DOCUMENT_STORAGE_DIR = Path(os.environ.get("DOCUMENT_STORAGE_DIR", BASE_DIR / "media"))
 BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", BASE_DIR / "backups"))
 BACKUP_ENCRYPTION_KEY = os.environ.get("BACKUP_ENCRYPTION_KEY", "")
-BACKUP_KEEP_POSTGRES = int(os.environ.get("BACKUP_KEEP_POSTGRES", "24"))
-BACKUP_KEEP_MONGODB = int(os.environ.get("BACKUP_KEEP_MONGODB", "7"))
+BACKUP_KEEP_POSTGRES = int(os.environ.get("BACKUP_KEEP_POSTGRES", "42"))
+BACKUP_KEEP_MONGODB = int(os.environ.get("BACKUP_KEEP_MONGODB", "30"))
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
