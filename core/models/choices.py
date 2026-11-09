@@ -70,6 +70,7 @@ class AuditAction(models.TextChoices):
     DOC_CANCEL = "DOC_CANCEL", "Document registration cancelled"
     DOC_DOWNLOAD = "DOC_DOWNLOAD", "Document downloaded"
     DOC_ACCESS_REQUESTED = "DOC_ACCESS_REQUESTED", "Document access requested"
+    DOC_CAPTURE_ATTEMPT = "DOC_CAPTURE_ATTEMPT", "Document capture attempt"
 
 
 class FileExtension(models.TextChoices):
