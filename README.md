@@ -489,6 +489,8 @@ Records the manager's decision on a pending revision. Same permission rules as t
 
 Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
 
+An approval also notifies the users who saved the document (`DOCUMENT_UPDATED`, see *Notifications*).
+
 ### `GET /manager/pending-access-requests`
 
 Access requests tab of the manager panel. The approver is the session user and must manage an active area or be the responsible of a document: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` otherwise. Lists the `PENDING` requests of documents the approver can decide (documents of the areas they manage, or that they are responsible for, with an active type and not archived), excluding the approver's own requests, oldest first. Paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `status`, `justification`, `access_type`, `expires_on`, `requested_at`, `requester` (`id`, `name`, `area`; no e-mail) and `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
@@ -502,6 +504,8 @@ Detail of one access request, for the detail view of the panel. Same permission 
 Records the approver's decision. Same permission rules and scope as the queue. Body `{"decision": "APPROVED" | "REJECTED"}`. Approval grants access right away with the terms the collaborator requested (`access_type`, `expires_on`): document detail, file view and content search treat the requester as having access from the next request on. Rejection keeps the document locked; the collaborator can send a new request later.
 
 Answers `200 {"id", "document_id", "requester", "status", "access_type", "expires_on", "approver", "requested_at", "decided_at"}`. Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnAccessRequest"}`; `404 {"error": "AccessRequestNotFound"}`; `409 {"error": "AccessRequestAlreadyDecided", "status"}`; `409 {"error": "AccessRequestExpired", "expires_on"}` when approving a `TEMPORARY` request whose last day has already passed (it can still be rejected). Every decision is written to `audit_log` (`action = UPDATE`, `entity = "document_access"`, `record.event = "ACCESS_APPROVED" | "ACCESS_REJECTED"`).
+
+Every decision also notifies the requester (`ACCESS_APPROVED` or `ACCESS_REJECTED`, see *Notifications*).
 
 ### `GET /documents/<id>`
 
@@ -658,6 +662,46 @@ Removes a document from the user's personal library. Requires a session (`401 {"
 
 Answers:
 - `204` (no body) when the document is removed or was not in the library.
+
+### Notifications
+
+Internal alerts shown in the navbar bell. They are created by the backend, in the same transaction as the event that triggers them, so a failed decision never leaves a notification behind:
+
+| `type` | Trigger | Recipients | `title` (pt-BR) |
+|--------|---------|------------|-----------------|
+| `DOCUMENT_UPDATED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | every active user who saved the document in the personal library and can still see it (see *Document visibility*), except the reviewer | `Nova revisão (REV02) publicada para o documento <title>.` |
+| `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester | `Seu pedido de acesso ao documento <title> foi aprovado.` |
+| `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester | `Seu pedido de acesso ao documento <title> foi recusado.` |
+
+Rejected revisions create no notification. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
+
+Notification object:
+
+```json
+{
+  "id": 42,
+  "type": "DOCUMENT_UPDATED",
+  "title": "Nova revisão (REV02) publicada para o documento Memorial de cargas aerodinâmicas.",
+  "document": {"id": 7, "code": "AK-2200-AER-MEM-0002", "title": "Memorial de cargas aerodinâmicas"},
+  "is_new": true,
+  "created_at": "2026-11-08T14:05:12.481203+00:00",
+  "read_at": null
+}
+```
+
+`is_new` is `true` while `read_at` is `null`. `document.id` is the target of the click (`/documents/<id>`).
+
+#### `GET /notifications`
+
+Notifications of the session user, newest first (`created_at`, then `id`). Query parameters: `page` (default 1), `page_size` (default 20, at most 100) and `unread` (`true`/`1` lists only unread ones; `false`/`0` or absent lists all). Answers `200 {"count", "unread_count", "total_pages", "current_page", "page_size", "results"}`, where `unread_count` is the total of unread notifications of the user regardless of the filter and page (the bell badge), and `results` holds notification objects. A page past the last answers an empty `results`. Invalid parameters answer `400 {"errors": {"page" | "page_size" | "unread": {"code", "message"}}}`.
+
+#### `PATCH /notifications/<id>/read`
+
+Marks one notification as read. No body. Idempotent: marking an already read notification keeps its first `read_at`. Answers `200` with the notification object; `404 {"error": "NotificationNotFound"}` for an unknown id or a notification of another user.
+
+#### `PATCH /notifications/read-all`
+
+Marks every unread notification of the session user as read. No body. Answers `200 {"updated": <number of notifications marked>, "unread_count": 0}`.
 
 ### `POST /users/me/request-deletion`
 

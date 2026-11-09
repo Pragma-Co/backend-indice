@@ -13,6 +13,7 @@ from core.services.access_request_exceptions import (
     AccessRequestValidationError,
     OwnAccessRequestReviewError,
 )
+from core.services.notification_service import notify_access_decided
 
 DECISIONS = (AccessStatus.APPROVED, AccessStatus.REJECTED)
 
@@ -248,5 +249,6 @@ def decide_access_request(access_id, approver, payload) -> DocumentAccess:
         access.approver = approver
         access.decided_at = timezone.now()
         access.save(update_fields=["status", "approver", "decided_at"])
+        notify_access_decided(access)
 
     return access

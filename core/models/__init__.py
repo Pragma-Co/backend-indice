@@ -19,6 +19,7 @@ from core.models.choices import (
     AuditAction,
     ConfidentialityLevel,
     FileExtension,
+    NotificationType,
     RevisionStatus,
     Role,
     VisibilityScope,
@@ -34,6 +35,7 @@ from core.models.legal import (
     UserLegalAcceptance,
 )
 from core.models.library import SavedDocument
+from core.models.notification import Notification
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
 from core.models.search import DocumentContent
@@ -64,6 +66,8 @@ __all__ = [
     "LegalDocument",
     "LegalDocumentStatus",
     "LegalDocumentVersion",
+    "Notification",
+    "NotificationType",
     "Project",
     "Revision",
     "RevisionStatus",
