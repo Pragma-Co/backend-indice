@@ -33,6 +33,7 @@ from core.services.data_incident_exceptions import (
 from core.services.data_incident_service import (
     CLOSURE_AUTHORITY_NOT_NOTIFIED,
     CLOSURE_NO_ACTIONS,
+    CLOSURE_SUBJECTS_NOT_NOTIFIED,
     add_action,
     add_business_days,
     change_status,
@@ -94,6 +95,9 @@ class DataIncidentFixtureMixin:
             self.admin,
         )
 
+    def _notify_subjects(self, incident):
+        return record_notification(incident.id, {"recipient": "DATA_SUBJECTS"}, self.admin)
+
 
 class DataIncidentServiceTests(DataIncidentFixtureMixin, TestCase):
     def test_should_register_an_incident_with_reference_affected_data_and_history(self):
@@ -133,14 +137,17 @@ class DataIncidentServiceTests(DataIncidentFixtureMixin, TestCase):
         self.assertEqual(deadline.weekday(), 2)
         self.assertEqual((deadline.hour, deadline.minute), (12, 0))
 
-    def test_should_require_authority_notification_only_for_high_severity_by_default(self):
+    def test_should_require_authority_notification_from_medium_severity_by_default(self):
         low = self._register(severity="LOW")
+        medium = self._register(title="Médio", severity="MEDIUM")
         forced = self._register(
             title="Baixo mas comunicado", severity="LOW", authority_notification_required=True
         )
 
         self.assertFalse(low.authority_notification_required)
         self.assertIsNone(low.authority_notification_due_at)
+        self.assertTrue(medium.authority_notification_required)
+        self.assertIsNotNone(medium.authority_notification_due_at)
         self.assertTrue(forced.authority_notification_required)
         self.assertIsNotNone(forced.authority_notification_due_at)
 
@@ -185,6 +192,7 @@ class DataIncidentServiceTests(DataIncidentFixtureMixin, TestCase):
         incident = self._register()
         self._contain(incident)
         record_notification(incident.id, {"recipient": "AUTHORITY"}, self.admin)
+        self._notify_subjects(incident)
 
         for status in ("CONTAINMENT", "ANALYSIS", "RESOLVED", "CLOSED"):
             incident = change_status(
@@ -211,7 +219,7 @@ class DataIncidentServiceTests(DataIncidentFixtureMixin, TestCase):
             (raised.exception.current, raised.exception.requested), ("REPORTED", "RESOLVED")
         )
 
-    def test_should_block_closure_without_actions_or_authority_notification(self):
+    def test_should_block_closure_without_actions_or_the_required_notifications(self):
         incident = self._register()
         change_status(incident.id, {"status": "ANALYSIS"}, self.admin)
         change_status(incident.id, {"status": "RESOLVED"}, self.admin)
@@ -222,17 +230,26 @@ class DataIncidentServiceTests(DataIncidentFixtureMixin, TestCase):
         with self.assertRaises(IncidentClosureBlockedError) as second:
             change_status(incident.id, {"status": "CLOSED"}, self.admin)
         record_notification(incident.id, {"recipient": "AUTHORITY"}, self.admin)
+        with self.assertRaises(IncidentClosureBlockedError) as third:
+            change_status(incident.id, {"status": "CLOSED"}, self.admin)
+        self._notify_subjects(incident)
         closed = change_status(incident.id, {"status": "CLOSED"}, self.admin)
 
         self.assertEqual(
-            first.exception.reasons, [CLOSURE_NO_ACTIONS, CLOSURE_AUTHORITY_NOT_NOTIFIED]
+            first.exception.reasons,
+            [CLOSURE_NO_ACTIONS, CLOSURE_AUTHORITY_NOT_NOTIFIED, CLOSURE_SUBJECTS_NOT_NOTIFIED],
         )
-        self.assertEqual(second.exception.reasons, [CLOSURE_AUTHORITY_NOT_NOTIFIED])
+        self.assertEqual(
+            second.exception.reasons,
+            [CLOSURE_AUTHORITY_NOT_NOTIFIED, CLOSURE_SUBJECTS_NOT_NOTIFIED],
+        )
+        self.assertEqual(third.exception.reasons, [CLOSURE_SUBJECTS_NOT_NOTIFIED])
         self.assertEqual(closed.status, IncidentStatus.CLOSED)
 
     def test_should_freeze_a_closed_incident(self):
         incident = self._register(severity="LOW")
         self._contain(incident)
+        self._notify_subjects(incident)
         for status in ("ANALYSIS", "RESOLVED", "CLOSED"):
             change_status(incident.id, {"status": status}, self.admin)
 
@@ -430,7 +447,11 @@ class DataIncidentViewTests(DataIncidentFixtureMixin, TestCase):
         self.assertEqual(skipped.json(), {"error": "InvalidStatusTransition", "status": "RESOLVED"})
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(
-            blocked.json(), {"error": "IncidentClosureBlocked", "reasons": [CLOSURE_NO_ACTIONS]}
+            blocked.json(),
+            {
+                "error": "IncidentClosureBlocked",
+                "reasons": [CLOSURE_NO_ACTIONS, CLOSURE_SUBJECTS_NOT_NOTIFIED],
+            },
         )
 
     def test_should_validate_the_body(self):

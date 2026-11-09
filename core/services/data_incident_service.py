@@ -36,7 +36,7 @@ from core.services.data_incident_exceptions import (
 
 AUTHORITY_NOTIFICATION_BUSINESS_DAYS = 3
 SEVERITIES_REQUIRING_AUTHORITY_NOTIFICATION = frozenset(
-    {IncidentSeverity.HIGH, IncidentSeverity.CRITICAL}
+    {IncidentSeverity.MEDIUM, IncidentSeverity.HIGH, IncidentSeverity.CRITICAL}
 )
 STATUS_TRANSITIONS = {
     IncidentStatus.REPORTED: frozenset({IncidentStatus.CONTAINMENT, IncidentStatus.ANALYSIS}),
@@ -47,6 +47,7 @@ STATUS_TRANSITIONS = {
 }
 CLOSURE_NO_ACTIONS = "no_actions_recorded"
 CLOSURE_AUTHORITY_NOT_NOTIFIED = "authority_not_notified"
+CLOSURE_SUBJECTS_NOT_NOTIFIED = "data_subjects_not_notified"
 TITLE_MAX_LENGTH = 200
 REFERENCE_PREFIX = "INC"
 REFERENCE_ATTEMPTS = 5
@@ -366,6 +367,8 @@ def closure_blockers(incident):
         reasons.append(CLOSURE_NO_ACTIONS)
     if incident.authority_notification_required and incident.authority_notified_at is None:
         reasons.append(CLOSURE_AUTHORITY_NOT_NOTIFIED)
+    if incident.subjects_notified_at is None:
+        reasons.append(CLOSURE_SUBJECTS_NOT_NOTIFIED)
     return reasons
 
 
