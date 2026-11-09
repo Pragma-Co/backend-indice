@@ -40,6 +40,12 @@ class AccessType(models.TextChoices):
     PERMANENT = "PERMANENT", "Permanent"
 
 
+class NotificationType(models.TextChoices):
+    DOCUMENT_UPDATED = "DOCUMENT_UPDATED", "Document updated"
+    ACCESS_APPROVED = "ACCESS_APPROVED", "Access approved"
+    ACCESS_REJECTED = "ACCESS_REJECTED", "Access rejected"
+
+
 class VisibilityScope(models.TextChoices):
     EVERYONE = "EVERYONE", "Everyone"
     AREA = "AREA", "Users of the document areas"
