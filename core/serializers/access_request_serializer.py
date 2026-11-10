@@ -62,6 +62,7 @@ def serialize_access_request_detail(access: DocumentAccess) -> dict:
     ]
     detail["approver"] = _serialize_person(access.approver)
     detail["decided_at"] = _isoformat(access.decided_at)
+    detail["decision_opinion"] = access.decision_opinion
     return detail
 
 
@@ -78,6 +79,7 @@ def serialize_access_decision(access: DocumentAccess) -> dict:
         "document_id": access.document_id,
         "requester": {"id": access.user_id, "name": access.user.name},
         "status": access.status,
+        "decision_opinion": access.decision_opinion,
         "access_type": access.access_type,
         "expires_on": _isoformat(access.expires_on),
         "approver": {"id": access.approver_id, "name": access.approver.name},

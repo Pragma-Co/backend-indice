@@ -122,7 +122,7 @@ def anonymize_user(user):
         removed_requests, _ = DocumentAccess.objects.filter(
             user=user, status=AccessStatus.PENDING
         ).delete()
-        DocumentAccess.objects.filter(user=user).update(justification="")
+        DocumentAccess.objects.filter(user=user).update(justification="", decision_opinion="")
         user.search_history.all().delete()
 
         user.name = ANONYMOUS_NAME
