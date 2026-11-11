@@ -216,6 +216,8 @@ erDiagram
     PROJECT ||--o{ ACCESS_GROUP : "project groups"
     ACCESS_GROUP ||--o{ ACCESS_GROUP_MEMBER : "members"
     APP_USER ||--o{ ACCESS_GROUP_MEMBER : "member / added_by"
+    DOCUMENT ||--o{ DOCUMENT_ACCESS_GROUP : "authorized groups"
+    ACCESS_GROUP ||--o{ DOCUMENT_ACCESS_GROUP : "granted documents"
 
     DOCUMENT {
         string code
@@ -263,7 +265,7 @@ SVG export: [data-model.svg](./data-model.svg)
 Notes on the data layer:
 
 - `audit_log` is append-only at the database level (a trigger rejects `UPDATE` and `DELETE`), and `document.updated_at` is maintained by a trigger. Enumerations are guarded by `CHECK` constraints.
-- `secrecy_level` holds the three confidentiality levels with their visibility rule (everyone, users of the document areas, selected users); `document.confidentiality_level` references it. `access_group` gathers users by area or by project up to a level, and `access_group_member` is the user/group pivot; `core/services/access_group_service.py` evaluates who can see a document from these tables and from `document_access`.
+- `secrecy_level` holds the three confidentiality levels with their visibility rule (everyone, users of the document areas, selected users); `document.confidentiality_level` references it. `access_group` gathers users by area or by project up to a level, `access_group_member` is the user/group pivot and `document_access_group` records the groups explicitly authorized for a document at upload; `core/services/access_group_service.py` evaluates who can see a document from these tables and from `document_access`.
 - `excluded_identifier` stores only an HMAC-SHA256 of the email of removed accounts, so the identifier can never be reused without storing readable personal data.
 - `temp_uploads` in MongoDB is transient: a record exists between the upload and the registration (or until the temporary file is discarded) and holds the metadata, the extracted text and the suggestion. `document_vectors` holds the TF-IDF vectors of the classifier's training dataset, tagged with the vectorizer version; the trained model itself (`model.pt`, `vectorizer.joblib`, `metadata.json`) is versioned in `classifier_artifacts/` and loaded in memory by the API.
 - File bytes never go to a database: temporary files stay in `tmp_uploads/`, registered files in `media/<document code>/v<version>/`, both Docker volumes.

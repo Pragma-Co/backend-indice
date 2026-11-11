@@ -354,7 +354,8 @@ Request (`application/json`):
   "document_type": "DWG",
   "confidentiality": "CONFIDENTIAL",
   "responsible_id": 12,
-  "areas": ["EST", "QUA"]
+  "areas": ["EST", "QUA"],
+  "authorized_group_ids": [3]
 }
 ```
 
@@ -369,6 +370,10 @@ Request (`application/json`):
 | `confidentiality` | yes | `PUBLIC`, `CONFIDENTIAL` or `SECRET` |
 | `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
 | `areas` | yes | at least one active area acronym; the "tags" of the form are the areas |
+| `authorized_group_ids` | no | only with `CONFIDENTIAL`: ids of active access groups, of any area or project, whose members may also see the document; the secrecy level of each group must reach the document's |
+| `authorized_user_ids` | with `SECRET` | only with `SECRET`: ids of active users who may see the document, at least one besides the responsible (who is skipped when listed) |
+
+**Conditional permissions by secrecy level.** The last two fields depend on the level (card SCRUM-106). A `CONFIDENTIAL` (Sigiloso) document is visible to the users of its `areas`; `authorized_group_ids` extends it to the members of the listed access groups and is written to `document_access_group` (group, who granted it and when). A `SECRET` (Restrito) document is visible only to selected people, so `authorized_user_ids` is required; each user receives a `document_access` row born `APPROVED` and `PERMANENT`, with the uploader as `approver`, the same row an approved access request produces. Both are written in the transaction that creates the document, so a failure leaves no grant behind, and the visibility filter honors them at once (see *Document visibility*). A `PUBLIC` document takes neither field; an empty list or `null` is treated as absent at any level.
 
 **Ids are not stable across databases.** `manage.py seed` assigns whatever ids the sequences are at, so the numbers in the example above will differ on your machine. Get valid ones before calling the endpoint:
 
@@ -381,8 +386,8 @@ Document type codes (`DWG`, `MEM`, ...) and area acronyms (`EST`, `QUA`, ...) ar
 
 Responses:
 
-- `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
-- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project) and `invalid_choice` (`confidentiality`).
+- `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `authorized_groups` (`id`, `name`), `authorized_users` (`id`, `name`, `email`), `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
+- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project), `invalid_choice` (`confidentiality`), `not_allowed` (`authorized_group_ids` or `authorized_user_ids` sent for a level that does not take them), `insufficient_level` (a group whose secrecy level is below the document's) and, for `authorized_user_ids` of a `SECRET` document, `required`; `not_found` also covers unknown or inactive groups and users.
 - `404` with `{"errors": {"temp_file_id": {"code": "not_found", ...}}}` when the temporary file no longer exists (upload it again).
 - `409` when the same file (by SHA-256) is already attached to a registered document.
 - `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
@@ -415,8 +420,8 @@ Every route requires a Django session except `/`, `/health/`, `/auth/csrf`, `/au
 `DocumentVisibilityMiddleware` (same package, right after the login check) resolves the viewer of every request into `request.viewer`: the active session user, or nobody (while `DJANGO_DEBUG` is on, `?user_id=<id>` on a `GET` is still accepted as a fallback). The document services then filter every query by what that viewer may see, following the secrecy levels (see *Access groups and secrecy levels*):
 
 - `PUBLIC`: everyone;
-- `CONFIDENTIAL`: users whose area is one of the document areas;
-- `SECRET`: only selected users;
+- `CONFIDENTIAL`: users whose area is one of the document areas, plus the members of the access groups authorized at upload (`document_access_group`), whatever their area;
+- `SECRET`: only selected users, which the upload grants through `document_access`;
 - at any level, the responsible, a user with an approved and unexpired `document_access` grant, and the members of an active access group of one of the document areas or of the document project whose level reaches the document's.
 
 The filter is applied inside `filter_documents`, so it covers `GET /documents`, `GET /documents/search` (and the AI summary built on it), `GET /documents/<id>/recommendations`, `GET /documents/archived` and `GET /users/me/library`: hidden documents are left out of `results` and of `count`, as if they did not exist. `GET /documents/<id>` answers `404 {"error": "DocumentNotFound"}` for a hidden document, so the response does not reveal that it exists. Without a viewer nothing is visible, and the login middleware already answers `401` before that. `GET /files/<id>/view` keeps its own, stricter rule (responsible, approved grant or reviewer of a pending revision), so seeing a document in a list never implies being able to open its file.
@@ -797,13 +802,14 @@ Migration `0024` models the need-to-know rules of the library in three tables:
 | `secrecy_level` | One row per confidentiality level, written by the migration itself: `PUBLIC` (Público, rank 0, visible to everyone), `CONFIDENTIAL` (Sigiloso, rank 1, visible to the users of the document areas) and `SECRET` (Restrito, rank 2, visible to selected users only). `document.confidentiality_level` references it through a foreign key, so a level in use cannot be removed and a document cannot carry an unknown level. |
 | `access_group` | A group of users organized by **area** (`scope = AREA`, `area_id`) or by **project** (`scope = PROJECT`, `project_id`), which grants its members the documents of that area or project up to its `secrecy_level`. A check constraint ties the target to the scope, there is at most one group per target and level, and a group can be deactivated (`active`) instead of deleted. |
 | `access_group_member` | The users of each group (`group_id` + `user_id` unique), with who added them and when. Memberships disappear with the group or with the user. |
+| `document_access_group` | The groups explicitly authorized for one document at upload (`document_id` + `group_id` unique, migration `0030`, card SCRUM-106), with who granted it and when. Their members see the document whatever their area or project, as long as the group is active; the grant disappears with the document or with the group. |
 
 `core/services/access_group_service.py` evaluates the rules for one document and one user, `can_user_view_document(document, user)`:
 
 - the responsible always sees the document;
 - `PUBLIC` is visible to every active user;
 - `CONFIDENTIAL` is visible to the users whose area is one of the document areas;
-- any level above public is also visible to a user with an approved, unexpired `document_access` grant, or who belongs to an active group of one of the document areas or of the document project whose level rank is at least the document's (a `CONFIDENTIAL` group never reaches a `SECRET` document);
+- any level above public is also visible to a user with an approved, unexpired `document_access` grant, or who belongs to an active group of one of the document areas or of the document project whose level rank is at least the document's (a `CONFIDENTIAL` group never reaches a `SECRET` document), or who belongs to an active group authorized for the document in `document_access_group`;
 - anonymous and inactive users get `False`.
 
 The listing, search, detail, recommendations, archived list and personal library apply this rule through `visible_documents` (see *Document visibility* under *Authentication*); the file view keeps its own rule. Until an API for groups exists they are managed in the Django admin (`/admin/`, groups with their members inline; the levels are read-only there), and `manage.py seed` creates three example groups.
