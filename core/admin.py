@@ -21,6 +21,7 @@ from core.models import (
     Discipline,
     Document,
     DocumentAccess,
+    DocumentAccessGroup,
     DocumentType,
     File,
     Project,
@@ -186,6 +187,15 @@ class DocumentAccessAdmin(admin.ModelAdmin):
     list_filter = ("status", "access_type")
     search_fields = ("document__code", "user__email")
     autocomplete_fields = ("document", "user", "approver")
+
+
+@admin.register(DocumentAccessGroup)
+class DocumentAccessGroupAdmin(admin.ModelAdmin):
+    list_display = ("document", "group", "granted_by", "granted_at")
+    list_filter = ("group__secrecy_level",)
+    search_fields = ("document__code", "group__name")
+    autocomplete_fields = ("document", "group", "granted_by")
+    readonly_fields = ("granted_at",)
 
 
 @admin.register(SecrecyLevel)
