@@ -1,6 +1,13 @@
 from django.db.models import Exists, OuterRef, Q, Subquery
 
-from core.models import AccessGroup, Document, DocumentAccess, DocumentArea, SecrecyLevel
+from core.models import (
+    AccessGroup,
+    Document,
+    DocumentAccess,
+    DocumentAccessGroup,
+    DocumentArea,
+    SecrecyLevel,
+)
 from core.models.choices import VisibilityScope
 from core.services.access_request_service import active_grant_filter
 
@@ -36,6 +43,14 @@ def group_grant(user):
     )
 
 
+def explicit_group_grant(user):
+    return Exists(
+        DocumentAccessGroup.objects.filter(
+            document=OuterRef("pk"), group__active=True, group__memberships__user=user
+        )
+    )
+
+
 def visibility_criteria(user):
     return (
         Q(responsible=user)
@@ -46,6 +61,7 @@ def visibility_criteria(user):
             & Q(area_membership(user))
         )
         | Q(group_grant(user))
+        | Q(explicit_group_grant(user))
     )
 
 

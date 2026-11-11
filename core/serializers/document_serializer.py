@@ -1,4 +1,4 @@
-from core.models import Document
+from core.models import AccessStatus, Document
 from core.services.document_code_service import revision_label
 
 
@@ -34,6 +34,16 @@ def serialize_created_document(document: Document) -> dict:
         "areas": [
             {"acronym": area.acronym, "name": area.name}
             for area in document.areas.order_by("acronym")
+        ],
+        "authorized_groups": [
+            {"id": grant.group.id, "name": grant.group.name}
+            for grant in document.group_grants.select_related("group").order_by("group__name")
+        ],
+        "authorized_users": [
+            {"id": access.user.id, "name": access.user.name, "email": access.user.email}
+            for access in document.accesses.filter(status=AccessStatus.APPROVED)
+            .select_related("user")
+            .order_by("user__name", "user_id")
         ],
         "revision": None
         if revision is None
