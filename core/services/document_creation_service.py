@@ -136,7 +136,6 @@ def validate_payload(payload) -> dict:
 
     document_type = None
     type_id = _clean_id(payload.get("document_type"))
-    print(f"Validating document type: {type_id}\n\n{payload.get('document_type')}")
     if not type_id:
         errors["document_type"] = _error(REQUIRED, "Document type is required.")
     else:
