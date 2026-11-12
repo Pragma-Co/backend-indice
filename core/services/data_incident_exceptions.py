@@ -14,6 +14,10 @@ class IncidentNotFoundError(Exception):
     pass
 
 
+class NoAffectedUsersError(Exception):
+    pass
+
+
 class IncidentClosedError(Exception):
     pass
 

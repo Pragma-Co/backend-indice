@@ -23,6 +23,7 @@ from core.views.data_incident_view import (
     incident_notifications_view,
     incident_resource,
     incident_status_view,
+    incident_subject_notifications_view,
     incidents_collection,
 )
 from core.views.document_ai_view import suggest_document_metadata_view, summarize_search_view
@@ -152,6 +153,11 @@ urlpatterns = [
         "security/incidents/<int:incident_id>/notifications",
         incident_notifications_view,
         name="security-incident-notifications",
+    ),
+    path(
+        "security/incidents/<int:incident_id>/subject-notifications",
+        incident_subject_notifications_view,
+        name="security-incident-subject-notifications",
     ),
     path("security/backups", backup_runs_view, name="security-backup-list"),
     path("manager/activities", manager_activities_view, name="manager-activities"),

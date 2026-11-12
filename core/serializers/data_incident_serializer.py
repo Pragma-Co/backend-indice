@@ -85,6 +85,36 @@ def serialize_incident_detail(incident):
     }
 
 
+def serialize_subject_notification(row):
+    return {
+        "user": _user(row.user),
+        "reason": row.reason,
+        "status": row.status,
+        "attempts": row.attempts,
+        "last_attempt_at": _iso(row.last_attempt_at),
+        "sent_at": _iso(row.sent_at),
+        "last_error": row.last_error or None,
+    }
+
+
+def serialize_subject_notifications(overview):
+    incident = overview["incident"]
+    payload = {
+        "incident": {
+            "id": incident.id,
+            "reference": incident.reference,
+            "status": incident.status,
+            "subjects_notified_at": _iso(incident.subjects_notified_at),
+        },
+        "summary": overview["summary"],
+        "recipients": [serialize_subject_notification(row) for row in overview["recipients"]],
+        "preview": {"subject": overview["preview"]["subject"], "text": overview["preview"]["text"]},
+    }
+    if "outcome" in overview:
+        payload["result"] = overview["outcome"]
+    return payload
+
+
 def serialize_backup_run(run):
     return {
         "id": run.id,
