@@ -9,6 +9,8 @@ from core.models.choices import (
     IncidentStatus,
     IncidentType,
     PersonalDataCategory,
+    SubjectNotificationReason,
+    SubjectNotificationStatus,
 )
 from core.models.document import Document
 
@@ -215,3 +217,53 @@ class DataIncidentStatusChange(models.Model):
 
     def __str__(self):
         return f"{self.incident_id}: {self.from_status} -> {self.to_status}"
+
+
+class DataIncidentSubjectNotification(models.Model):
+    incident = models.ForeignKey(
+        DataIncident,
+        on_delete=models.CASCADE,
+        related_name="subject_notifications",
+        db_index=False,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="incident_subject_notifications",
+    )
+    reason = models.CharField(max_length=25, choices=SubjectNotificationReason.choices)
+    status = models.CharField(
+        max_length=10,
+        choices=SubjectNotificationStatus.choices,
+        default=SubjectNotificationStatus.PENDING,
+    )
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(db_default=Now(), editable=False)
+
+    class Meta:
+        db_table = "data_incident_subject_notification"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["incident", "user"], name="uq_data_incident_subject_notification"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=SubjectNotificationStatus.values),
+                name="ck_data_incident_subject_notification_status",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status=SubjectNotificationStatus.SENT, sent_at__isnull=False)
+                    | (
+                        ~models.Q(status=SubjectNotificationStatus.SENT)
+                        & models.Q(sent_at__isnull=True)
+                    )
+                ),
+                name="ck_data_incident_subject_notification_sent",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}@{self.incident_id} ({self.status})"

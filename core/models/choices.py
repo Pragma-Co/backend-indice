@@ -128,6 +128,20 @@ class NotificationRecipient(models.TextChoices):
     DATA_SUBJECTS = "DATA_SUBJECTS", "Data subjects"
 
 
+class SubjectNotificationStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    SENT = "SENT", "Sent"
+    FAILED = "FAILED", "Failed"
+
+
+class SubjectNotificationReason(models.TextChoices):
+    AFFECTED_USER = "AFFECTED_USER", "Listed as affected in the incident"
+    DOCUMENT_RESPONSIBLE = "DOCUMENT_RESPONSIBLE", "Responsible for an affected document"
+    DOCUMENT_CREATOR = "DOCUMENT_CREATOR", "Registered an affected document"
+    REVISION_AUTHOR = "REVISION_AUTHOR", "Authored a revision of an affected document"
+    DOCUMENT_ACCESS = "DOCUMENT_ACCESS", "Requested or holds access to an affected document"
+
+
 class BackupTarget(models.TextChoices):
     POSTGRES = "POSTGRES", "PostgreSQL"
     MONGODB = "MONGODB", "MongoDB"

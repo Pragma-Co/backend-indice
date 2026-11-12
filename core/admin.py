@@ -22,6 +22,7 @@ from core.models import (
     DataIncident,
     DataIncidentAction,
     DataIncidentStatusChange,
+    DataIncidentSubjectNotification,
     Discipline,
     Document,
     DocumentAccess,
@@ -250,6 +251,21 @@ class DataIncidentActionInline(admin.TabularInline):
     readonly_fields = ("kind", "description", "performed_at", "performed_by", "recorded_by")
 
 
+class DataIncidentSubjectNotificationInline(admin.TabularInline):
+    model = DataIncidentSubjectNotification
+    extra = 0
+    can_delete = False
+    readonly_fields = (
+        "user",
+        "reason",
+        "status",
+        "attempts",
+        "last_attempt_at",
+        "sent_at",
+        "last_error",
+    )
+
+
 class DataIncidentStatusChangeInline(admin.TabularInline):
     model = DataIncidentStatusChange
     extra = 0
@@ -271,7 +287,11 @@ class DataIncidentAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     )
     list_filter = ("status", "severity", "incident_type")
     search_fields = ("reference", "title")
-    inlines = [DataIncidentActionInline, DataIncidentStatusChangeInline]
+    inlines = [
+        DataIncidentActionInline,
+        DataIncidentStatusChangeInline,
+        DataIncidentSubjectNotificationInline,
+    ]
 
 
 @admin.register(BackupRun)
