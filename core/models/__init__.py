@@ -6,6 +6,7 @@ Split by subject so each module stays readable; the app label remains `core`.
 from core.models.access import DocumentAccess, DocumentAccessGroup
 from core.models.access_group import AccessGroup, AccessGroupMember, SecrecyLevel
 from core.models.audit import AuditLog
+from core.models.backup import BackupRun
 from core.models.catalog import (
     Discipline,
     DocumentType,
@@ -17,15 +18,30 @@ from core.models.choices import (
     AccessStatus,
     AccessType,
     AuditAction,
+    BackupStatus,
+    BackupTarget,
     ConfidentialityLevel,
     FileExtension,
+    IncidentActionKind,
+    IncidentSeverity,
+    IncidentStatus,
+    IncidentType,
+    NotificationRecipient,
     NotificationType,
+    PersonalDataCategory,
     RevisionStatus,
     Role,
     VisibilityScope,
 )
 from core.models.document import Document, DocumentArea, DocumentTag
 from core.models.excluded_identifier import ExcludedIdentifier
+from core.models.incident import (
+    DataIncident,
+    DataIncidentAction,
+    DataIncidentAffectedDocument,
+    DataIncidentAffectedUser,
+    DataIncidentStatusChange,
+)
 from core.models.legal import (
     LegalClause,
     LegalDocument,
@@ -51,7 +67,15 @@ __all__ = [
     "Area",
     "AuditAction",
     "AuditLog",
+    "BackupRun",
+    "BackupStatus",
+    "BackupTarget",
     "ConfidentialityLevel",
+    "DataIncident",
+    "DataIncidentAction",
+    "DataIncidentAffectedDocument",
+    "DataIncidentAffectedUser",
+    "DataIncidentStatusChange",
     "Discipline",
     "Document",
     "DocumentAccess",
@@ -63,12 +87,18 @@ __all__ = [
     "ExcludedIdentifier",
     "File",
     "FileExtension",
+    "IncidentActionKind",
+    "IncidentSeverity",
+    "IncidentStatus",
+    "IncidentType",
     "LegalClause",
     "LegalDocument",
     "LegalDocumentStatus",
     "LegalDocumentVersion",
     "Notification",
+    "NotificationRecipient",
     "NotificationType",
+    "PersonalDataCategory",
     "Project",
     "Revision",
     "RevisionStatus",
