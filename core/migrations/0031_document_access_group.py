@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0029_merge_capture_attempt_audit_action_and_notification"),
+        ("core", "0030_document_access_decision_opinion"),
     ]
 
     operations = [
