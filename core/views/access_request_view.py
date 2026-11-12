@@ -110,6 +110,7 @@ def access_request_decision_view(request, access_id):
             "document_id": access.document_id,
             "document_code": access.document.code,
             "requester_id": access.user_id,
+            "opinion": access.decision_opinion,
         },
     )
     return JsonResponse(serialize_access_decision(access))

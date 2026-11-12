@@ -30,6 +30,7 @@ class DocumentAccess(models.Model):
         max_length=10, choices=AccessStatus.choices, default=AccessStatus.PENDING
     )
     justification = models.TextField(blank=True)
+    decision_opinion = models.TextField(blank=True)
     access_type = models.CharField(
         max_length=10, choices=AccessType.choices, default=AccessType.PERMANENT
     )

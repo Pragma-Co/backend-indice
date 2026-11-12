@@ -22,6 +22,7 @@ from core.models import (
     Project,
     Revision,
     RevisionStatus,
+    Role,
     User,
 )
 
@@ -40,6 +41,8 @@ class AccessRequestCycleTests(TestCase):
         area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
         requester_area = Area.objects.create(acronym="AER", name="Aerodinâmica")
         self.manager = self._user("manager@example.com", area)
+        self.manager.role = Role.AUDITOR
+        self.manager.save(update_fields=["role"])
         area.manager = self.manager
         area.save(update_fields=["manager"])
         responsible = self._user("responsible@example.com", area)
@@ -100,7 +103,9 @@ class AccessRequestCycleTests(TestCase):
     def _decide(self, access_id, decision):
         return self.manager_client.post(
             reverse("manager-access-request-decision", args=[access_id]),
-            data=json.dumps({"decision": decision}),
+            data=json.dumps(
+                {"decision": decision, "opinion": "Parecer técnico para esta solicitação."}
+            ),
             content_type="application/json",
         )
 

@@ -511,6 +511,7 @@ def get_document_detail(document_id, user_id=None):
 def _reopen_access_request(access, cleaned):
     access.status = AccessStatus.PENDING
     access.justification = cleaned["justification"]
+    access.decision_opinion = ""
     access.access_type = cleaned["access_type"]
     access.expires_on = cleaned["expires_on"]
     access.requested_at = timezone.now()
@@ -520,6 +521,7 @@ def _reopen_access_request(access, cleaned):
         update_fields=[
             "status",
             "justification",
+            "decision_opinion",
             "access_type",
             "expires_on",
             "requested_at",

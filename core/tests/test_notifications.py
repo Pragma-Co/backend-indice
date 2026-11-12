@@ -30,6 +30,9 @@ from core.services.notification_service import (
 )
 from core.services.revision_review_service import decide_revision
 
+APPROVAL = {"decision": "APPROVED", "opinion": "Parecer técnico para esta solicitação."}
+REJECTION = {"decision": "REJECTED", "opinion": "Parecer técnico para esta solicitação."}
+
 
 class NotificationFixtureMixin:
     def setUp(self):
@@ -174,7 +177,7 @@ class AccessDecisionTriggerTests(NotificationFixtureMixin, TestCase):
     def test_should_notify_the_requester_when_the_access_request_is_approved(self):
         access = self._access_request(self.reader)
 
-        decide_access_request(access.pk, self.author, {"decision": "APPROVED"})
+        decide_access_request(access.pk, self.reviewer, APPROVAL)
 
         notification = Notification.objects.get()
         self.assertEqual(notification.recipient, self.reader)
@@ -188,7 +191,7 @@ class AccessDecisionTriggerTests(NotificationFixtureMixin, TestCase):
     def test_should_notify_the_requester_when_the_access_request_is_rejected(self):
         access = self._access_request(self.reader)
 
-        decide_access_request(access.pk, self.author, {"decision": "REJECTED"})
+        decide_access_request(access.pk, self.reviewer, REJECTION)
 
         notification = Notification.objects.get()
         self.assertEqual(notification.recipient, self.reader)
@@ -200,10 +203,10 @@ class AccessDecisionTriggerTests(NotificationFixtureMixin, TestCase):
 
     def test_should_not_notify_again_when_the_decision_fails(self):
         access = self._access_request(self.reader)
-        decide_access_request(access.pk, self.author, {"decision": "APPROVED"})
+        decide_access_request(access.pk, self.reviewer, APPROVAL)
 
         with self.assertRaises(AccessRequestAlreadyDecidedError):
-            decide_access_request(access.pk, self.author, {"decision": "REJECTED"})
+            decide_access_request(access.pk, self.reviewer, REJECTION)
 
         self.assertEqual(Notification.objects.count(), 1)
 
