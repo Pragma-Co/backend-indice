@@ -3,7 +3,7 @@
 Split by subject so each module stays readable; the app label remains `core`.
 """
 
-from core.models.access import DocumentAccess
+from core.models.access import DocumentAccess, DocumentAccessGroup
 from core.models.access_group import AccessGroup, AccessGroupMember, SecrecyLevel
 from core.models.audit import AuditLog
 from core.models.backup import BackupRun
@@ -27,6 +27,7 @@ from core.models.choices import (
     IncidentStatus,
     IncidentType,
     NotificationRecipient,
+    NotificationType,
     PersonalDataCategory,
     RevisionStatus,
     Role,
@@ -50,6 +51,7 @@ from core.models.legal import (
     UserLegalAcceptance,
 )
 from core.models.library import SavedDocument
+from core.models.notification import Notification
 from core.models.organization import Area, User
 from core.models.revision import MAX_FILE_SIZE_BYTES, File, Revision
 from core.models.search import DocumentContent
@@ -77,6 +79,7 @@ __all__ = [
     "Discipline",
     "Document",
     "DocumentAccess",
+    "DocumentAccessGroup",
     "DocumentArea",
     "DocumentContent",
     "DocumentTag",
@@ -92,7 +95,9 @@ __all__ = [
     "LegalDocument",
     "LegalDocumentStatus",
     "LegalDocumentVersion",
+    "Notification",
     "NotificationRecipient",
+    "NotificationType",
     "PersonalDataCategory",
     "Project",
     "Revision",

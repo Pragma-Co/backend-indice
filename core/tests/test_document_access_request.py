@@ -21,6 +21,7 @@ from core.models import (
     Project,
     Revision,
     RevisionStatus,
+    Role,
     User,
 )
 from core.services.access_request_exceptions import AccessRequestValidationError
@@ -185,6 +186,10 @@ class AccessRequestEndpointTestCase(TestCase):
         self.area.manager = self.manager
         self.area.save(update_fields=["manager"])
         self.other_manager = self._user("other.manager@example.com", self.other_area)
+        self.manager.role = Role.AUDITOR
+        self.manager.save(update_fields=["role"])
+        self.other_manager.role = Role.ADMIN
+        self.other_manager.save(update_fields=["role"])
         self.other_area.manager = self.other_manager
         self.other_area.save(update_fields=["manager"])
         self.responsible = self._user("responsible@example.com", self.area)
@@ -490,7 +495,10 @@ class AccessRequestDuplicationTests(AccessRequestEndpointTestCase):
 
     def test_should_reopen_a_rejected_request_as_pending(self):
         access = DocumentAccess.objects.create(
-            document=self.document, user=self.requester, justification="Motivo antigo"
+            document=self.document,
+            user=self.requester,
+            justification="Motivo antigo",
+            decision_opinion="Parecer anterior",
         )
         self._decide(access, AccessStatus.REJECTED)
 
@@ -501,6 +509,7 @@ class AccessRequestDuplicationTests(AccessRequestEndpointTestCase):
         self.assertEqual(response.json()["id"], access.pk)
         self.assertEqual(access.status, AccessStatus.PENDING)
         self.assertEqual(access.justification, VALID_JUSTIFICATION)
+        self.assertEqual(access.decision_opinion, "")
         self.assertIsNone(access.approver)
         self.assertIsNone(access.decided_at)
         self.assertIsNotNone(access.requested_at)
@@ -548,12 +557,12 @@ class AccessRequestModerationQueueTests(AccessRequestEndpointTestCase):
         queue = pending_access_requests(self.manager)
         self.assertEqual([access.pk for access in queue], [response.json()["id"]])
 
-    def test_should_not_reach_the_queue_of_a_manager_of_another_area(self):
-        self._post()
+    def test_should_reach_the_queue_of_a_manager_of_another_area(self):
+        response = self._post()
 
         queue = pending_access_requests(self.other_manager)
 
-        self.assertEqual(list(queue), [])
+        self.assertEqual([access.pk for access in queue], [response.json()["id"]])
 
     def test_should_show_the_requested_terms_in_the_manager_panel(self):
         expires_on = _tomorrow()
@@ -583,7 +592,9 @@ class AccessRequestModerationQueueTests(AccessRequestEndpointTestCase):
 
         response = manager_client.post(
             reverse("manager-access-request-decision", args=[access_id]),
-            data=json.dumps({"decision": "APPROVED"}),
+            data=json.dumps(
+                {"decision": "APPROVED", "opinion": "Parecer técnico para esta solicitação."}
+            ),
             content_type="application/json",
         )
 

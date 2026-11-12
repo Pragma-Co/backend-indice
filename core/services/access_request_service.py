@@ -5,7 +5,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from core.models import AccessStatus, AccessType, Area, Document, DocumentAccess
+from core.models import AccessStatus, AccessType, Document, DocumentAccess
 from core.services.access_request_exceptions import (
     AccessRequestAlreadyDecidedError,
     AccessRequestExpiredError,
@@ -13,6 +13,8 @@ from core.services.access_request_exceptions import (
     AccessRequestValidationError,
     OwnAccessRequestReviewError,
 )
+from core.services.notification_service import notify_access_decided
+from core.services.revision_review_service import is_revision_reviewer
 
 DECISIONS = (AccessStatus.APPROVED, AccessStatus.REJECTED)
 
@@ -32,19 +34,19 @@ def active_grant_filter() -> Q:
     )
 
 
-def _justification_error(justification):
+def _justification_error(justification, field="justification"):
     if justification is None or (isinstance(justification, str) and not justification.strip()):
-        return _error("required", "Justification is required.")
+        return _error("required", f"{field.capitalize()} is required.")
     if not isinstance(justification, str):
-        return _error("invalid", "justification must be a string.")
+        return _error("invalid", f"{field} must be a string.")
     length = len(justification.strip())
     if length < JUSTIFICATION_MIN_LENGTH:
         return _error(
-            "too_short", f"justification must have at least {JUSTIFICATION_MIN_LENGTH} characters."
+            "too_short", f"{field} must have at least {JUSTIFICATION_MIN_LENGTH} characters."
         )
     if length > JUSTIFICATION_MAX_LENGTH:
         return _error(
-            "too_long", f"justification must have at most {JUSTIFICATION_MAX_LENGTH} characters."
+            "too_long", f"{field} must have at most {JUSTIFICATION_MAX_LENGTH} characters."
         )
     return None
 
@@ -109,18 +111,13 @@ def validate_access_request_payload(payload) -> dict:
 
 
 def decidable_documents(approver):
-    return Document.objects.filter(document_type__active=True, archived_at__isnull=True).filter(
-        Q(responsible=approver) | Q(areas__manager=approver, areas__active=True)
-    )
+    if not is_access_approver(approver):
+        return Document.objects.none()
+    return Document.objects.filter(document_type__active=True, archived_at__isnull=True)
 
 
 def is_access_approver(user) -> bool:
-    if not (user and user.is_authenticated and user.is_active):
-        return False
-    return (
-        Area.objects.filter(manager=user, active=True).exists()
-        or decidable_documents(user).exists()
-    )
+    return is_revision_reviewer(user)
 
 
 def _positive_int(params, name, default, errors):
@@ -218,7 +215,11 @@ def validate_decision_payload(payload) -> dict:
                 )
             }
         )
-    return {"decision": AccessStatus(decision.strip().upper())}
+    opinion = payload.get("opinion")
+    opinion_error = _justification_error(opinion, field="opinion")
+    if opinion_error:
+        raise AccessRequestValidationError({"opinion": opinion_error})
+    return {"decision": AccessStatus(decision.strip().upper()), "opinion": opinion.strip()}
 
 
 def decide_access_request(access_id, approver, payload) -> DocumentAccess:
@@ -245,8 +246,10 @@ def decide_access_request(access_id, approver, payload) -> DocumentAccess:
             raise AccessRequestExpiredError(access.expires_on)
 
         access.status = cleaned["decision"]
+        access.decision_opinion = cleaned["opinion"]
         access.approver = approver
         access.decided_at = timezone.now()
-        access.save(update_fields=["status", "approver", "decided_at"])
+        access.save(update_fields=["status", "decision_opinion", "approver", "decided_at"])
+        notify_access_decided(access)
 
     return access
