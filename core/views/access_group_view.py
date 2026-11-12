@@ -4,6 +4,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from core.serializers.access_group_serializer import serialize_group, serialize_member
+from core.services.access_group_service import list_active_groups
 from core.services.access_group_management_service import (
     GroupManagementError,
     add_member,
@@ -13,6 +14,25 @@ from core.services.access_group_management_service import (
     remove_member,
 )
 from core.services.revision_review_service import is_revision_reviewer
+
+
+@require_http_methods(["GET"])
+def access_group_options_view(request):
+    if not (request.user.is_authenticated and request.user.is_active):
+        return JsonResponse({"error": "AuthenticationRequired"}, status=401)
+    return JsonResponse(
+        [
+            {
+                "id": group.pk,
+                "name": group.name,
+                "scope": group.scope,
+                "area": group.area.acronym if group.area else None,
+                "secrecy_level": group.secrecy_level_id,
+            }
+            for group in list_active_groups()
+        ],
+        safe=False,
+    )
 
 
 def _manager_error(request):

@@ -5,6 +5,10 @@ from core.models import AccessGroup, DocumentAccess, DocumentAccessGroup, Secrec
 from core.models.choices import AccessStatus, VisibilityScope
 
 
+def list_active_groups():
+    return AccessGroup.objects.filter(active=True).select_related("area").order_by("name")
+
+
 def secrecy_level_of(document):
     return SecrecyLevel.objects.get(code=document.confidentiality_level)
 
