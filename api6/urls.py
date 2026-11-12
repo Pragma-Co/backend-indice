@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.urls import path
 
 from core.views.access_group_view import (
+    access_group_options_view,
     access_group_user_view,
     access_group_users_view,
     access_groups_view,
@@ -48,7 +49,7 @@ from core.views.personal_library_view import personal_library, personal_library_
 from core.views.revision_review_view import pending_revisions_view, revision_decision_view
 from core.views.search_history_view import search_history_view
 from core.views.upload_view import upload_document
-from core.views.user_view import request_user_deletion, user_me
+from core.views.user_view import request_user_deletion, user_me, users_collection
 
 urlpatterns = [
     path("", api_root, name="api-root"),
@@ -57,6 +58,7 @@ urlpatterns = [
     path("auth/csrf", csrf_view, name="auth-csrf"),
     path("auth/login", login_view, name="auth-login"),
     path("auth/logout", logout_view, name="auth-logout"),
+    path("users", users_collection, name="user-list"),
     path("users/me", user_me, name="user-me"),
     path("users/me/search-history", search_history_view, name="user-search-history"),
     path("users/me/library", personal_library, name="personal-library"),
@@ -123,6 +125,7 @@ urlpatterns = [
         name="document-ai-suggestions",
     ),
     path("manager/activities", manager_activities_view, name="manager-activities"),
+    path("access-groups", access_group_options_view, name="access-group-options"),
     path("manager/access-groups", access_groups_view, name="manager-access-groups"),
     path(
         "manager/access-groups/<int:group_id>/users",

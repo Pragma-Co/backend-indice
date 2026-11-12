@@ -3,7 +3,7 @@
 Split by subject so each module stays readable; the app label remains `core`.
 """
 
-from core.models.access import DocumentAccess
+from core.models.access import DocumentAccess, DocumentAccessGroup
 from core.models.access_group import AccessGroup, AccessGroupMember, SecrecyLevel
 from core.models.audit import AuditLog
 from core.models.catalog import (
@@ -55,6 +55,7 @@ __all__ = [
     "Discipline",
     "Document",
     "DocumentAccess",
+    "DocumentAccessGroup",
     "DocumentArea",
     "DocumentContent",
     "DocumentTag",

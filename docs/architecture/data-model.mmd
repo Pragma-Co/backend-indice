@@ -27,6 +27,8 @@ erDiagram
     PROJECT ||--o{ ACCESS_GROUP : "project groups"
     ACCESS_GROUP ||--o{ ACCESS_GROUP_MEMBER : "members"
     APP_USER ||--o{ ACCESS_GROUP_MEMBER : "member / added_by"
+    DOCUMENT ||--o{ DOCUMENT_ACCESS_GROUP : "authorized groups"
+    ACCESS_GROUP ||--o{ DOCUMENT_ACCESS_GROUP : "granted documents"
 
     DOCUMENT {
         string code

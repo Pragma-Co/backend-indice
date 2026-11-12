@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import models
+from django.db.models.functions import Now
 
 from core.models.choices import AccessStatus, AccessType
 from core.models.document import Document
@@ -86,3 +87,29 @@ class DocumentAccess(models.Model):
 
     def __str__(self):
         return f"{self.user_id}@{self.document_id} ({self.status})"
+
+
+class DocumentAccessGroup(models.Model):
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="group_grants", db_index=False
+    )
+    group = models.ForeignKey(
+        "core.AccessGroup", on_delete=models.CASCADE, related_name="document_grants"
+    )
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="granted_document_groups",
+    )
+    granted_at = models.DateTimeField(db_default=Now(), editable=False)
+
+    class Meta:
+        db_table = "document_access_group"
+        constraints = [
+            models.UniqueConstraint(fields=["document", "group"], name="uq_document_access_group"),
+        ]
+
+    def __str__(self):
+        return f"{self.group_id}@{self.document_id}"

@@ -1,8 +1,12 @@
 from django.db.models import Q
 from django.utils import timezone
 
-from core.models import AccessGroup, DocumentAccess, SecrecyLevel
+from core.models import AccessGroup, DocumentAccess, DocumentAccessGroup, SecrecyLevel
 from core.models.choices import AccessStatus, VisibilityScope
+
+
+def list_active_groups():
+    return AccessGroup.objects.filter(active=True).select_related("area").order_by("name")
 
 
 def secrecy_level_of(document):
@@ -29,6 +33,12 @@ def matching_groups(document, user, level):
     ).filter(Q(area__in=document.areas.all()) | Q(project_id=document.project_id))
 
 
+def has_explicit_group_grant(document, user):
+    return DocumentAccessGroup.objects.filter(
+        document=document, group__active=True, group__memberships__user=user
+    ).exists()
+
+
 def can_user_view_document(document, user):
     if user is None or not user.is_active:
         return False
@@ -39,4 +49,8 @@ def can_user_view_document(document, user):
         return True
     if level.visibility == VisibilityScope.AREA and shares_area(document, user):
         return True
-    return has_approved_access(document, user) or matching_groups(document, user, level).exists()
+    return (
+        has_approved_access(document, user)
+        or matching_groups(document, user, level).exists()
+        or has_explicit_group_grant(document, user)
+    )

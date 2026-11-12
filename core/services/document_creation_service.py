@@ -38,6 +38,10 @@ from core.services.document_exceptions import (
     TempFileNotFoundError,
 )
 from core.services.document_index_service import index_document_safely
+from core.services.document_permission_service import (
+    clean_access_permissions,
+    grant_access_permissions,
+)
 from core.services.documents_exceptions import DocumentNotFoundError
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import MissingFileError
@@ -136,7 +140,6 @@ def validate_payload(payload) -> dict:
 
     document_type = None
     type_id = _clean_id(payload.get("document_type"))
-    print(f"Validating document type: {type_id}\n\n{payload.get('document_type')}")
     if not type_id:
         errors["document_type"] = _error(REQUIRED, "Document type is required.")
     else:
@@ -187,6 +190,8 @@ def validate_payload(payload) -> dict:
         if missing:
             errors["areas"] = _error(NOT_FOUND, f"Unknown or inactive areas: {missing}.")
     cleaned["areas"] = areas
+
+    cleaned.update(clean_access_permissions(payload, confidentiality, responsible, errors))
 
     has_temp_file_ids = "temp_file_ids" in payload
     raw_temp_file_ids = payload.get("temp_file_ids")
@@ -336,6 +341,7 @@ def create_document(payload) -> Document:
         DocumentArea.objects.bulk_create(
             [DocumentArea(document=document, area=area) for area in cleaned["areas"]]
         )
+        grant_access_permissions(document, cleaned, cleaned["created_by"])
         revision = Revision.objects.create(
             document=document,
             version=INITIAL_VERSION,
