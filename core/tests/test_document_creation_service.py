@@ -56,6 +56,7 @@ class DocumentCreationServiceTests(TestCase):
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.unlinked_discipline = Discipline.objects.create(code="HID", name="Hidráulica")
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
+        self.client.force_login(self.user)
 
     def _temp_file(self, temp_file_id=TEMP_FILE_ID, content=PDF_BYTES, extension="pdf"):
         path = Path(self.temp_dir) / f"{temp_file_id}.{extension}"
@@ -429,8 +430,7 @@ class DocumentCreationServiceTests(TestCase):
             {"temp_file_ids": [new_id], "change_description": "Revisão após ensaio estrutural"},
         )
 
-        with self.settings(DEBUG=True):
-            response = self.client.get(f"/documents/{document.id}", {"user_id": self.user.id})
+        response = self.client.get(f"/documents/{document.id}")
 
         self.assertEqual(
             response.json()["revision"]["change_description"], "Revisão após ensaio estrutural"

@@ -1,18 +1,22 @@
 import json
 import logging
 
-from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from core.models import AuditAction
+from core.models import AuditAction, Document
+from core.serializers.access_request_serializer import serialize_access_request
 from core.serializers.document_serializer import (
     serialize_archived_document,
     serialize_created_document,
     serialize_restored_document,
 )
 from core.services import audit_service
+from core.services.access_request_exceptions import (
+    AccessRequestAlreadyPendingError,
+    AccessRequestValidationError,
+)
 from core.services.document_archive_service import (
     archive_document,
     is_manager,
@@ -33,20 +37,22 @@ from core.services.document_exceptions import (
     DuplicateRevisionUploadError,
     TempFileNotFoundError,
 )
+from core.services.document_recommendation_service import get_document_recommendations
 from core.services.document_search_service import search_documents
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
     ArchivePermissionDeniedError,
     DocumentNotFoundError,
-    MissingUserError,
-    UserNotFoundError,
 )
 from core.services.documents_service import (
+    can_view_document,
     get_document_detail,
     get_documents,
     get_simple_filters,
     request_document_access,
 )
+from core.services.revision_review_service import is_revision_reviewer
+from core.services.search_history_service import record_search
 from core.services.upload_exceptions import (
     DuplicateFileError,
     FileTooLargeError,
@@ -63,7 +69,7 @@ ENTITY_DOCUMENT = "document"
 @require_GET
 def documents(request):
     try:
-        return JsonResponse(get_documents(request.GET))
+        return JsonResponse(get_documents(request.GET, request.viewer))
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
@@ -136,14 +142,18 @@ def documents_collection(request):
 
 @require_GET
 def search_documents_view(request):
-    user = request.user if request.user.is_authenticated and request.user.is_active else None
     try:
-        return JsonResponse(search_documents(request.GET, user))
+        result = search_documents(request.GET, request.viewer)
     except DocumentQueryError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except Exception as exc:
         logger.exception("Failed to search documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+    try:
+        record_search(request.user, result["query"])
+    except Exception:
+        logger.exception("Failed to record search history")
+    return JsonResponse(result)
 
 
 @require_GET
@@ -243,15 +253,26 @@ def create_revision_view(request, document_id):
 
 @require_GET
 def document_detail(request, document_id):
-    user_id = request.user.id if request.user.is_authenticated else None
-    if user_id is None and settings.DEBUG:
-        user_id = request.GET.get("user_id")
+    viewer = request.viewer
     try:
-        return JsonResponse(get_document_detail(document_id, user_id))
+        return JsonResponse(get_document_detail(document_id, viewer.id if viewer else None))
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
     except Exception as exc:
         logger.exception("Failed to retrieve document detail")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@require_GET
+def document_recommendations_view(request, document_id):
+    try:
+        return JsonResponse(get_document_recommendations(document_id, request.GET, request.viewer))
+    except DocumentQueryError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
+    except DocumentNotFoundError:
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except Exception as exc:
+        logger.exception("Failed to recommend related documents")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
@@ -349,31 +370,62 @@ def restore_document_view(request, document_id):
     return JsonResponse(serialize_restored_document(document))
 
 
-@csrf_exempt
 @require_POST
 def request_access(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
     try:
-        payload = json.loads(request.body or "{}")
-    except json.JSONDecodeError:
+        payload = json.loads(request.body or b"")
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return JsonResponse({"error": "InvalidJSON"}, status=400)
 
-    user_id = payload.get("user_id")
-    justification = payload.get("justification", "")
-
     try:
-        result = request_document_access(document_id, user_id, justification)
-        audit_service.log_access_requested(
-            request, document_id, "", user_id, justification, result["created"]
-        )
-        return JsonResponse(result, status=201)
+        access = request_document_access(document_id, user, payload)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
-    except MissingUserError:
-        return JsonResponse({"error": "MissingUser"}, status=400)
-    except UserNotFoundError:
-        return JsonResponse({"error": "UserNotFound"}, status=404)
+    except AccessRequestValidationError as exc:
+        return JsonResponse({"errors": exc.errors}, status=400)
     except AlreadyHasAccessError:
         return JsonResponse({"error": "AlreadyHasAccess"}, status=409)
+    except AccessRequestAlreadyPendingError as exc:
+        return JsonResponse(
+            {"error": "AccessRequestAlreadyPending", "id": exc.access.pk}, status=409
+        )
     except Exception as exc:
         logger.exception("Failed to request document access")
         return JsonResponse({"error": type(exc).__name__}, status=500)
+
+    audit_service.log_access_requested(request, access)
+    return JsonResponse(serialize_access_request(access), status=201)
+
+
+@require_POST
+def document_security_event_view(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
+    try:
+        payload = json.loads(request.body or b"")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({"error": "InvalidJSON"}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "InvalidJSON"}, status=400)
+
+    event = payload.get("event")
+    if event not in audit_service.CAPTURE_EVENTS:
+        return JsonResponse({"error": "InvalidEvent"}, status=400)
+    file_id = payload.get("file_id")
+    if isinstance(file_id, bool) or not isinstance(file_id, int):
+        file_id = None
+    detail = payload.get("detail")
+    detail = detail if isinstance(detail, str) else None
+
+    document = Document.objects.filter(pk=document_id).first()
+    if document is None or not (can_view_document(document, user) or is_revision_reviewer(user)):
+        return JsonResponse({"error": "DocumentNotFound"}, status=404)
+
+    audit_service.record_capture_attempt(request, document, event, file_id=file_id, detail=detail)
+    return JsonResponse({"logged": True}, status=201)

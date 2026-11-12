@@ -35,6 +35,28 @@ class AccessStatus(models.TextChoices):
     REJECTED = "REJECTED", "Rejected"
 
 
+class AccessType(models.TextChoices):
+    TEMPORARY = "TEMPORARY", "Temporary"
+    PERMANENT = "PERMANENT", "Permanent"
+
+
+class NotificationType(models.TextChoices):
+    DOCUMENT_UPDATED = "DOCUMENT_UPDATED", "Document updated"
+    ACCESS_APPROVED = "ACCESS_APPROVED", "Access approved"
+    ACCESS_REJECTED = "ACCESS_REJECTED", "Access rejected"
+
+
+class VisibilityScope(models.TextChoices):
+    EVERYONE = "EVERYONE", "Everyone"
+    AREA = "AREA", "Users of the document areas"
+    SELECTED_USERS = "SELECTED_USERS", "Selected users"
+
+
+class AccessGroupScope(models.TextChoices):
+    AREA = "AREA", "Area"
+    PROJECT = "PROJECT", "Project"
+
+
 class AuditAction(models.TextChoices):
     CREATE = "CREATE", "Create"
     READ = "READ", "Read"
@@ -48,6 +70,7 @@ class AuditAction(models.TextChoices):
     DOC_CANCEL = "DOC_CANCEL", "Document registration cancelled"
     DOC_DOWNLOAD = "DOC_DOWNLOAD", "Document downloaded"
     DOC_ACCESS_REQUESTED = "DOC_ACCESS_REQUESTED", "Document access requested"
+    DOC_CAPTURE_ATTEMPT = "DOC_CAPTURE_ATTEMPT", "Document capture attempt"
 
 
 class FileExtension(models.TextChoices):

@@ -5,7 +5,7 @@ import logging
 from django.conf import settings
 from django.db import transaction
 
-from core.models import AuditAction, AuditLog, Document, User
+from core.models import AuditAction, AuditLog, User
 from core.services.document_code_service import revision_label
 
 logger = logging.getLogger(__name__)
@@ -229,22 +229,18 @@ def log_document_revision_created(request, revision, temp_file_ids):
 
 
 @never_raises
-def log_access_requested(request, document_id, document_code, user_id, justification, created):
-    if not document_code:
-        document_code = (
-            Document.objects.filter(pk=document_id).values_list("code", flat=True).first()
-        )
+def log_access_requested(request, access):
     log_event(
         request,
         AuditAction.DOC_ACCESS_REQUESTED,
         ENTITY_DOCUMENT,
-        document_id,
+        access.document_id,
         {
-            "document_code": document_code,
-            "justification": justification,
-            "already_requested": not created,
+            "document_code": access.document.code,
+            "justification": access.justification,
+            "access_type": access.access_type,
+            "expires_on": access.expires_on.isoformat() if access.expires_on else None,
         },
-        {"user_id": user_id},
     )
 
 
@@ -323,4 +319,44 @@ def record_document_access_denied(document, user, request):
             "outcome": "denied",
         },
         ip_address=client_ip(request),
+    )
+
+
+SEVERITY_HIGH = "HIGH"
+SEVERITY_INFO = "INFO"
+
+INFO_CAPTURE_EVENTS = frozenset({"FOCUS_LOST", "TAB_HIDDEN"})
+HIGH_CAPTURE_EVENTS = frozenset(
+    {
+        "DIRECT_FILE_NAVIGATION",
+        "PRINT_SCREEN_KEY",
+        "PRINT_ATTEMPT",
+        "SAVE_ATTEMPT",
+        "VIEW_SOURCE_ATTEMPT",
+        "DEVTOOLS_SHORTCUT",
+        "COPY_ATTEMPT",
+        "CUT_ATTEMPT",
+        "CONTEXT_MENU",
+        "DRAG_ATTEMPT",
+    }
+)
+CAPTURE_EVENTS = HIGH_CAPTURE_EVENTS | INFO_CAPTURE_EVENTS
+CAPTURE_DETAIL_MAX_LENGTH = 200
+
+
+@never_raises
+def record_capture_attempt(request, document, event, file_id=None, detail=None):
+    return log_event(
+        request,
+        AuditAction.DOC_CAPTURE_ATTEMPT,
+        ENTITY_DOCUMENT,
+        document.id,
+        {
+            "event": event,
+            "severity": SEVERITY_INFO if event in INFO_CAPTURE_EVENTS else SEVERITY_HIGH,
+            "document_code": document.code,
+            "file_id": file_id,
+            "detail": (detail or "")[:CAPTURE_DETAIL_MAX_LENGTH] or None,
+            "user_agent": client_user_agent(request),
+        },
     )

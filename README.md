@@ -218,19 +218,42 @@ Response `200`, ordered by most recent first:
       "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
       "revision": { "version": 1, "label": "REV01" },
       "status": "PENDING",
-      "updated_at": "2026-09-18T21:30:04.000000+00:00"
+      "updated_at": "2026-09-18T21:30:04.000000+00:00",
+      "created_by": { "id": 1, "name": "João Silva" },
+      "updated_by": { "id": null, "name": null },
+      "is_favorite": false
     }
   ]
 }
 ```
 
+`is_favorite` is `true` when the session user saved the document in their personal library (see `GET /users/me/library`); it is always `false` for anonymous requests. `GET /documents/search` returns it too.
+
 `revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
 
-Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`.
+Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`, and neither do documents the viewer cannot see (see *Document visibility*).
+
+### `GET /users/me/library`
+
+Personal library of the session user: the documents they saved, most recently saved first. Requires a session (`401` otherwise). Accepts the same filters and pagination as `GET /documents` and answers the same paginated shape, with `saved_at` (ISO 8601) added to each item. Only documents the user can still read are listed: the user is the responsible, or holds an active access grant (approved and not expired). Archived documents are not listed.
+
+### `POST /users/me/library/<id>`
+
+Saves the document in the personal library. Requires a session. `201 {"document_id", "saved": true}` when newly saved, `200` with the same body when already saved, `404 DocumentNotFound` for an unknown, archived or inactive-type document, `403 AccessDenied` when the user cannot view it (including an expired grant).
+
+### `DELETE /users/me/library/<id>`
+
+Removes the document from the personal library. Requires a session. Always `204`, even if it was not saved.
+
+### `GET /users/me/search-history`
+
+Requires a session. Returns up to 10 unique recent search queries, most recent first, as `{"results": ["bridge", "concrete"]}`. An empty history returns `{"results": []}`. Searches differing only in letter case or whitespace are treated as the same query; repeating one moves it to the front and preserves the latest spelling. Pagination and filter requests to the search endpoint also count as searches. History is removed when the account is anonymized or deleted.
 
 ### `GET /documents/search`
 
 Full-text search for the document library. Takes a free-text query in `q` (required, up to 200 characters) and matches it against the title, code, description, manual tags, the thematic tags generated from the content and the normalized content of the latest revision. Matching uses PostgreSQL full-text search with the `portuguese_unaccent` configuration (Portuguese stemming, accents ignored), so `calculo viga` finds `Memorial de Cálculo das Vigas`. Query words are alternatives (OR): documents matching more words, or matching them in the title and tags, rank higher.
+
+Successful searches are recorded for the authenticated user and can be retrieved with `GET /users/me/search-history`. Failed searches are not recorded; a failure to record history does not prevent the search response.
 
 Content is confidential: a match inside the content (and its snippets) only counts for the responsible user or a user with an approved access grant, identified by the session. Everyone else finds documents through their metadata only, as in the listing.
 
@@ -248,7 +271,16 @@ Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `disc
       "id": 3,
       "code": "AK-2100-EST-MEM-0002",
       "title": "Memorial de cálculo do revestimento inferior",
-      "...": "same fields as GET /documents",
+      "description": "Verificação de tensões e vida em fadiga do revestimento inferior",
+      "type": { "code": "MEM", "name": "Memorial de Cálculo" },
+      "discipline": { "code": "EST", "name": "Estruturas" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
+      "status": "APPROVED",
+      "updated_at": "2026-10-20T14:02:11.000000+00:00",
+      "created_by": { "id": 3, "name": "Caio Bertoni" },
+      "updated_by": { "id": null, "name": null },
+      "is_favorite": false,
       "score": 0.6687,
       "tags": ["fadiga", "junção estrutural"],
       "thematic_tags": ["revestimento", "tensões"],
@@ -301,43 +333,8 @@ The response includes the summary and a `fallback` flag. If Ollama is unavailabl
 
 #### Ollama configuration
 
-`docker compose up --build` already starts an `ollama` container (volume `ollama_data`) and an `ollama-pull` job that downloads `OLLAMA_MODEL` (default `llama3.2`) on the first run, so no extra setup is needed. The `api` service is pointed at `http://ollama:11434` automatically, overriding `OLLAMA_BASE_URL` from `.env`. The first startup waits for the model download. GPU is not enabled by default.
-
-The settings below apply only if you prefer to run Ollama outside Compose (remove the `ollama` service and its `depends_on` entry).
-
-Add these settings to the backend `.env` file used by each developer:
-
-Linux (replace the example IP if your Docker gateway is different):
-
-```dotenv
-OLLAMA_BASE_URL=http://172.19.0.1:11434
-OLLAMA_MODEL=llama3.2
-OLLAMA_TIMEOUT=120
-```
-
-To find the Docker gateway on Linux, run this command and use its output in `OLLAMA_BASE_URL`:
-
-```bash
-docker network inspect api-6_default --format '{{(index .IPAM.Config 0).Gateway}}'
-```
-
-Windows with Docker Desktop:
-
-```dotenv
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=llama3.2
-OLLAMA_TIMEOUT=120
-```
-
-Install the model once on the machine running Ollama:
-
-```bash
-ollama pull llama3.2
-```
-
-When the model runs on a remote machine, open an SSH tunnel on the host (`ssh -N -L 11434:127.0.0.1:11434 <user>@<vm>`) and keep `OLLAMA_BASE_URL` pointing at the host as above. The same Ollama instance also generates the suggested title and description (subtitle) in `POST /documents/<temp_file_id>/suggestions`; if it is unreachable, those two fields come back `null` and the classification is unaffected.
-
-The API runs in a container, so `localhost` points to the container itself. Use the Docker gateway on Linux or `host.docker.internal` on Windows to reach Ollama. If the API cannot connect, configure Ollama to listen on an address reachable from Docker and restrict access to trusted local networks. 
+`docker compose up --build` already starts an `ollama` container (volume `ollama_data`) and an `ollama-pull` job that downloads `OLLAMA_MODEL` (default `llama3.2:1b`) on the first run, so no extra setup is needed. You will need to explicitly set the Ollama provider for your application, setting `OLLAMA_BASE_URL`. 
+If you are using Docker, use `http://ollama:11434`.
 
 After changing `.env`, recreate the API container with `docker compose up -d --force-recreate api`.
 
@@ -357,7 +354,8 @@ Request (`application/json`):
   "document_type": "DWG",
   "confidentiality": "CONFIDENTIAL",
   "responsible_id": 12,
-  "areas": ["EST", "QUA"]
+  "areas": ["EST", "QUA"],
+  "authorized_group_ids": [3]
 }
 ```
 
@@ -372,6 +370,10 @@ Request (`application/json`):
 | `confidentiality` | yes | `PUBLIC`, `CONFIDENTIAL` or `SECRET` |
 | `responsible_id` | yes | id of an active user; will come from the session once authentication exists |
 | `areas` | yes | at least one active area acronym; the "tags" of the form are the areas |
+| `authorized_group_ids` | no | only with `CONFIDENTIAL`: ids of active access groups, of any area or project, whose members may also see the document; the secrecy level of each group must reach the document's |
+| `authorized_user_ids` | with `SECRET` | only with `SECRET`: ids of active users who may see the document, at least one besides the responsible (who is skipped when listed) |
+
+**Conditional permissions by secrecy level.** The last two fields depend on the level (card SCRUM-106). A `CONFIDENTIAL` (Sigiloso) document is visible to the users of its `areas`; `authorized_group_ids` extends it to the members of the listed access groups and is written to `document_access_group` (group, who granted it and when). A `SECRET` (Restrito) document is visible only to selected people, so `authorized_user_ids` is required; each user receives a `document_access` row born `APPROVED` and `PERMANENT`, with the uploader as `approver`, the same row an approved access request produces. Both are written in the transaction that creates the document, so a failure leaves no grant behind, and the visibility filter honors them at once (see *Document visibility*). A `PUBLIC` document takes neither field; an empty list or `null` is treated as absent at any level.
 
 **Ids are not stable across databases.** `manage.py seed` assigns whatever ids the sequences are at, so the numbers in the example above will differ on your machine. Get valid ones before calling the endpoint:
 
@@ -384,18 +386,18 @@ Document type codes (`DWG`, `MEM`, ...) and area acronyms (`EST`, `QUA`, ...) ar
 
 Responses:
 
-- `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
-- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project) and `invalid_choice` (`confidentiality`).
+- `201` with the consolidated document: `id`, `code`, `title`, `description`, `project`, `discipline`, `document_type`, `confidentiality`, `responsible`, `areas`, `authorized_groups` (`id`, `name`), `authorized_users` (`id`, `name`, `email`), `revision` (`version`, `label` such as `REV01`, `status`, `issue_date`), `file` (`original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `storage_path`) and `created_at`.
+- `400` with `{"errors": {"<field>": {"code": "<code>", "message": "<text>"}}}`, one entry per invalid field, or `{"error": ...}` for a body that is not valid JSON. `code` is a stable identifier the frontend maps to its own user-facing messages (`message` is developer text and may change): `required`, `invalid` (wrong type or format, e.g. `areas` not a list, `temp_file_id` not a UUID), `too_long` (`title`, `description`), `not_found` (unknown or inactive project, discipline, document type, responsible or area), `not_in_project` (`discipline_id` not linked to the project), `invalid_choice` (`confidentiality`), `not_allowed` (`authorized_group_ids` or `authorized_user_ids` sent for a level that does not take them), `insufficient_level` (a group whose secrecy level is below the document's) and, for `authorized_user_ids` of a `SECRET` document, `required`; `not_found` also covers unknown or inactive groups and users.
 - `404` with `{"errors": {"temp_file_id": {"code": "not_found", ...}}}` when the temporary file no longer exists (upload it again).
 - `409` when the same file (by SHA-256) is already attached to a registered document.
 - `500`/`503` with a generic `error` message when the file cannot be stored or a unique code cannot be obtained; details go to the server log only.
 
-**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the responsible, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
+**Audit trail.** Right after the document is committed, the endpoint appends one row to `audit_log` following the convention of the rest of the trail: `action = CREATE`, `entity = "document"`, `entity_id` = the new document id, `user` = the session user, `ip_address` = first `X-Forwarded-For` hop or the remote address, `occurred_at` in UTC, and `record` = `{"event": "DOCUMENT_CREATED", "code", "title", "version": 1, "revision": "REV01", "user_agent"}`. The table is append-only at the database level. A failure to write the entry is logged server-side and never aborts or reverts the creation: the `201` is returned either way.
 
-Known limitations of the audit entry, all tied to the absence of authentication and of a production proxy:
+Known limitations of the audit entry:
 
 - **The IP is only as trustworthy as the proxy in front of the API.** `X-Forwarded-For` is sent by the client, so a caller reaching Django directly can forge it. In production the reverse proxy must overwrite (not append to) that header; until then treat `ip_address` as informative, not as evidence.
-- **The author is the declared responsible, not the caller.** There is no login yet and the endpoint is public, so `user` is the `responsible_id` of the payload and any caller can attribute the event to any active user. It becomes the session user once authentication exists.
+- **The author is the session user.** The endpoint requires a session, so `user` is the signed-in caller; the `responsible_id` of the payload is only the fallback when no session user is available.
 - **A failed write leaves only the server log.** This is deliberate: the card requires that auditing never aborts or reverts the publication. The failure is logged with `logger.exception` under `core.services.audit_service`, which is the hook for an alert when monitoring is in place.
 
 **Document code.** Pattern `PROJECT-DISCIPLINE-TYPE-NNNN`, e.g. `AK-2100-EST-DWG-0002`: the three catalog codes followed by a four-digit sequence among the documents that share the same prefix, which is what keeps the code unique (the `UNIQUE` constraint on `document.code` is the guard; a concurrent collision is retried with the next number). The revision is not part of the code: it lives in the `revision` table and is displayed as `REV01`, `REV02`, so a document keeps its code across revisions.
@@ -409,13 +411,33 @@ Creates the next revision of an existing document with status `PENDING` (awaitin
 
 In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
 
-### `POST /dev/login`
+### Authentication
 
-Provisional sign in, used by the frontend while the real authentication does not exist. JSON body `{"user_id": <int>}`; opens a Django session for that active user and answers `200` with the same payload as `GET /users/me`. Signing in again replaces the session user. `400 {"error": "MissingUser"}` when `user_id` is missing or not an integer, `400 {"error": "InvalidJSON"}`, `404 {"error": "UserNotFound"}` for an unknown or inactive user. It asks for no credentials, so it only exists while `DJANGO_DEBUG` is on: with it off every call answers `404 {"error": "NotFound"}`. Remove it when the real login lands.
+Every route requires a Django session except `/`, `/health/`, `/auth/csrf`, `/auth/login`, `/auth/logout`, the read-only `/legal-documents` routes and the Django admin (which has its own login). Without a session of an active user, `LoginRequiredJsonMiddleware` (`core/middleware/`) answers `401 {"error": "AuthenticationRequired"}` before the view runs; unknown paths still answer `404`. Role checks (`403`) stay in the views.
+
+### Document visibility
+
+`DocumentVisibilityMiddleware` (same package, right after the login check) resolves the viewer of every request into `request.viewer`: the active session user, or nobody (while `DJANGO_DEBUG` is on, `?user_id=<id>` on a `GET` is still accepted as a fallback). The document services then filter every query by what that viewer may see, following the secrecy levels (see *Access groups and secrecy levels*):
+
+- `PUBLIC`: everyone;
+- `CONFIDENTIAL`: users whose area is one of the document areas, plus the members of the access groups authorized at upload (`document_access_group`), whatever their area;
+- `SECRET`: only selected users, which the upload grants through `document_access`;
+- at any level, the responsible, a user with an approved and unexpired `document_access` grant, and the members of an active access group of one of the document areas or of the document project whose level reaches the document's.
+
+The filter is applied inside `filter_documents`, so it covers `GET /documents`, `GET /documents/search` (and the AI summary built on it), `GET /documents/<id>/recommendations`, `GET /documents/archived` and `GET /users/me/library`: hidden documents are left out of `results` and of `count`, as if they did not exist. `GET /documents/<id>` answers `404 {"error": "DocumentNotFound"}` for a hidden document, so the response does not reveal that it exists. Without a viewer nothing is visible, and the login middleware already answers `401` before that. `GET /files/<id>/view` keeps its own, stricter rule (responsible, approved grant or reviewer of a pending revision), so seeing a document in a list never implies being able to open its file.
+
+
+### `GET /auth/csrf`
+
+Sets the `csrftoken` cookie and answers `204` with no body. The frontend calls it before the first write, so `POST /auth/login` can carry the token in the `X-CSRFToken` header.
+
+### `POST /auth/login`
+
+JSON body `{"email": "<email>", "password": "<password>"}`, with the CSRF header like every other write (`403` without it). Checks the password against the PBKDF2 hash in `app_user.password_hash`, opens the Django session (`sessionid` cookie, `HttpOnly`), rotates the `csrftoken` cookie and answers `200` with the same payload as `GET /users/me`. Writes `audit_log` (`action = LOGIN`, `entity = "app_user"`, `record.user_agent`). Errors: `400 {"errors": {"email": "Email is required." | "Enter a valid email address.", "password": "Password is required."}}`, `400 {"error": "InvalidJSON"}`, `405` for other methods and `401 {"error": "InvalidCredentials"}` with the same body for an unknown email, a wrong password, an inactive user or an anonymized account, so the answer does not reveal which accounts exist.
 
 ### `POST /auth/logout`
 
-Ends the Django session of the caller: the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
+Ends the Django session of the caller (public, so an expired session can still call it): the session row is deleted and the response expires the `sessionid` cookie. Requires the `csrftoken` cookie value in the `X-CSRFToken` header, like the other writes. Answers `204` with no body, also when there was no session.
 
 ### `GET /legal-documents/<slug>/current`
 
@@ -431,11 +453,11 @@ Full text of one specific version, same payload as `GET /legal-documents/<slug>/
 
 ### `POST /users/me/legal-acceptances`
 
-Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, required clauses must be accepted, and only the current published version can be accepted. Answers `201` with the acceptance (`id`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes `audit_log` (`CREATE`, `user_legal_acceptance`, `LEGAL_TERMS_ACCEPTED`) and sets the user's `terms_accepted_at`. Errors: `400 {"errors": ...}` with codes such as `required_clause_declined`, `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
+Records the caller's decision on every clause of a version. Requires a session and the CSRF header. Body `{"version_id": <id>, "consents": [{"clause_id": <id>, "accepted": true|false}, ...]}`: every clause of the version must be answered once, and only the current published version can be answered. A response is an overall acceptance only when every required clause is accepted; otherwise the disagreement is still saved in the history and does not set `terms_accepted_at`. Answers `201` with the manifestation (`id`, `accepted`, `accepted_at`, `revoked_at`, `document`, `version`, `consents`), writes an audit event (`LEGAL_TERMS_ACCEPTED` or `LEGAL_TERMS_DECLINED`) and updates the user's `terms_accepted_at` only for an overall acceptance. Errors: `400 {"errors": ...}` with codes such as `missing_clauses`, `unknown_clauses` and `duplicate`, `400 InvalidJSON`, `401 AuthenticationRequired`, `404 LegalVersionNotFound`, `409 OutdatedLegalVersion` (with `current_version_id`) and `409 LegalVersionAlreadyAccepted` while an acceptance of that version is in force.
 
 ### `GET /users/me/legal-acceptances`
 
-History of the caller's acceptances, newest first, revoked ones included: `{"count", "results": [acceptance, ...]}` with the same acceptance payload as the `POST`. Requires a session; IP address and user agent are never exposed.
+History of the caller's manifestations, newest first, including declined and revoked ones: `{"count", "results": [manifestation, ...]}` with the same payload as the `POST`. Requires a session; IP address and user agent are never exposed.
 
 ### `POST /users/me/legal-acceptances/<id>/revoke`
 
@@ -472,13 +494,89 @@ Records the manager's decision on a pending revision. Same permission rules as t
 
 Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
 
+An approval also notifies the users who saved the document (`DOCUMENT_UPDATED`, see *Notifications*).
+
+### `GET /manager/pending-access-requests`
+
+Access requests tab of the manager panel. The approver must be an active session user with role `AUDITOR` or `ADMIN`: `401 {"error": "AuthenticationRequired"}` without a session, `403 {"error": "PermissionDenied"}` otherwise. Lists `PENDING` requests across all areas for documents with an active type and not archived, excluding the approver's own requests, oldest first. Being responsible for a document or managing an area does not independently grant review permission. Paginated with `page` (default 1) and `page_size` (default 20, at most 100): `200 {"count", "total_pages", "current_page", "page_size", "results"}`. Each result carries `id`, `status`, `justification`, `access_type`, `expires_on`, `requested_at`, `requester` (`id`, `name`, `area`; no e-mail) and `document` (`id`, `code`, `title`, `confidentiality_level`, `project`, `discipline`, `document_type`). Invalid pagination answers `400 {"errors": {"page" | "page_size": {"code", "message"}}}`.
+
+### `GET /manager/access-requests/<id>`
+
+Detail of one access request, for the detail view of the panel. Same permission rules and scope as the queue, but it also answers for requests already decided. Answers `200` with the queue item fields plus `document.responsible` (`id`, `name`), `document.areas` (`acronym`, `name`), `approver` (`id`, `name`, or `null` while pending), `decided_at` and `decision_opinion`. `404 {"error": "AccessRequestNotFound"}` for an unknown request, an archived document or the approver's own request.
+
+### `POST /manager/access-requests/<id>/decision`
+
+Records the approver's decision. Same permission rules and scope as the queue. Body `{"decision": "APPROVED" | "REJECTED", "opinion": "<text>"}`. The opinion is required for either decision and must contain 20 to 1000 characters after trimming. Approval grants access right away with the terms the collaborator requested (`access_type`, `expires_on`): document detail, file view and content search treat the requester as having access from the next request on. Rejection keeps the document locked; the collaborator can send a new request later. The opinion is cleared from the current request on reopening and retained in its audit entry.
+
+Answers `200 {"id", "document_id", "requester", "status", "access_type", "expires_on", "approver", "requested_at", "decided_at", "decision_opinion"}`. Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "opinion": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnAccessRequest"}`; `404 {"error": "AccessRequestNotFound"}`; `409 {"error": "AccessRequestAlreadyDecided", "status"}`; `409 {"error": "AccessRequestExpired", "expires_on"}` when approving a `TEMPORARY` request whose last day has already passed (it can still be rejected). Every decision is written to `audit_log` (`action = UPDATE`, `entity = "document_access"`, `record.event = "ACCESS_APPROVED" | "ACCESS_REJECTED"`, `record.opinion`).
+
+Every decision also notifies the requester (`ACCESS_APPROVED` or `ACCESS_REJECTED`, see *Notifications*).
+
 ### `GET /documents/<id>`
 
-Detail of one document. Until authentication exists the viewer is identified by `?user_id=<id>`; the same rule will read the session user later. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
+Detail of one document. The viewer is the session user (`?user_id=<id>` is still accepted as a fallback while `DJANGO_DEBUG` is on). A document the viewer cannot see (see *Document visibility*) answers `404 {"error": "DocumentNotFound"}`, exactly like an unknown one. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
 
-Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED`) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
+Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED` and not expired) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
 
-`access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
+`access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "access_type", "expires_on", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
+
+### `GET /documents/<id>/recommendations`
+
+Thematic collections of documents related to the one being read, meant for the "recommended" carousels of the document screen. It exposes the same metadata as `GET /documents`, never file contents, and only documents the viewer can see (see *Document visibility*): a hidden base document answers `404`, and hidden candidates are left out of every collection. `limit` (optional, default 8, at most 20) caps the items of each collection.
+
+Candidates are the active, non-archived documents that share at least one of these with the open document: project, discipline, a tag, an area, or a thematic tag of the indexed content (`document_content.thematic_tags`, see `GET /documents/search`). Each candidate receives an affinity score, the sum of: same project `3`, same discipline `2`, same document type `1`, `2` per shared tag, `1` per shared area and `1` per shared thematic tag. Collections are ordered by score (ties: most recently updated first), and a document may belong to more than one collection.
+
+| `key` | `title` | Members |
+|-------|---------|---------|
+| `theme` | Temas relacionados | at least one shared tag or thematic tag |
+| `project` | Mesmo projeto | same project |
+| `discipline` | Mesma disciplina | same discipline |
+| `area` | Mesma área | at least one shared area |
+
+Response `200`, always with the four collections (an empty one has `count: 0` and `items: []`):
+
+```json
+{
+  "document": { "id": 12, "code": "AK-2100-EST-DWG-0001", "title": "Desenho da caverna 14" },
+  "limit": 8,
+  "collections": [
+    {
+      "key": "theme",
+      "title": "Temas relacionados",
+      "count": 2,
+      "items": [
+        {
+          "id": 15,
+          "code": "AK-2100-EST-MEM-0002",
+          "title": "Memorial de cálculo da caverna 14",
+          "description": "",
+          "type": { "code": "MEM", "name": "Memorial de Cálculo" },
+          "discipline": { "code": "EST", "name": "Estruturas" },
+          "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+          "revision": { "version": 1, "label": "REV01" },
+          "status": "APPROVED",
+          "updated_at": "2026-10-20T14:02:11.000000+00:00",
+          "created_by": { "id": 3, "name": "Caio Bertoni" },
+          "updated_by": { "id": null, "name": null },
+          "score": 8.0,
+          "matches": {
+            "project": true,
+            "discipline": true,
+            "type": false,
+            "tags": ["fadiga"],
+            "areas": ["EST"],
+            "themes": []
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+`count` is the number of related documents of the collection before `limit`. `matches` tells which criteria the item shares with the open document, so the interface can explain the recommendation. A document without tags and without indexed content still gets the `project`, `discipline` and `area` collections; one with nothing in common answers the four collections empty. Errors: `400 {"errors": {"limit": {"code": "invalid", ...}}}` for a non-positive or non-numeric `limit`, `404 {"error": "DocumentNotFound"}` for an unknown, archived or inactive-type document.
+
+Two things to know when testing it. The payload shape (collections instead of a flat list, `score`, `matches`) was defined with this card because no contract existed yet; it is the reference until the team decides otherwise. And the thematic tags generated for documents written in English still include common words such as "shall" or "specified" (see the indexing of `GET /documents/search`), so the `theme` collection of those documents is wider than it should be until that generator is adjusted.
 
 ### `DELETE /documents/<id>`
 
@@ -496,11 +594,119 @@ Undoes the archiving. Same rules as `DELETE /documents/<id>`: session, CSRF head
 
 ### `GET /files/<id>/view`
 
-Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document, or to a revision reviewer (role `AUDITOR` or `ADMIN`) while the revision of the file is still `PENDING`, so the file can be inspected before the decision. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). The viewer is the user of the session; the `user_id` query parameter is only read as a fallback while `DJANGO_DEBUG` is on and there is no session. Other answers: `400 MissingUser` without a session (or, in debug, without `user_id`), `404 UserNotFound`, `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
+Streams one file of a revision inline (stored MIME type, original file name, `Cache-Control: private, no-store`, embeddable in an iframe) **only** to a viewer who can read its document, or to a revision reviewer (role `AUDITOR` or `ADMIN`) while the revision of the file is still `PENDING`, so the file can be inspected before the decision. Any other viewer gets `403 {"error": "AccessDenied"}` without a single byte of the file, and the attempt is written to `audit_log` (`action = READ`, `entity = "document"`, `record.event = "DOCUMENT_ACCESS_DENIED"`, IP and user agent). The viewer is the user of the session (`401 AuthenticationRequired` without one; a `user_id` query parameter never replaces it). Other answers: `404 FileNotFound` when the file row does not exist, its document is unavailable or the bytes are missing from `DOCUMENT_STORAGE_DIR`.
 
 ### `POST /documents/<id>/request-access`
 
-Body `{"user_id": <id>, "justification": "<text>"}`. Creates the viewer's access request and answers `201 {"id", "status": "PENDING", "created": true}`; a second call while the request is still pending answers `201` with `"created": false` and the same `id`. A viewer who can already read the document (responsible or approved grant) gets `409 {"error": "AlreadyHasAccess"}` and no row is created. `400 MissingUser`, `404 UserNotFound`, `404 DocumentNotFound`.
+The requester is the user of the session (`401 AuthenticationRequired` without one, CSRF header required); a `user_id` in the body is ignored.
+
+Body `{"justification": "<text>", "access_type": "PERMANENT" | "TEMPORARY", "expires_on": "YYYY-MM-DD"}`:
+
+- `justification`: required, 20 to 1000 characters after trimming.
+- `access_type`: required.
+- `expires_on`: last day of the access, required for `TEMPORARY` (today or later) and refused for `PERMANENT`.
+
+Answers `201 {"id", "document_id", "status": "PENDING", "access_type", "expires_on", "requested_at"}`. The request enters the queue of `GET /manager/pending-access-requests` for all managers except the requester, and is written to `audit_log` (`action = DOC_ACCESS_REQUESTED`).
+
+| Answer | When |
+| --- | --- |
+| `400 {"errors": {"body" \| "justification" \| "access_type" \| "expires_on": {"code", "message"}}}` | invalid payload |
+| `400 {"error": "InvalidJSON"}` | malformed body |
+| `404 {"error": "DocumentNotFound"}` | unknown or archived document |
+| `409 {"error": "AccessRequestAlreadyPending", "id"}` | the user already has a pending request for this document; nothing changes |
+| `409 {"error": "AlreadyHasAccess"}` | the user is the responsible or holds an active grant |
+
+After a `REJECTED` decision or an expired grant, a new request reopens the same row as `PENDING`. A `TEMPORARY` grant allows reading through `expires_on` (inclusive, `TIME_ZONE` calendar day); after that the document detail, file view and content search treat the user as having no grant.
+
+### `GET /users/me/library`
+
+Personal library: the list of documents saved by the logged-in user. Requires a session (`401 {"error": "AuthenticationRequired"}` without one). Accepts all the same query parameters as `GET /documents` for filtering and pagination. Response `200`, ordered by most recent save first:
+
+```json
+{
+  "count": 5,
+  "total_pages": 1,
+  "current_page": 1,
+  "page_size": 20,
+  "results": [
+    {
+      "id": 3,
+      "code": "AK-2100-EST-MEM-0002",
+      "title": "Memorial de cálculo do revestimento inferior",
+      "description": "Verificação de tensões e vida em fadiga do revestimento inferior",
+      "type": { "code": "MEM", "name": "Memorial de Cálculo" },
+      "discipline": { "code": "EST", "name": "Estruturas" },
+      "areas": [{ "acronym": "EST", "name": "Engenharia Estrutural" }],
+      "revision": { "version": 1, "label": "REV01" },
+      "status": "APPROVED",
+      "updated_at": "2026-10-20T14:02:11.000000+00:00",
+      "created_by": { "id": 3, "name": "Caio Bertoni" },
+      "updated_by": { "id": null, "name": null },
+      "is_favorite": true,
+      "saved_at": "2026-10-25T10:15:30.000000+00:00"
+    }
+  ]
+}
+```
+
+Only documents the user can read are listed: the responsible user or a user with an active (non-expired) access grant. The response includes `saved_at`, the timestamp when the document was added to the library. Invalid parameters answer `400 {"errors": {...}}` like `GET /documents`.
+
+### `POST /users/me/library/<document_id>`
+
+Saves a document to the user's personal library. Requires a session (`401 {"error": "AuthenticationRequired"}` without one). The user must have access to the document (be the responsible or have an active access grant).
+
+Answers:
+- `201 {"document_id": <id>, "saved": true}` when the document is newly saved.
+- `200 {"document_id": <id>, "saved": true}` when it was already saved (idempotent).
+- `404 {"error": "DocumentNotFound"}` for an unknown or archived document.
+- `403 {"error": "AccessDenied"}` when the user cannot read the document.
+
+### `DELETE /users/me/library/<document_id>`
+
+Removes a document from the user's personal library. Requires a session (`401 {"error": "AuthenticationRequired"}` without one). The document doesn't need to be readable at the time of deletion.
+
+Answers:
+- `204` (no body) when the document is removed or was not in the library.
+
+### Notifications
+
+Internal alerts shown in the navbar bell. They are created by the backend, in the same transaction as the event that triggers them, so a failed decision never leaves a notification behind:
+
+| `type` | Trigger | Recipients | `title` (pt-BR) |
+|--------|---------|------------|-----------------|
+| `DOCUMENT_UPDATED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | every active user who saved the document in the personal library and can still see it (see *Document visibility*), except the reviewer | `Nova revisão (REV02) publicada para o documento <title>.` |
+| `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester | `Seu pedido de acesso ao documento <title> foi aprovado.` |
+| `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester | `Seu pedido de acesso ao documento <title> foi recusado.` |
+
+Rejected revisions create no notification. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
+
+Notification object:
+
+```json
+{
+  "id": 42,
+  "type": "DOCUMENT_UPDATED",
+  "title": "Nova revisão (REV02) publicada para o documento Memorial de cargas aerodinâmicas.",
+  "document": {"id": 7, "code": "AK-2200-AER-MEM-0002", "title": "Memorial de cargas aerodinâmicas"},
+  "is_new": true,
+  "created_at": "2026-11-08T14:05:12.481203+00:00",
+  "read_at": null
+}
+```
+
+`is_new` is `true` while `read_at` is `null`. `document.id` is the target of the click (`/documents/<id>`).
+
+#### `GET /notifications`
+
+Notifications of the session user, newest first (`created_at`, then `id`). Query parameters: `page` (default 1), `page_size` (default 20, at most 100) and `unread` (`true`/`1` lists only unread ones; `false`/`0` or absent lists all). Answers `200 {"count", "unread_count", "total_pages", "current_page", "page_size", "results"}`, where `unread_count` is the total of unread notifications of the user regardless of the filter and page (the bell badge), and `results` holds notification objects. A page past the last answers an empty `results`. Invalid parameters answer `400 {"errors": {"page" | "page_size" | "unread": {"code", "message"}}}`.
+
+#### `PATCH /notifications/<id>/read`
+
+Marks one notification as read. No body. Idempotent: marking an already read notification keeps its first `read_at`. Answers `200` with the notification object; `404 {"error": "NotificationNotFound"}` for an unknown id or a notification of another user.
+
+#### `PATCH /notifications/read-all`
+
+Marks every unread notification of the session user as read. No body. Answers `200 {"updated": <number of notifications marked>, "unread_count": 0}`.
 
 ### `POST /users/me/request-deletion`
 
@@ -570,7 +776,7 @@ docker compose exec api python -m classifier.train --csv training_export/quickse
 
 `manage.py seed` fills the database with a fictional aerostructures dataset —
 areas, engineers, aircraft programs, technical documents with revisions and
-files, access requests and an audit trail. It covers all three confidentiality
+files, access requests, access groups and an audit trail. It covers all three confidentiality
 levels and every revision status, so the search, permission and approval flows
 have something realistic to run against.
 
@@ -586,6 +792,43 @@ Every seeded user gets the same password: `SEED_PASSWORD` from your `.env` if
 set, `--password` if you pass it, otherwise a random one printed once at the
 end. Log in with an **email** (e.g. `marina.duarte@akaer.local`, role `ADMIN`).
 The command refuses to run when `DEBUG` is off unless you pass `--force`.
+
+## Access groups and secrecy levels
+
+Migration `0024` models the need-to-know rules of the library in three tables:
+
+| Table | Purpose |
+|-------|---------|
+| `secrecy_level` | One row per confidentiality level, written by the migration itself: `PUBLIC` (Público, rank 0, visible to everyone), `CONFIDENTIAL` (Sigiloso, rank 1, visible to the users of the document areas) and `SECRET` (Restrito, rank 2, visible to selected users only). `document.confidentiality_level` references it through a foreign key, so a level in use cannot be removed and a document cannot carry an unknown level. |
+| `access_group` | A group of users organized by **area** (`scope = AREA`, `area_id`) or by **project** (`scope = PROJECT`, `project_id`), which grants its members the documents of that area or project up to its `secrecy_level`. A check constraint ties the target to the scope, there is at most one group per target and level, and a group can be deactivated (`active`) instead of deleted. |
+| `access_group_member` | The users of each group (`group_id` + `user_id` unique), with who added them and when. Memberships disappear with the group or with the user. |
+| `document_access_group` | The groups explicitly authorized for one document at upload (`document_id` + `group_id` unique, migration `0030`, card SCRUM-106), with who granted it and when. Their members see the document whatever their area or project, as long as the group is active; the grant disappears with the document or with the group. |
+
+`core/services/access_group_service.py` evaluates the rules for one document and one user, `can_user_view_document(document, user)`:
+
+- the responsible always sees the document;
+- `PUBLIC` is visible to every active user;
+- `CONFIDENTIAL` is visible to the users whose area is one of the document areas;
+- any level above public is also visible to a user with an approved, unexpired `document_access` grant, or who belongs to an active group of one of the document areas or of the document project whose level rank is at least the document's (a `CONFIDENTIAL` group never reaches a `SECRET` document), or who belongs to an active group authorized for the document in `document_access_group`;
+- anonymous and inactive users get `False`.
+
+The listing, search, detail, recommendations, archived list and personal library apply this rule through `visible_documents` (see *Document visibility* under *Authentication*); the file view keeps its own rule. Until an API for groups exists they are managed in the Django admin (`/admin/`, groups with their members inline; the levels are read-only there), and `manage.py seed` creates three example groups.
+
+### Area group API
+
+These session-authenticated endpoints require an active `AUDITOR` or `ADMIN` in an active area. They manage only area groups belonging to the caller's area; groups from another area and project groups return `404`. The data model does not associate projects with an owning area, so project group management is not exposed here. State-changing requests require the usual CSRF token.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/manager/access-groups` | List the caller's area groups, including inactive groups, in `results`. |
+| `POST` | `/manager/access-groups` | Create an area group; returns `201` and the group. |
+| `GET` | `/manager/access-groups/{group_id}/users` | List members in `results`. |
+| `POST` | `/manager/access-groups/{group_id}/users` | Add an active user; returns `201` and the membership. |
+| `DELETE` | `/manager/access-groups/{group_id}/users/{user_id}` | Remove a member; returns `204`. |
+
+For group creation, send `{"name": "Engineering secret", "description": "Engineering team", "secrecy_level": "SECRET"}`. `description` is optional, `secrecy_level` is an existing level code, and the area and creator come from the authenticated user. Names are globally unique and there can be only one group per area and secrecy level. To add a member, send `{"user_id": 123}`. Active users from other areas may also be added. Inactive groups cannot receive new members, but members can still be removed.
+
+The API returns `400` for invalid JSON or payloads, `401` without an active session, `403` for insufficient privileges or an inactive area, `404` for inaccessible groups or missing users/members, and `409` for duplicate names, duplicate area/level combinations, existing memberships or additions to an inactive group.
 
 ## LGPD & security notes
 

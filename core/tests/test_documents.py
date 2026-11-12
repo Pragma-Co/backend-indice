@@ -19,14 +19,13 @@ from core.models import (
 from core.models.choices import AccessStatus
 from core.services.documents_exceptions import (
     DocumentNotFoundError,
-    MissingUserError,
-    UserNotFoundError,
 )
 from core.services.documents_service import (
     build_simple_filters,
     get_document_detail,
-    request_document_access,
 )
+
+SESSION_QUERIES = 2
 
 
 class DocumentsViewTests(TestCase):
@@ -56,6 +55,7 @@ class DocumentsViewTests(TestCase):
         )
         self.document.areas.add(self.area)
         self.client = Client()
+        self.client.force_login(self.user)
 
     def test_returns_all_active_documents_without_filters(self):
         response = self.client.get("/documents")
@@ -140,7 +140,7 @@ class DocumentsViewTests(TestCase):
             document = self._other_document(f"DOC-10{index}")
             Revision.objects.create(document=document, version=1, author=self.user)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(SESSION_QUERIES + 4):
             response = self.client.get("/documents")
 
         self.assertEqual(len(response.json()["results"]), 5)
@@ -158,6 +158,7 @@ class DocumentsSearchAndPaginationTests(TestCase):
             email="ana@example.com", password="test-password", name="Ana", area=self.structures
         )
         self.client = Client()
+        self.client.force_login(self.user)
 
     def _document(self, code, title, document_type=None, area=None, days_ago=0):
         moment = timezone.now() - timedelta(days=days_ago)
@@ -358,7 +359,7 @@ class DocumentsSearchAndPaginationTests(TestCase):
         for index in range(12):
             self._document(f"DOC-{index:02d}", f"Documento {index}", days_ago=index)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(SESSION_QUERIES + 4):
             response = self.client.get("/documents", {"page_size": 10})
 
         self.assertEqual(len(response.json()["results"]), 10)
@@ -382,6 +383,7 @@ class DocumentsAdvancedFiltersTests(TestCase):
             email="bruno@example.com", password="test-password", name="Bruno", area=self.quality
         )
         self.client = Client()
+        self.client.force_login(self.ana)
 
     def _document(
         self,
@@ -629,7 +631,7 @@ class DocumentsAdvancedFiltersTests(TestCase):
                 description="caverna",
             )
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(SESSION_QUERIES + 4):
             response = self.client.get(
                 "/documents",
                 {
@@ -673,11 +675,19 @@ class DocumentsAdvancedFiltersTests(TestCase):
 class SimpleFiltersViewTests(TestCase):
     def setUp(self):
         cache.clear()
-        Area.objects.create(acronym="ENG", name="Engenharia", active=True)
+        engineering = Area.objects.create(acronym="ENG", name="Engenharia", active=True)
         Area.objects.create(acronym="OLD", name="Desativada", active=False)
         DocumentType.objects.create(code="PDF", name="Relatório", active=True)
         DocumentType.objects.create(code="OLD", name="Desativado", active=False)
         self.client = Client()
+        self.client.force_login(
+            User.objects.create_user(
+                email="reader@example.com",
+                password="test-password",
+                name="Reader",
+                area=engineering,
+            )
+        )
 
     def test_returns_active_filter_groups(self):
         response = self.client.get("/documents/simple-filters")
@@ -768,10 +778,9 @@ class DocumentDetailServiceTests(TestCase):
         with self.assertRaises(DocumentNotFoundError):
             get_document_detail(self.document.id)
 
-    def test_should_return_pending_access_when_no_user_is_given(self):
-        detail = get_document_detail(self.document.id)
-
-        self.assertEqual(detail["access_status"], "PENDING")
+    def test_should_hide_the_document_when_no_user_is_given(self):
+        with self.assertRaises(DocumentNotFoundError):
+            get_document_detail(self.document.id)
 
     def test_should_return_approved_access_for_the_document_responsible(self):
         detail = get_document_detail(self.document.id, user_id=self.responsible.id)
@@ -841,74 +850,6 @@ class DocumentDetailServiceTests(TestCase):
         self.assertEqual(detail["updated_by"], {"id": self.responsible.id, "name": "Responsible"})
 
 
-class DocumentAccessRequestServiceTests(TestCase):
-    def setUp(self):
-        self.area = Area.objects.create(acronym="ENG", name="Engenharia")
-        self.discipline = Discipline.objects.create(code="CIV", name="Civil")
-        self.project = Project.objects.create(code="PRJ", name="Projeto")
-        self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
-        self.responsible = User.objects.create_user(
-            email="responsible2@example.com",
-            password="test-password",
-            name="Responsible",
-            area=self.area,
-        )
-        self.requester = User.objects.create_user(
-            email="requester@example.com",
-            password="test-password",
-            name="Requester",
-            area=self.area,
-        )
-        self.document = Document.objects.create(
-            code="DOC-200",
-            title="Documento restrito",
-            project=self.project,
-            discipline=self.discipline,
-            document_type=self.document_type,
-            responsible=self.responsible,
-            created_by=self.responsible,
-            updated_by=self.responsible,
-        )
-
-    def test_should_raise_document_not_found_for_missing_document(self):
-        with self.assertRaises(DocumentNotFoundError):
-            request_document_access(999999, self.requester.id)
-
-    def test_should_raise_missing_user_when_no_user_id_is_given(self):
-        with self.assertRaises(MissingUserError):
-            request_document_access(self.document.id, None)
-
-    def test_should_raise_user_not_found_for_unknown_user_id(self):
-        with self.assertRaises(UserNotFoundError):
-            request_document_access(self.document.id, 999999)
-
-    def test_should_create_a_pending_access_request(self):
-        result = request_document_access(
-            self.document.id, self.requester.id, justification="Preciso revisar o projeto"
-        )
-
-        self.assertTrue(result["created"])
-        self.assertEqual(result["status"], "PENDING")
-        access = DocumentAccess.objects.get(document=self.document, user=self.requester)
-        self.assertEqual(access.justification, "Preciso revisar o projeto")
-        self.assertIsNotNone(access.requested_at)
-
-    def test_should_not_duplicate_an_existing_access_request(self):
-        DocumentAccess.objects.create(
-            document=self.document,
-            user=self.requester,
-            status=AccessStatus.PENDING,
-            requested_at=timezone.now(),
-        )
-
-        result = request_document_access(self.document.id, self.requester.id)
-
-        self.assertFalse(result["created"])
-        self.assertEqual(
-            DocumentAccess.objects.filter(document=self.document, user=self.requester).count(), 1
-        )
-
-
 class DocumentDetailViewTests(TestCase):
     def setUp(self):
         self.area = Area.objects.create(acronym="ENG", name="Engenharia")
@@ -940,6 +881,7 @@ class DocumentDetailViewTests(TestCase):
             audited_at=timezone.now(),
         )
         self.client = Client()
+        self.client.force_login(self.responsible)
 
     def test_should_return_200_with_document_metadata(self):
         response = self.client.get(f"/documents/{self.document.id}")
@@ -957,62 +899,3 @@ class DocumentDetailViewTests(TestCase):
         response = self.client.get("/documents/not-a-number")
 
         self.assertEqual(response.status_code, 404)
-
-
-class RequestAccessViewTests(TestCase):
-    def setUp(self):
-        self.area = Area.objects.create(acronym="ENG", name="Engenharia")
-        self.discipline = Discipline.objects.create(code="CIV", name="Civil")
-        self.project = Project.objects.create(code="PRJ", name="Projeto")
-        self.document_type = DocumentType.objects.create(code="PDF", name="Relatório")
-        self.responsible = User.objects.create_user(
-            email="responsible4@example.com",
-            password="test-password",
-            name="Responsible",
-            area=self.area,
-        )
-        self.requester = User.objects.create_user(
-            email="requester2@example.com",
-            password="test-password",
-            name="Requester",
-            area=self.area,
-        )
-        self.document = Document.objects.create(
-            code="DOC-400",
-            title="Documento acesso",
-            project=self.project,
-            discipline=self.discipline,
-            document_type=self.document_type,
-            responsible=self.responsible,
-            created_by=self.responsible,
-            updated_by=self.responsible,
-        )
-        self.client = Client()
-
-    def test_should_return_201_when_access_request_is_created(self):
-        response = self.client.post(
-            f"/documents/{self.document.id}/request-access",
-            data={"user_id": self.requester.id, "justification": "Preciso acessar"},
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["status"], "PENDING")
-
-    def test_should_return_404_for_missing_document(self):
-        response = self.client.post(
-            "/documents/999999/request-access",
-            data={"user_id": self.requester.id},
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 404)
-
-    def test_should_return_400_when_user_id_is_missing(self):
-        response = self.client.post(
-            f"/documents/{self.document.id}/request-access",
-            data={},
-            content_type="application/json",
-        )
-
-        self.assertEqual(response.status_code, 400)

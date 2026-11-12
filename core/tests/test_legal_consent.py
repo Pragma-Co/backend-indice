@@ -136,17 +136,34 @@ class RecordAcceptanceServiceTests(LegalConsentFixtureMixin, TestCase):
 
         self.assertEqual(len(acceptance.user_agent), 500)
 
-    def test_should_refuse_declining_a_required_clause(self):
+    def test_should_record_declining_a_required_clause_without_accepting_the_version(self):
         payload = self._payload()
         payload["consents"][0]["accepted"] = False
 
-        with self.assertRaises(LegalConsentValidationError) as context:
-            record_acceptance(self.user, payload)
+        manifestation = record_acceptance(self.user, payload)
 
-        error = context.exception.errors["consents"]
-        self.assertEqual(error["code"], "required_clause_declined")
-        self.assertEqual(error["clause_ids"], [self.required_clause.pk])
-        self.assertFalse(UserLegalAcceptance.objects.exists())
+        self.user.refresh_from_db()
+        self.assertFalse(manifestation.accepted)
+        self.assertEqual(
+            dict(
+                UserClauseConsent.objects.filter(acceptance=manifestation).values_list(
+                    "clause_id", "accepted"
+                )
+            ),
+            {self.required_clause.pk: False, self.optional_clause.pk: False},
+        )
+        self.assertIsNone(self.user.terms_accepted_at)
+
+    def test_should_allow_acceptance_after_a_recorded_decline(self):
+        payload = self._payload()
+        payload["consents"][0]["accepted"] = False
+        declined = record_acceptance(self.user, payload)
+
+        accepted = record_acceptance(self.user, self._payload())
+
+        self.assertFalse(declined.accepted)
+        self.assertTrue(accepted.accepted)
+        self.assertEqual(list(user_acceptances(self.user)), [accepted, declined])
 
     def test_should_refuse_a_clause_left_unanswered(self):
         payload = self._payload()
@@ -377,15 +394,19 @@ class LegalAcceptancesViewTests(LegalConsentFixtureMixin, TestCase):
         self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
         self.assertFalse(UserLegalAcceptance.objects.exists())
 
-    def test_should_reject_declining_a_required_clause(self):
+    def test_should_record_declining_a_required_clause(self):
         self.client.force_login(self.user)
         payload = self._payload()
         payload["consents"][0]["accepted"] = False
 
         response = self._post(payload)
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["errors"]["consents"]["code"], "required_clause_declined")
+        body = response.json()
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(body["accepted"])
+        self.assertEqual(body["consents"][0]["accepted"], False)
+        audit = AuditLog.objects.get(entity="user_legal_acceptance", entity_id=body["id"])
+        self.assertEqual(audit.record["event"], "LEGAL_TERMS_DECLINED")
 
     def test_should_reject_a_malformed_json_body(self):
         self.client.force_login(self.user)
@@ -448,6 +469,22 @@ class LegalAcceptancesViewTests(LegalConsentFixtureMixin, TestCase):
         self.assertEqual(body["results"][0]["document"]["slug"], self.document.slug)
         self.assertEqual(len(body["results"][0]["consents"]), 2)
         self.assertNotIn("ip_address", body["results"][0])
+
+    def test_should_return_declined_manifestations_and_each_clause_decision(self):
+        self.client.force_login(self.user)
+        payload = self._payload()
+        payload["consents"][0]["accepted"] = False
+        self._post(payload)
+
+        response = self.client.get(reverse("user-legal-acceptances"))
+
+        result = response.json()["results"][0]
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(result["accepted"])
+        self.assertEqual(
+            [(consent["code"], consent["accepted"]) for consent in result["consents"]],
+            [("objeto", False), ("comunicados", False)],
+        )
 
     def test_should_require_authentication_to_read_the_history(self):
         response = self.client.get(reverse("user-legal-acceptances"))

@@ -1,18 +1,18 @@
 flowchart TB
     subgraph Routes["api6/urls.py"]
-        R1["/dev/login · /auth/logout · /users/me/*"]
+        R1["/auth/* · /users/me/*"]
         R2["/documents/* · /files/*"]
         R3["/manager/*"]
         R4["/legal-documents/* · /projects/ · /areas/ · /disciplines/"]
     end
     subgraph ViewsLayer["core/views"]
-        V1["user_view · dev_login_view · auth_view"]
+        V1["user_view · auth_view"]
         V2["documents_view · upload_view · file_view · document_ai_view"]
         V3["revision_review_view · access_request_view · manager_activity_view"]
         V4["legal_consent_view · catalog_view"]
     end
     subgraph ServicesLayer["core/services"]
-        S1["user_anonymization · excluded_identifier · legal_consent"]
+        S1["auth · user_anonymization · excluded_identifier · legal_consent"]
         S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
         S3["documents (listing) · document_search · document_index · document_archive"]
         S4["revision_review · access_request · manager_activity · audit"]

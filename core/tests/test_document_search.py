@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from unittest import mock
@@ -11,6 +12,7 @@ from django.utils import timezone
 from docx import Document as DocxDocument
 
 from core.models import (
+    AccessType,
     Area,
     Discipline,
     Document,
@@ -215,6 +217,10 @@ class DocumentIndexServiceTests(DocumentSearchTestCase):
 
 
 class DocumentSearchViewTests(DocumentSearchTestCase):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.reader)
+
     def test_should_return_content_matches_with_highlighted_snippets_to_the_owner(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
         self.client.force_login(self.owner)
@@ -255,14 +261,14 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         self.assertEqual(result["thematic_tags"], [])
         self.assertNotIn("can_read", result)
 
-    def test_should_flag_content_matches_without_exposing_content_to_anonymous_users(self):
+    def test_should_refuse_anonymous_users(self):
         self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
+        self.client.logout()
 
         response = self._search(q="estacas")
 
-        result = response.json()["results"][0]
-        self.assertTrue(result["content_match"])
-        self.assertEqual(result["highlights"]["content"], [])
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
 
     def test_should_return_content_matches_to_users_with_approved_access(self):
         document = self._document("MEM-001", "Memorial descritivo", content=BRIDGE_TEXT)
@@ -278,6 +284,23 @@ class DocumentSearchViewTests(DocumentSearchTestCase):
         response = self._search(q="estacas")
 
         self.assertEqual(self._codes(response), ["MEM-001"])
+
+    def test_should_not_send_content_snippets_to_users_with_an_expired_grant(self):
+        document = self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)
+        DocumentAccess.objects.create(
+            document=document,
+            user=self.reader,
+            status=AccessStatus.APPROVED,
+            access_type=AccessType.TEMPORARY,
+            expires_on=timezone.localdate() - timedelta(days=1),
+            approver=self.owner,
+            decided_at=timezone.now(),
+        )
+        self.client.force_login(self.reader)
+
+        response = self._search(q="ponte")
+
+        self.assertEqual(response.json()["results"][0]["highlights"]["content"], [])
 
     def test_should_not_send_content_snippets_to_users_without_access(self):
         self._document("MEM-001", "Memorial da ponte", content=BRIDGE_TEXT)

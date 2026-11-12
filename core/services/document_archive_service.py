@@ -69,7 +69,7 @@ def _serialize_archived_item(document):
 def list_archived_documents(user, params) -> dict:
     query = parse_document_query(params)
     queryset = (
-        filter_documents(query, archived=True)
+        filter_documents(query, archived=True, user=user)
         .filter(document_areas__area_id=user.area_id)
         .select_related("archived_by")
         .order_by("-archived_at", "-id")

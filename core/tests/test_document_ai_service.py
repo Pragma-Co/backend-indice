@@ -8,7 +8,7 @@ from django.test import Client, TestCase, override_settings
 
 from classifier.persistence import ArtifactsError
 from classifier.prediction import Prediction
-from core.models import Area, Discipline, DocumentType
+from core.models import Area, Discipline, DocumentType, User
 from core.services.document_ai_exceptions import UnsupportedFileTypeError
 from core.services.document_ai_service import suggest_document_metadata
 from core.services.document_exceptions import TempFileNotFoundError
@@ -280,7 +280,12 @@ class SuggestDocumentMetadataViewTests(TestCase):
 
         Discipline.objects.create(code="EST", name="Estruturas")
         DocumentType.objects.create(code="ESP", name="Especificação Técnica")
-        Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.client.force_login(
+            User.objects.create_user(
+                email="author@example.com", password="secret", name="Author", area=area
+            )
+        )
 
     def _temp_file(self, extension="pdf"):
         path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.{extension}"
