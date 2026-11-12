@@ -14,6 +14,7 @@ from core.serializers.user_serializer import (
 )
 from core.services import audit_service
 from core.services.excluded_identifier_service import ExcludedIdentifierError
+from core.services.user_service import list_active_users
 from core.services.user_anonymization_service import (
     NoReplacementManagerError,
     anonymize_user,
@@ -27,6 +28,16 @@ def _unauthorized():
 def _active_user(request):
     user = request.user
     return user if user.is_authenticated and user.is_active else None
+
+
+@require_http_methods(["GET"])
+def users_collection(request):
+    if _active_user(request) is None:
+        return _unauthorized()
+    return JsonResponse(
+        [{"id": user.pk, "name": user.name, "email": user.email} for user in list_active_users()],
+        safe=False,
+    )
 
 
 @require_http_methods(["GET", "PUT"])
