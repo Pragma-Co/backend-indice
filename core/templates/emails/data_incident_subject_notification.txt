@@ -1,0 +1,24 @@
+{% autoescape off %}Prezado(a) {{ recipient_name|default:"colaborador(a)" }},
+
+Comunicamos que foi identificado um incidente de segurança envolvendo dados pessoais que podem incluir os seus. Este aviso é feito em cumprimento à Lei Geral de Proteção de Dados Pessoais (Lei nº 13.709/2018).
+
+O QUE ACONTECEU
+Incidente {{ reference }}: {{ title }} ({{ incident_type_label }}).
+Ocorrido em {{ occurred_at }} e detectado em {{ detected_at }}.
+
+QUAIS DADOS PODEM TER SIDO AFETADOS
+{% for label in data_category_labels %}- {{ label }}
+{% endfor %}
+O QUE JÁ FOI FEITO
+{% for measure in measures %}- {{ measure }}
+{% empty %}- As medidas de contenção estão em andamento e você será informado(a) sobre novidades.
+{% endfor %}{% if authority_notification_required %}A Autoridade Nacional de Proteção de Dados (ANPD) {% if authority_notified %}foi{% else %}será{% endif %} comunicada sobre este incidente.
+{% endif %}
+O QUE RECOMENDAMOS
+{% for item in guidance %}- {{ item }}
+{% endfor %}
+Em caso de dúvidas, ou para exercer seus direitos previstos na LGPD (confirmação, acesso, correção e eliminação de dados, entre outros), fale com o encarregado pelo tratamento de dados pessoais pelo e-mail {{ contact_email }}.
+
+Atenciosamente,
+Equipe Índice
+{% endautoescape %}

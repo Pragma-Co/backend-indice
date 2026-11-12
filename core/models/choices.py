@@ -79,3 +79,75 @@ class FileExtension(models.TextChoices):
     DOCX = "docx", "Word document"
     JPEG = "jpeg", "JPEG image"
     PNG = "png", "PNG image"
+
+
+class IncidentType(models.TextChoices):
+    UNAUTHORIZED_ACCESS = "UNAUTHORIZED_ACCESS", "Unauthorized access"
+    IMPROPER_DISCLOSURE = "IMPROPER_DISCLOSURE", "Improper disclosure"
+    DATA_LOSS = "DATA_LOSS", "Loss or destruction of data"
+    CREDENTIAL_EXPOSURE = "CREDENTIAL_EXPOSURE", "Credential exposure"
+    MISDIRECTED_DELIVERY = "MISDIRECTED_DELIVERY", "Data sent to the wrong recipient"
+    MALICIOUS_SOFTWARE = "MALICIOUS_SOFTWARE", "Malicious software"
+    OTHER = "OTHER", "Other"
+
+
+class IncidentSeverity(models.TextChoices):
+    LOW = "LOW", "Low"
+    MEDIUM = "MEDIUM", "Medium"
+    HIGH = "HIGH", "High"
+    CRITICAL = "CRITICAL", "Critical"
+
+
+class IncidentStatus(models.TextChoices):
+    REPORTED = "REPORTED", "Reported"
+    CONTAINMENT = "CONTAINMENT", "Under containment"
+    ANALYSIS = "ANALYSIS", "Under analysis"
+    RESOLVED = "RESOLVED", "Resolved"
+    CLOSED = "CLOSED", "Closed"
+
+
+class PersonalDataCategory(models.TextChoices):
+    IDENTIFICATION = "IDENTIFICATION", "Identification (name, email)"
+    CREDENTIALS = "CREDENTIALS", "Credentials"
+    PROFESSIONAL = "PROFESSIONAL", "Professional data (role, area)"
+    ACCESS_HISTORY = "ACCESS_HISTORY", "Access and audit history"
+    DOCUMENT_CONTENT = "DOCUMENT_CONTENT", "Content of technical documents"
+    OTHER = "OTHER", "Other"
+
+
+class IncidentActionKind(models.TextChoices):
+    CONTAINMENT = "CONTAINMENT", "Containment"
+    ERADICATION = "ERADICATION", "Eradication"
+    RECOVERY = "RECOVERY", "Recovery"
+    COMMUNICATION = "COMMUNICATION", "Communication"
+    OTHER = "OTHER", "Other"
+
+
+class NotificationRecipient(models.TextChoices):
+    AUTHORITY = "AUTHORITY", "Data protection authority"
+    DATA_SUBJECTS = "DATA_SUBJECTS", "Data subjects"
+
+
+class SubjectNotificationStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    SENT = "SENT", "Sent"
+    FAILED = "FAILED", "Failed"
+
+
+class SubjectNotificationReason(models.TextChoices):
+    AFFECTED_USER = "AFFECTED_USER", "Listed as affected in the incident"
+    DOCUMENT_RESPONSIBLE = "DOCUMENT_RESPONSIBLE", "Responsible for an affected document"
+    DOCUMENT_CREATOR = "DOCUMENT_CREATOR", "Registered an affected document"
+    REVISION_AUTHOR = "REVISION_AUTHOR", "Authored a revision of an affected document"
+    DOCUMENT_ACCESS = "DOCUMENT_ACCESS", "Requested or holds access to an affected document"
+
+
+class BackupTarget(models.TextChoices):
+    POSTGRES = "POSTGRES", "PostgreSQL"
+    MONGODB = "MONGODB", "MongoDB"
+
+
+class BackupStatus(models.TextChoices):
+    RUNNING = "RUNNING", "Running"
+    SUCCEEDED = "SUCCEEDED", "Succeeded"
+    FAILED = "FAILED", "Failed"
