@@ -4,7 +4,6 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from core.serializers.access_group_serializer import serialize_group, serialize_member
-from core.services.access_group_service import list_active_groups
 from core.services.access_group_management_service import (
     GroupManagementError,
     add_member,
@@ -13,6 +12,7 @@ from core.services.access_group_management_service import (
     groups_for_manager,
     remove_member,
 )
+from core.services.access_group_service import list_active_groups
 from core.services.revision_review_service import is_revision_reviewer
 
 

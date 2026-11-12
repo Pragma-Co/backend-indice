@@ -14,11 +14,11 @@ from core.serializers.user_serializer import (
 )
 from core.services import audit_service
 from core.services.excluded_identifier_service import ExcludedIdentifierError
-from core.services.user_service import list_active_users
 from core.services.user_anonymization_service import (
     NoReplacementManagerError,
     anonymize_user,
 )
+from core.services.user_service import list_active_users
 
 
 def _unauthorized():
