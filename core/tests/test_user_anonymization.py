@@ -128,6 +128,19 @@ class UserAnonymizationTests(TestCase):
         self.assertFalse(DocumentAccess.objects.filter(status=AccessStatus.PENDING).exists())
         self.assertEqual(summary["removed"], {"document_access(pending)": 1})
 
+    def test_soft_delete_clears_text_on_decided_requests(self):
+        self.access.status = AccessStatus.REJECTED
+        self.access.decision_opinion = "Parecer sobre o solicitante"
+        self.access.approver = self.manager
+        self.access.decided_at = timezone.now()
+        self.access.save(update_fields=["status", "decision_opinion", "approver", "decided_at"])
+
+        self._anonymize()
+
+        self.access.refresh_from_db()
+        self.assertEqual(self.access.justification, "")
+        self.assertEqual(self.access.decision_opinion, "")
+
     def test_soft_delete_hands_manager_work_to_another_manager(self):
         other = User.objects.create_user(
             email="outro.gestor@example.com",
