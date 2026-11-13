@@ -770,7 +770,7 @@ docker compose exec api python -m classifier.tuning --csv training_export/quicks
 docker compose exec api python -m classifier.train --csv training_export/quicksearch/dataset.csv --output-dir classifier_artifacts --vectors-from-mongo --weight-decay 0.001
 ```
 
-`--filter-noise`, `--hidden-size`, `--dropout` and `--weight-decay` are accepted by `vectorize` and `train`; the stored vectors carry the vectorizer version, so `train --vectors-from-mongo` refuses vectors produced with other settings. Prediction: `Classifier("classifier_artifacts").predict(text)` returns label and confidence per field. Results and method: `documentation/Classificador - Resultados Preliminares.md`.
+`--filter-noise`, `--hidden-size`, `--head-hidden-size`, `--dropout` and `--weight-decay` are accepted by `vectorize` and `train`; the stored vectors carry the vectorizer version, so `train --vectors-from-mongo` refuses vectors produced with other settings. Prediction: `Classifier("classifier_artifacts").predict(text)` returns label and confidence per field. Results and method: `documentation/Classificador - Resultados Preliminares.md`.
 
 ## Demo data
 
