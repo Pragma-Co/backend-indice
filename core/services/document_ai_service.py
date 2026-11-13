@@ -62,6 +62,14 @@ STREAMED_TEXT_FIELDS = (
     ("titulo", "title", MAX_TITLE_LENGTH),
 )
 DOCUMENT_CODE = re.compile(r"(?<![\w/-])[A-Z]{1,6}(?:[-/][A-Z0-9]+)+(?![\w/-])")
+LONG_TITLE_LENGTH = 60
+MAX_GENERATED_TITLE_LENGTH = 70
+DANGLING_TITLE_WORDS = frozenset(
+    "a à ao aos as às com da das de do dos e em na nas no nos o os ou para por que".split()
+)
+TITLE_EDGE_PUNCTUATION = " ,;:-–—"
+TITLE_SEPARATOR = re.compile(r"\s+[-–—|]\s+")
+WORD_BREAK = re.compile(r"[\W_]+")
 STREAM_WITHHELD_CHARS = 24
 LAST_WORD_START = re.compile(r"\s\S*$")
 EVENT_CLASSIFICATION = "classification"
@@ -154,7 +162,7 @@ def _metadata_user_message(title_excerpt: str, content_excerpt: str) -> str:
         'valores escritos em português do Brasil. O "resumo" tem duas a três frases completas '
         "(entre 200 e 400 caracteres) e explica do que o documento trata: o assunto, a que se "
         "aplica e para que serve. O resumo não cita valores, medidas, números, códigos ou "
-        'datas. O "titulo" é um título curto, com até doze palavras, escrito em português do '
+        'datas. O "titulo" é um título curto, com até oito palavras, escrito em português do '
         "Brasil, que nomeia o assunto do resumo, sem códigos nem datas. Não copie texto em "
         "outro idioma: traduza.\n\n"
         f"PRIMEIRA PÁGINA:\n\n{first_page}"
@@ -164,8 +172,8 @@ def _metadata_user_message(title_excerpt: str, content_excerpt: str) -> str:
     return message
 
 
-def _document_code(title_excerpt: str) -> str:
-    codes = (match.group() for match in DOCUMENT_CODE.finditer(sanitize_text(title_excerpt)))
+def _document_code(first_page: str) -> str:
+    codes = (match.group() for match in DOCUMENT_CODE.finditer(first_page))
     return next((code for code in codes if any(char.isdigit() for char in code)), "")
 
 
@@ -175,13 +183,46 @@ def _title_with_code(code: str, title: str | None) -> str | None:
     return f"{code} - {title}"[:MAX_TITLE_LENGTH].strip()
 
 
-def _title_and_description_from(answer: str, code: str) -> dict[str, str | None]:
+def _plain_words(text: str) -> str:
+    return f" {WORD_BREAK.sub(' ', text).strip().lower()} "
+
+
+def _without_copied_segments(title: str | None, first_page: str) -> str | None:
+    if not title or len(title) <= LONG_TITLE_LENGTH:
+        return title
+    page = _plain_words(first_page)
+    segments = [segment for segment in TITLE_SEPARATOR.split(title) if segment.strip()]
+    written = [segment for segment in segments if _plain_words(segment) not in page]
+    if not written or len(written) == len(segments):
+        return title
+    return " - ".join(written)
+
+
+def _shortened(title: str | None) -> str | None:
+    if not title or len(title) <= MAX_GENERATED_TITLE_LENGTH:
+        return title
+    head = title[: MAX_GENERATED_TITLE_LENGTH + 1]
+    words = (head.rsplit(" ", 1)[0] if " " in head else head[:-1]).split()
+    while len(words) > 1 and (
+        words[-1].strip(TITLE_EDGE_PUNCTUATION).lower() in DANGLING_TITLE_WORDS
+        or not words[-1].strip(TITLE_EDGE_PUNCTUATION)
+    ):
+        words.pop()
+    return " ".join(words).rstrip(TITLE_EDGE_PUNCTUATION)
+
+
+def _suggested_title(title: str | None, first_page: str) -> str | None:
+    written = _shortened(_without_copied_segments(title, first_page))
+    return _title_with_code(_document_code(first_page), written)
+
+
+def _title_and_description_from(answer: str, first_page: str) -> dict[str, str | None]:
     data = json.loads(answer)
     if not isinstance(data, dict):
         raise ValueError("Invalid metadata answer")
     title = _clean_generated_text(data.get("titulo"), MAX_TITLE_LENGTH)
     return {
-        "title": _title_with_code(code, title),
+        "title": _suggested_title(title, first_page),
         "description": _clean_generated_text(data.get("resumo"), MAX_DESCRIPTION_LENGTH),
     }
 
@@ -196,7 +237,7 @@ def _generate_title_and_description(
             temperature=METADATA_TEMPERATURE,
             response_format=METADATA_RESPONSE_FORMAT,
         )
-        return _title_and_description_from(answer, _document_code(title_excerpt))
+        return _title_and_description_from(answer, sanitize_text(title_excerpt))
     except Exception as exc:
         logger.warning("Ollama metadata generation failed: %s", type(exc).__name__)
         return {"title": None, "description": None}
@@ -222,7 +263,7 @@ def _visible_partial_text(answer: str, json_key: str, max_length: int) -> str | 
 def _stream_title_and_description(title_excerpt: str, content_excerpt: str):
     answer = ""
     shown = {}
-    code = _document_code(title_excerpt)
+    first_page = sanitize_text(title_excerpt)
     try:
         chunks = stream_ollama(
             METADATA_SYSTEM_PROMPT,
@@ -235,11 +276,11 @@ def _stream_title_and_description(title_excerpt: str, content_excerpt: str):
             for json_key, field, max_length in STREAMED_TEXT_FIELDS:
                 text = _visible_partial_text(answer, json_key, max_length)
                 if field == "title":
-                    text = _title_with_code(code, text)
+                    text = _suggested_title(text, first_page)
                 if text and text != shown.get(field):
                     shown[field] = text
                     yield {"type": EVENT_TEXT, "field": field, "value": text}
-        return _title_and_description_from(answer, code)
+        return _title_and_description_from(answer, first_page)
     except Exception as exc:
         logger.warning("Ollama metadata generation failed: %s", type(exc).__name__)
         return {"title": None, "description": None}

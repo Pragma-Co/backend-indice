@@ -103,7 +103,7 @@ class SuggestDocumentMetadataTests(TestCase):
 
         result = suggest_document_metadata(TEMP_FILE_ID)
 
-        self.assertEqual(len(result["title"]), 255)
+        self.assertEqual(len(result["title"]), 70)
         self.assertEqual(len(result["description"]), 500)
 
     def test_given_ollama_invalid_json_when_suggested_then_keeps_classification_and_null_text(
@@ -277,6 +277,87 @@ class SuggestDocumentMetadataTests(TestCase):
 
         self.assertEqual(result["title"], "Norma de Ensaio (mil-std-883k)")
 
+    def _title_for(self, first_page, generated_title, mock_record, mock_classifier):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": first_page,
+            "content_excerpt": "",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps({"resumo": "Resumo.", "titulo": generated_title})
+        return suggest_document_metadata(TEMP_FILE_ID)["title"]
+
+    def test_given_long_title_repeating_the_cover_when_suggested_then_keeps_only_the_written_part(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        first_page = (
+            "MIL-PRF-24613A PERFORMANCE SPECIFICATION "
+            "DECK COVERING MATERIALS, INTERIOR, COSMETIC POLYMERIC"
+        )
+        generated = (
+            "DECK COVERING MATERIALS, INTERIOR, COSMETIC POLYMERIC - "
+            "Especificação para Superfícies de Cobertura de Decks"
+        )
+
+        title = self._title_for(first_page, generated, mock_record, mock_classifier)
+
+        self.assertEqual(
+            title, "MIL-PRF-24613A - Especificação para Superfícies de Cobertura de Decks"
+        )
+
+    def test_given_long_title_with_code_and_cover_text_when_suggested_then_keeps_the_written_part(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        first_page = "MIL-PRF-24613A DECK COVERING MATERIALS, INTERIOR, COSMETIC POLYMERIC"
+        generated = (
+            "MIL-PRF-24613A - Deck Covering Materials, Interior, Cosmetic Polymeric - "
+            "Especificação para Superfícies de Cobertura de Decks"
+        )
+
+        title = self._title_for(first_page, generated, mock_record, mock_classifier)
+
+        self.assertEqual(
+            title, "MIL-PRF-24613A - Especificação para Superfícies de Cobertura de Decks"
+        )
+
+    def test_given_long_title_taken_entirely_from_the_cover_when_suggested_then_only_shortens_it(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        first_page = "Manual de Boas Práticas de Soldagem Estrutural Departamento de Manufatura"
+        generated = "Manual de Boas Práticas de Soldagem Estrutural - Departamento de Manufatura"
+
+        title = self._title_for(first_page, generated, mock_record, mock_classifier)
+
+        self.assertEqual(title, "Manual de Boas Práticas de Soldagem Estrutural - Departamento")
+
+    def test_given_short_title_repeating_the_cover_when_suggested_then_leaves_it_untouched(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        first_page = "Relatório de Ensaio Longarina Principal"
+        generated = "Relatório de Ensaio - Fadiga da Longarina"
+
+        title = self._title_for(first_page, generated, mock_record, mock_classifier)
+
+        self.assertEqual(title, generated)
+
+    def test_given_title_over_the_limit_when_suggested_then_cuts_at_a_word_without_a_loose_ending(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        first_page = "MIL-STD-883K TEST METHOD STANDARD"
+        generated = (
+            "Verificação de instalação de torque de parafusos encaixados em equipamentos "
+            "de suporte terrestre"
+        )
+
+        title = self._title_for(first_page, generated, mock_record, mock_classifier)
+
+        self.assertEqual(
+            title,
+            "MIL-STD-883K - Verificação de instalação de torque de parafusos encaixados",
+        )
+
     def test_given_code_and_long_title_when_suggested_then_keeps_the_title_within_the_limit(
         self, mock_classifier, mock_record, mock_mongo
     ):
@@ -292,8 +373,7 @@ class SuggestDocumentMetadataTests(TestCase):
 
         result = suggest_document_metadata(TEMP_FILE_ID)
 
-        self.assertEqual(len(result["title"]), 255)
-        self.assertTrue(result["title"].startswith("MIL-STD-883K - T"))
+        self.assertEqual(result["title"], "MIL-STD-883K - " + "T" * 70)
 
     def test_given_record_without_excerpts_when_suggested_then_falls_back_to_extracted_text(
         self, mock_classifier, mock_record, mock_mongo
