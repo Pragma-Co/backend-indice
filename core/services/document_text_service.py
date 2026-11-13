@@ -22,6 +22,8 @@ TABLE_OF_CONTENTS_HEADING = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 TABLE_OF_CONTENTS_ENTRY = re.compile(r"(?:(?:\.\s?){3,}|…+)\s*\d+\s*$", re.MULTILINE)
+LINE_NUMBERING = re.compile(r"^\s*\d+(?:\.\d+)*[.)]?\s+", re.MULTILINE)
+SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
 
 
 def _extract_pdf_pages(path: Path) -> list[str]:
@@ -90,11 +92,18 @@ def build_title_excerpt(segments: list[str], extension: str) -> str:
     return source[:TITLE_EXCERPT_MAX_CHARS].strip()
 
 
+def without_numeric_sentences(text: str) -> str:
+    sentences = SENTENCE_BOUNDARY.split(LINE_NUMBERING.sub("", text))
+    return " ".join(
+        sentence for sentence in sentences if not any(char.isdigit() for char in sentence)
+    )
+
+
 def build_content_excerpt(segments: list[str]) -> str:
     if len(segments) < 2:
         return ""
-    content = normalize_for_search(" ".join(segments[_content_start(segments) :]))
-    return content[:CONTENT_EXCERPT_MAX_CHARS].strip()
+    content = without_numeric_sentences("\n".join(segments[_content_start(segments) :]))
+    return normalize_for_search(content)[:CONTENT_EXCERPT_MAX_CHARS].strip()
 
 
 def _ingestion(

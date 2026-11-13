@@ -21,8 +21,11 @@ TABLE_OF_CONTENTS_PAGE = (
 )
 
 
+PAGE_NAMES = "abcdefghijklmnopqrstuvwxyz"
+
+
 def pages(count: int) -> list[str]:
-    return [f"page {number} body" for number in range(count)]
+    return [f"page {PAGE_NAMES[number]} body" for number in range(count)]
 
 
 class ExtractTextForAiTests(SimpleTestCase):
@@ -123,7 +126,7 @@ class ContentExcerptTests(SimpleTestCase):
 
         result = build_content_excerpt(segments)
 
-        self.assertTrue(result.startswith("page 3 body"))
+        self.assertTrue(result.startswith("page d body"))
 
     def test_given_table_of_contents_at_start_when_built_then_skips_it(self):
         segments = pages(20)
@@ -132,14 +135,14 @@ class ContentExcerptTests(SimpleTestCase):
 
         result = build_content_excerpt(segments)
 
-        self.assertTrue(result.startswith("page 5 body"))
+        self.assertTrue(result.startswith("page f body"))
 
     def test_given_short_document_when_built_then_starts_after_the_first_page(self):
         segments = pages(3)
 
         result = build_content_excerpt(segments)
 
-        self.assertEqual(result, "page 1 body page 2 body")
+        self.assertEqual(result, "page b body page c body")
 
     def test_given_single_page_when_built_then_returns_empty_string(self):
         result = build_content_excerpt(pages(1))
@@ -151,7 +154,33 @@ class ContentExcerptTests(SimpleTestCase):
 
         result = build_content_excerpt(segments)
 
-        self.assertTrue(result.startswith("1 Scope"))
+        self.assertTrue(result.startswith("Scope"))
+
+    def test_given_sentences_with_figures_when_built_then_keeps_only_the_ones_without_numbers(
+        self,
+    ):
+        segments = [
+            "cover",
+            "1. OBJETIVO\n1.1 Esta norma define o método de verificação de torque. "
+            "Aplica-se a parafusos de 6 mm a 36 mm.\n"
+            "2. REQUISITOS\n2.1 O torquímetro deve estar calibrado. "
+            "A tolerância é de 4 por cento.",
+        ]
+
+        result = build_content_excerpt(segments)
+
+        self.assertEqual(
+            result,
+            "OBJETIVO Esta norma define o método de verificação de torque. "
+            "REQUISITOS O torquímetro deve estar calibrado.",
+        )
+
+    def test_given_content_made_only_of_figures_when_built_then_returns_empty_string(self):
+        segments = ["cover", "Parafuso M6: 10 N.m. Parafuso M8: 25 N.m."]
+
+        result = build_content_excerpt(segments)
+
+        self.assertEqual(result, "")
 
     def test_given_long_content_when_built_then_truncates_it(self):
         segments = ["cover", "b" * (CONTENT_EXCERPT_MAX_CHARS + 100)]
