@@ -145,6 +145,53 @@ class SuggestDocumentMetadataTests(TestCase):
         self.assertNotIn("ana@example.com", sent_message)
         self.assertIn("[REDACTED]", sent_message)
 
+    def test_given_stored_excerpts_when_suggested_then_sends_first_page_and_content_to_ollama(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": "Memorial de Cálculo da Longarina",
+            "content_excerpt": "O dimensionamento considera cargas de voo.",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        sent_message = self.ollama.call_args.args[1]
+        self.assertIn("PRIMEIRA PÁGINA:\n\nMemorial de Cálculo da Longarina", sent_message)
+        self.assertIn("CONTEÚDO:\n\nO dimensionamento considera cargas de voo.", sent_message)
+        self.assertNotIn("texto processado", sent_message)
+
+    def test_given_no_content_excerpt_when_suggested_then_sends_only_the_first_page(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": "Memorial de Cálculo da Longarina",
+            "content_excerpt": "",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        sent_message = self.ollama.call_args.args[1]
+        self.assertIn("PRIMEIRA PÁGINA:\n\nMemorial de Cálculo da Longarina", sent_message)
+        self.assertNotIn("CONTEÚDO:", sent_message)
+
+    def test_given_record_without_excerpts_when_suggested_then_falls_back_to_extracted_text(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        sent_message = self.ollama.call_args.args[1]
+        self.assertIn("PRIMEIRA PÁGINA:\n\ntexto processado", sent_message)
+        self.assertNotIn("CONTEÚDO:", sent_message)
+
     def test_given_no_extracted_text_when_suggested_then_does_not_call_ollama(
         self, mock_classifier, mock_record, mock_mongo
     ):

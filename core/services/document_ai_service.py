@@ -109,18 +109,35 @@ def _clean_generated_text(value, max_length: int) -> str | None:
     return sanitize_text(value)[:max_length].strip() or None
 
 
-def _generate_title_and_description(text: str) -> dict[str, str | None]:
-    excerpt = sanitize_text(text)[:MAX_TEXT_CHARS_FOR_METADATA]
-    user_message = (
-        'Responda apenas com um objeto JSON com as chaves "title" (título curto e objetivo, '
-        'em português) e "subtitle" (uma frase em português que complementa o título e '
-        "resume o conteúdo do documento).\n\n"
-        f"Texto do documento:\n\n{excerpt}"
+def _metadata_excerpts(record: dict, text: str) -> tuple[str, str]:
+    title_excerpt = (record.get("title_excerpt") or "").strip()
+    if not title_excerpt:
+        return text, ""
+    return title_excerpt, (record.get("content_excerpt") or "").strip()
+
+
+def _metadata_user_message(title_excerpt: str, content_excerpt: str) -> str:
+    first_page = sanitize_text(title_excerpt)[:MAX_TEXT_CHARS_FOR_METADATA]
+    content = sanitize_text(content_excerpt)[:MAX_TEXT_CHARS_FOR_METADATA]
+    message = (
+        'Responda apenas com um objeto JSON com as chaves "title" e "subtitle". O "title" é '
+        "o título do documento, curto e objetivo, em português, obtido somente da seção "
+        'PRIMEIRA PÁGINA. O "subtitle" é uma frase em português que complementa o título e '
+        "resume o conteúdo do documento.\n\n"
+        f"PRIMEIRA PÁGINA:\n\n{first_page}"
     )
+    if content:
+        message += f"\n\nCONTEÚDO:\n\n{content}"
+    return message
+
+
+def _generate_title_and_description(
+    title_excerpt: str, content_excerpt: str
+) -> dict[str, str | None]:
     try:
         answer = ask_ollama(
             METADATA_SYSTEM_PROMPT,
-            user_message,
+            _metadata_user_message(title_excerpt, content_excerpt),
             temperature=METADATA_TEMPERATURE,
             response_format=METADATA_RESPONSE_FORMAT,
         )
@@ -177,7 +194,7 @@ def classify_document_metadata(temp_file_id: str) -> tuple[dict, dict]:
         )
 
     suggestion = _suggestion_from_labels(labels)
-    suggestion.update(_generate_title_and_description(text))
+    suggestion.update(_generate_title_and_description(*_metadata_excerpts(record, text)))
     _save_suggestion_to_temp_upload(temp_file_id, suggestion)
     return suggestion, classification
 
