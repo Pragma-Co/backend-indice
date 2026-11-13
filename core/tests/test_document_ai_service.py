@@ -84,7 +84,7 @@ class SuggestDocumentMetadataTests(TestCase):
         mock_classifier.return_value.predict.return_value = predictions()
         self.ollama.side_effect = None
         self.ollama.return_value = json.dumps(
-            {"title": "Memorial de Cálculo", "subtitle": "Dimensiona a longarina."}
+            {"titulo": "Memorial de Cálculo", "resumo": "Dimensiona a longarina."}
         )
 
         result = suggest_document_metadata(TEMP_FILE_ID)
@@ -99,7 +99,7 @@ class SuggestDocumentMetadataTests(TestCase):
         self._temp_file()
         mock_classifier.return_value.predict.return_value = predictions()
         self.ollama.side_effect = None
-        self.ollama.return_value = json.dumps({"title": "T" * 400, "subtitle": "S" * 900})
+        self.ollama.return_value = json.dumps({"titulo": "T" * 400, "resumo": "S" * 900})
 
         result = suggest_document_metadata(TEMP_FILE_ID)
 
@@ -179,6 +179,121 @@ class SuggestDocumentMetadataTests(TestCase):
         sent_message = self.ollama.call_args.args[1]
         self.assertIn("PRIMEIRA PÁGINA:\n\nMemorial de Cálculo da Longarina", sent_message)
         self.assertNotIn("CONTEÚDO:", sent_message)
+
+    def test_given_valid_pdf_when_suggested_then_asks_for_a_description_of_a_few_sentences(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        description_format = self.ollama.call_args.kwargs["response_format"]["properties"]["resumo"]
+        self.assertEqual(description_format["minLength"], 150)
+        self.assertEqual(description_format["maxLength"], 500)
+        self.assertIn("duas a três frases completas", self.ollama.call_args.args[1])
+
+    def test_given_valid_pdf_when_suggested_then_demands_portuguese_and_a_summary_without_numbers(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        system_prompt, sent_message = self.ollama.call_args.args
+        self.assertIn("Escreva sempre em português do Brasil", system_prompt)
+        self.assertIn("escritos em português do Brasil", sent_message)
+        self.assertIn("não cita valores, medidas, números, códigos ou datas", sent_message)
+
+    def test_given_valid_pdf_when_suggested_then_asks_for_the_summary_before_a_translated_title(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_classifier.return_value.predict.return_value = predictions()
+
+        suggest_document_metadata(TEMP_FILE_ID)
+
+        answer_format = self.ollama.call_args.kwargs["response_format"]
+        sent_message = self.ollama.call_args.args[1]
+        self.assertEqual(list(answer_format["properties"]), ["resumo", "titulo"])
+        self.assertIn("nomeia o assunto do resumo", sent_message)
+        self.assertIn("Não copie texto em outro idioma: traduza.", sent_message)
+
+    def test_given_code_on_the_first_page_when_suggested_then_puts_it_before_the_title(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": "12-MAR-1998 AMSC N/A MIL-STD-883K TEST METHOD STANDARD RT-0001/2023",
+            "content_excerpt": "",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps(
+            {"resumo": "Define métodos de ensaio.", "titulo": "Norma de Métodos de Ensaio"}
+        )
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "MIL-STD-883K - Norma de Métodos de Ensaio")
+
+    def test_given_no_code_on_the_first_page_when_suggested_then_keeps_the_title_alone(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": "TEST METHOD STANDARD AMSC N/A FLUOROPOLYMER-INSULATED Rev-02",
+            "content_excerpt": "",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps(
+            {"resumo": "Define métodos de ensaio.", "titulo": "Norma de Métodos de Ensaio"}
+        )
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "Norma de Métodos de Ensaio")
+
+    def test_given_title_already_carrying_the_code_when_suggested_then_does_not_repeat_it(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": "MIL-STD-883K TEST METHOD STANDARD",
+            "content_excerpt": "",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps(
+            {"resumo": "Define métodos de ensaio.", "titulo": "Norma de Ensaio (mil-std-883k)"}
+        )
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(result["title"], "Norma de Ensaio (mil-std-883k)")
+
+    def test_given_code_and_long_title_when_suggested_then_keeps_the_title_within_the_limit(
+        self, mock_classifier, mock_record, mock_mongo
+    ):
+        self._temp_file()
+        mock_record.return_value = {
+            "extracted_text": "texto processado",
+            "title_excerpt": "MIL-STD-883K TEST METHOD STANDARD",
+            "content_excerpt": "",
+        }
+        mock_classifier.return_value.predict.return_value = predictions()
+        self.ollama.side_effect = None
+        self.ollama.return_value = json.dumps({"resumo": "Resumo.", "titulo": "T" * 400})
+
+        result = suggest_document_metadata(TEMP_FILE_ID)
+
+        self.assertEqual(len(result["title"]), 255)
+        self.assertTrue(result["title"].startswith("MIL-STD-883K - T"))
 
     def test_given_record_without_excerpts_when_suggested_then_falls_back_to_extracted_text(
         self, mock_classifier, mock_record, mock_mongo
