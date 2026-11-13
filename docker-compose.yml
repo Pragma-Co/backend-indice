@@ -95,11 +95,6 @@ services:
     ports:
       # Localhost only, like the databases; host port configurable via API_PORT in .env
       - "127.0.0.1:${API_PORT:-8000}:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
 
 volumes:
   postgres_data:

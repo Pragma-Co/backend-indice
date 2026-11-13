@@ -7,7 +7,7 @@ from sklearn.metrics import f1_score
 from torch import nn
 
 from classifier.catalog import FIELDS
-from classifier.network import DROPOUT, HIDDEN_SIZE, MultiHeadNetwork
+from classifier.network import DROPOUT, HEAD_HIDDEN_SIZE, HIDDEN_SIZE, MultiHeadNetwork
 
 RANDOM_STATE = 42
 MINIMUM_IMPROVEMENT = 1e-9
@@ -16,6 +16,7 @@ MINIMUM_IMPROVEMENT = 1e-9
 @dataclass
 class TrainingConfig:
     hidden_size: int = HIDDEN_SIZE
+    head_hidden_size: int = HEAD_HIDDEN_SIZE
     dropout: float = DROPOUT
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
@@ -99,6 +100,7 @@ def train_network(
         {name: len(classes[name]) for name in FIELDS},
         hidden_size=config.hidden_size,
         dropout=config.dropout,
+        head_hidden_size=config.head_hidden_size,
     )
     optimizer = torch.optim.Adam(
         network.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay

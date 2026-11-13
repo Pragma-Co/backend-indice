@@ -13,28 +13,38 @@ logger = logging.getLogger(__name__)
 
 AI_TEXT_EXTENSIONS = {"pdf", "docx"}
 MAX_CHARS_SENT_TO_MODEL = 20000
+TITLE_EXCERPT_MAX_CHARS = 1500
+CONTENT_EXCERPT_MAX_CHARS = 3500
+CONTENT_START_FRACTION = 0.15
+TABLE_OF_CONTENTS_MIN_ENTRIES = 3
+TABLE_OF_CONTENTS_HEADING = re.compile(
+    r"^\s*(?:sum[áa]rio|[íi]ndice|table\s+of\s+contents|contents)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+TABLE_OF_CONTENTS_ENTRY = re.compile(r"(?:(?:\.\s?){3,}|…+)\s*\d+\s*$", re.MULTILINE)
+LINE_NUMBERING = re.compile(r"^\s*\d+(?:\.\d+)*[.)]?\s+", re.MULTILINE)
+SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
 
 
-def _extract_from_pdf(path: Path) -> str:
-    text = ""
+def _extract_pdf_pages(path: Path) -> list[str]:
     with open(path, "rb") as stream:
-        reader = PdfReader(stream)
-        for page in reader.pages:
-            text += (page.extract_text() or "") + "\n"
-    return text
+        return [page.extract_text() or "" for page in PdfReader(stream).pages]
 
 
-def _extract_from_docx(path: Path) -> str:
-    document = DocxDocument(path)
-    return "\n".join(paragraph.text for paragraph in document.paragraphs)
+def _extract_docx_paragraphs(path: Path) -> list[str]:
+    return [paragraph.text for paragraph in DocxDocument(path).paragraphs]
+
+
+def extract_text_segments(path: Path, extension: str) -> list[str]:
+    if extension == "pdf":
+        return _extract_pdf_pages(path)
+    if extension == "docx":
+        return _extract_docx_paragraphs(path)
+    return []
 
 
 def extract_raw_text(path: Path, extension: str) -> str:
-    if extension == "pdf":
-        return _extract_from_pdf(path)
-    if extension == "docx":
-        return _extract_from_docx(path)
-    return ""
+    return "\n".join(extract_text_segments(path, extension))
 
 
 def _searchable_char(char: str) -> str:
@@ -60,22 +70,76 @@ EXTRACTION_SKIPPED = "SKIPPED"
 EXTRACTION_FAILURE = "FAILURE"
 
 
-def _ingestion(text: str, extraction: str, detail: str | None) -> dict:
-    return {"text": text, "extraction": extraction, "detail": detail}
+def is_table_of_contents(segment: str) -> bool:
+    if TABLE_OF_CONTENTS_HEADING.search(segment):
+        return True
+    return len(TABLE_OF_CONTENTS_ENTRY.findall(segment)) >= TABLE_OF_CONTENTS_MIN_ENTRIES
+
+
+def _content_start(segments: list[str]) -> int:
+    last = len(segments) - 1
+    start = min(max(1, int(len(segments) * CONTENT_START_FRACTION)), last)
+    while start < last and is_table_of_contents(segments[start]):
+        start += 1
+    return start
+
+
+def build_title_excerpt(segments: list[str], extension: str) -> str:
+    readable = [text for text in map(normalize_for_search, segments) if text]
+    if not readable:
+        return ""
+    source = readable[0] if extension == "pdf" else " ".join(readable)
+    return source[:TITLE_EXCERPT_MAX_CHARS].strip()
+
+
+def without_numeric_sentences(text: str) -> str:
+    sentences = SENTENCE_BOUNDARY.split(LINE_NUMBERING.sub("", text))
+    return " ".join(
+        sentence for sentence in sentences if not any(char.isdigit() for char in sentence)
+    )
+
+
+def build_content_excerpt(segments: list[str]) -> str:
+    if len(segments) < 2:
+        return ""
+    content = without_numeric_sentences("\n".join(segments[_content_start(segments) :]))
+    return normalize_for_search(content)[:CONTENT_EXCERPT_MAX_CHARS].strip()
+
+
+def _ingestion(
+    text: str,
+    extraction: str,
+    detail: str | None,
+    title_excerpt: str = "",
+    content_excerpt: str = "",
+) -> dict:
+    return {
+        "text": text,
+        "extraction": extraction,
+        "detail": detail,
+        "title_excerpt": title_excerpt,
+        "content_excerpt": content_excerpt,
+    }
 
 
 def ingest_text(path: Path, extension: str) -> dict:
     if extension not in AI_TEXT_EXTENSIONS:
         return _ingestion("", EXTRACTION_SKIPPED, f"No text extraction for {extension} files.")
     try:
-        raw_text = extract_raw_text(path, extension)
-        text = preprocess_for_llm(raw_text)[:MAX_CHARS_SENT_TO_MODEL]
+        segments = extract_text_segments(path, extension)
+        text = preprocess_for_llm("\n".join(segments))[:MAX_CHARS_SENT_TO_MODEL]
     except Exception as exc:
         logger.exception("Failed to extract text from %s for AI suggestions", path.name)
         return _ingestion("", EXTRACTION_FAILURE, f"Text extraction failed: {type(exc).__name__}.")
     if not text:
         return _ingestion("", EXTRACTION_EMPTY, "No text found in the file.")
-    return _ingestion(text, EXTRACTION_SUCCESS, None)
+    return _ingestion(
+        text,
+        EXTRACTION_SUCCESS,
+        None,
+        title_excerpt=build_title_excerpt(segments, extension),
+        content_excerpt=build_content_excerpt(segments),
+    )
 
 
 def extract_text_for_ai(path: Path, extension: str) -> str:

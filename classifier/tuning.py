@@ -40,6 +40,13 @@ def default_grid(base: TrainingConfig | None = None) -> list[Trial]:
         )
     for dropout in (0.2, 0.5):
         trials.append(Trial(f"dropout={dropout:g}", replace(base, dropout=dropout)))
+    for head_hidden_size in (64, 128):
+        trials.append(
+            Trial(
+                f"head_hidden_size={head_hidden_size}",
+                replace(base, head_hidden_size=head_hidden_size),
+            )
+        )
     trials.append(Trial("filter_noise", base, filter_noise=True))
     return trials
 
