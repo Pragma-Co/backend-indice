@@ -13,7 +13,7 @@ import torch
 from classifier import text_preprocessing, tfidf_input
 from classifier.catalog import FIELDS
 from classifier.evaluation import FieldEvaluation
-from classifier.network import MultiHeadNetwork
+from classifier.network import HEAD_HIDDEN_SIZE, MultiHeadNetwork
 from classifier.neural_training import TrainedNetwork
 from classifier.splitting import RANDOM_STATE, TEST_FOLDS, VALIDATION_FOLDS
 
@@ -152,6 +152,7 @@ def load_model(output_dir=DEFAULT_OUTPUT_DIR) -> LoadedModel:
         {name: len(classes[name]) for name in FIELDS},
         hidden_size=hyperparameters["hidden_size"],
         dropout=hyperparameters["dropout"],
+        head_hidden_size=hyperparameters.get("head_hidden_size", HEAD_HIDDEN_SIZE),
     )
     network.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
     network.eval()

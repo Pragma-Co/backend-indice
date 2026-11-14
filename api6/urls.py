@@ -17,7 +17,11 @@ from core.views.access_request_view import (
 from core.views.api_root_view import api_root
 from core.views.auth_view import csrf_view, login_view, logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
-from core.views.document_ai_view import suggest_document_metadata_view, summarize_search_view
+from core.views.document_ai_view import (
+    stream_document_suggestions_view,
+    suggest_document_metadata_view,
+    summarize_search_view,
+)
 from core.views.documents_view import (
     archived_documents_view,
     create_revision_view,
@@ -123,6 +127,11 @@ urlpatterns = [
         "documents/<str:temp_file_id>/suggestions",
         suggest_document_metadata_view,
         name="document-ai-suggestions",
+    ),
+    path(
+        "documents/<str:temp_file_id>/suggestions/stream",
+        stream_document_suggestions_view,
+        name="document-ai-suggestions-stream",
     ),
     path("manager/activities", manager_activities_view, name="manager-activities"),
     path("access-groups", access_group_options_view, name="access-group-options"),
