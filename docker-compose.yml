@@ -86,9 +86,9 @@ services:
     environment:
       # Inside the Docker network the databases are reached by service name on
       # their fixed internal ports; host-side overrides from .env must not apply here
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: pragma.davisoares.com.br
       POSTGRES_PORT: "5432"
-      MONGO_HOST: mongodb
+      MONGO_HOST: pragma.davisoares.com.br
       MONGO_PORT: "27017"
     volumes:
       - .:/app
