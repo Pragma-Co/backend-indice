@@ -50,6 +50,7 @@ from core.views.legal_consent_view import (
     legal_acceptances_view,
     legal_documents_view,
     legal_version_view,
+    pending_legal_terms_view,
     revoke_legal_acceptance_view,
 )
 from core.views.manager_activity_view import manager_activities_view
@@ -85,6 +86,7 @@ urlpatterns = [
         request_user_deletion,
         name="user-deletion-request",
     ),
+    path("users/me/legal-pending", pending_legal_terms_view, name="user-legal-pending"),
     path("users/me/legal-acceptances", legal_acceptances_view, name="user-legal-acceptances"),
     path(
         "users/me/legal-acceptances/<int:acceptance_id>/revoke",

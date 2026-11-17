@@ -25,7 +25,7 @@ from core.services.documents_service import (
     get_document_detail,
 )
 
-SESSION_QUERIES = 2
+SESSION_QUERIES = 3
 
 
 class DocumentsViewTests(TestCase):

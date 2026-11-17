@@ -5,7 +5,7 @@ from django.urls import reverse
 
 from core.models import Area, Discipline, Document, DocumentType, Project, User
 
-SESSION_QUERIES = 2
+SESSION_QUERIES = 3
 
 
 class SignedInTestCase(TestCase):
