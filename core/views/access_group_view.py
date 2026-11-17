@@ -3,10 +3,15 @@ import json
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from core.serializers.access_group_serializer import serialize_group, serialize_member
+from core.serializers.access_group_serializer import (
+    serialize_area_user,
+    serialize_group,
+    serialize_member,
+)
 from core.services.access_group_management_service import (
     GroupManagementError,
     add_member,
+    area_users_for_manager,
     create_group,
     get_group,
     groups_for_manager,
@@ -97,3 +102,12 @@ def access_group_user_view(request, group_id, user_id):
     except GroupManagementError as exc:
         return _error_response(exc)
     return HttpResponse(status=204)
+
+
+@require_http_methods(["GET"])
+def manager_area_users_view(request):
+    error = _manager_error(request)
+    if error:
+        return error
+    users = area_users_for_manager(request.user)
+    return JsonResponse({"results": [serialize_area_user(user) for user in users]})
