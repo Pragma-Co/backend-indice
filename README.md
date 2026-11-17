@@ -832,7 +832,7 @@ The API returns `400` for invalid JSON or payloads, `401` without an active sess
 
 ## Data incident register (LGPD)
 
-Card SCRUM-101 adds the register of personal data incidents (leaks, improper access, losses) and the tools to follow their treatment. Everything is restricted to administrators (`role = ADMIN`, the security officers of the application): other roles get `403 {"error": "PermissionDenied"}`, anonymous requests `401`. Every read and every write is recorded in `audit_log` (`entity = "data_incident"`), and writes are only committed when the audit entry is written (`503 {"error": "AuditUnavailable"}` otherwise). There is no frontend screen for the register (governance records belong to the administrator, as the product owner confirmed); the Django admin shows incidents, actions and history read-only.
+Card SCRUM-101 adds the register of personal data incidents (leaks, improper access, losses) and the tools to follow their treatment. Everything is restricted to administrators (`role = ADMIN`, the security officers of the application): other roles get `403 {"error": "PermissionDenied"}`, anonymous requests `401`. Every read and every write is recorded in `audit_log` (`entity = "data_incident"`), and writes are only committed when the audit entry is written (`503 {"error": "AuditUnavailable"}` otherwise). There is no frontend screen for the register (governance records belong to the administrator, as the product owner confirmed); the Django admin shows incidents, actions and history read-only. The action plan written for the product owner and the step-by-step demo script, both in Portuguese because they are handed to the client, live in [`docs/incident-response/`](docs/incident-response/plan.md).
 
 ### Model
 
