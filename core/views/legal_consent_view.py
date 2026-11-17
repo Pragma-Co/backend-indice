@@ -26,6 +26,7 @@ from core.services.legal_consent_service import (
     current_legal_version,
     legal_documents,
     legal_version,
+    pending_legal_documents,
     record_acceptance,
     revoke_acceptance,
     user_acceptances,
@@ -65,6 +66,18 @@ def legal_documents_view(request):
         return JsonResponse(serialize_legal_documents(legal_documents()))
     except Exception as exc:
         logger.exception("Failed to list the legal documents")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
+@require_GET
+def pending_legal_terms_view(request):
+    user = request.user
+    if not (user.is_authenticated and user.is_active):
+        return JsonResponse({"error": "AuthenticationRequired"}, status=401)
+    try:
+        return JsonResponse(serialize_legal_documents(pending_legal_documents(user)))
+    except Exception as exc:
+        logger.exception("Failed to list pending legal terms")
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
