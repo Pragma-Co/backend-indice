@@ -151,3 +151,8 @@ class BackupStatus(models.TextChoices):
     RUNNING = "RUNNING", "Running"
     SUCCEEDED = "SUCCEEDED", "Succeeded"
     FAILED = "FAILED", "Failed"
+
+
+class ErasureKind(models.TextChoices):
+    ANONYMIZED = "ANONYMIZED", "Anonymized"
+    DELETED = "DELETED", "Deleted"

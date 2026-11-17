@@ -908,6 +908,16 @@ docker compose exec api python manage.py backup_decrypt backups/postgres/<file>.
 0 3 * * *    cd /path/to/backend && docker compose exec -T api python manage.py backup_snapshot --target mongodb
 ```
 
+### Restoring a snapshot
+
+Restores are manual and rare, so they are a procedure rather than a command. The order matters because of the LGPD erasures:
+
+1. Decrypt the snapshot: `docker compose exec api python manage.py backup_decrypt backups/postgres/<file>.json.gz.enc` (an older file needs the previous key, see "Key custody").
+2. PostgreSQL: on an empty database (`migrate` first), `docker compose exec api python manage.py loaddata backups/postgres/<file>.json`. MongoDB: one `mongoimport` per collection of the decrypted file, or a short pymongo script. `loaddata` merges by primary key, so a restore over a live database keeps the rows created after the snapshot.
+3. Re-apply the erasures: `docker compose exec api python manage.py reapply_user_erasures --from-snapshot backups/postgres/<most recent file>.json.gz.enc`.
+
+A user who asked for the deletion of the account, or was anonymized when dismissed, exists in every snapshot taken before that moment with name, e-mail, password, acceptances and search history. The exclusion register (`excluded_identifier`: HMAC-SHA256 of the e-mail, the `kind` of erasure, `ANONYMIZED` or `DELETED`, and the date) is the memory of who must not come back, besides blocking new accounts with those addresses. `reapply_user_erasures` compares every user of the restored database with the register and repeats the anonymization or the hard delete through the same services used at the time (work handed over to a replacement manager, audit entry `USER_ERASURE_REAPPLIED`); it continues when a user has no replacement manager and exits with an error listing them. `--from-snapshot` first merges the register of the most recent PostgreSQL snapshot, which is newer than the one being restored, and `DELETED` always wins over `ANONYMIZED` for the same address. The register entries are hashes keyed by `EXCLUDED_IDENTIFIER_HMAC_KEY`, so that key follows the same custody as the backup key: without it the register cannot be matched. The snapshot files keep the erased data until the retention prunes them (seven and thirty days); the rule is that a snapshot never goes back into use without this step.
+
 ## LGPD & security notes
 
 This project handles personal data topics this semester, so the environment was configured with LGPD in mind:
@@ -918,7 +928,7 @@ This project handles personal data topics this semester, so the environment was 
 - **MongoDB** runs with mandatory authentication (no anonymous access).
 - **Nothing is exposed to the network** — the API (8000) and both databases (5433/27018) are bound to `127.0.0.1` only; other machines on your LAN cannot reach them.
 - **Health/error responses never include connection details** — database failures are logged server-side; HTTP responses carry no usernames, hosts or stack traces.
-- **Incident response and backups** — personal data incidents are registered and followed in `/security/incidents` (administrators only, every access audited), and `manage.py backup_snapshot` keeps encrypted snapshots of both databases with a structured run history (see the two sections above).
+- **Incident response and backups** — personal data incidents are registered and followed in `/security/incidents` (administrators only, every access audited), `manage.py backup_snapshot` keeps encrypted snapshots of both databases with a structured run history, and `manage.py reapply_user_erasures` repeats the anonymizations and deletions after a restore so that erased users never come back (see the two sections above).
 - **Team rules:** never commit `.env`, never log or seed real personal data, rotate credentials if they leak, and collect only the data the application actually needs (data minimization).
 
 ## Troubleshooting
