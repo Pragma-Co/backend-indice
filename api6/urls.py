@@ -26,7 +26,11 @@ from core.views.data_incident_view import (
     incident_subject_notifications_view,
     incidents_collection,
 )
-from core.views.document_ai_view import suggest_document_metadata_view, summarize_search_view
+from core.views.document_ai_view import (
+    stream_document_suggestions_view,
+    suggest_document_metadata_view,
+    summarize_search_view,
+)
 from core.views.documents_view import (
     archived_documents_view,
     create_revision_view,
@@ -132,6 +136,11 @@ urlpatterns = [
         "documents/<str:temp_file_id>/suggestions",
         suggest_document_metadata_view,
         name="document-ai-suggestions",
+    ),
+    path(
+        "documents/<str:temp_file_id>/suggestions/stream",
+        stream_document_suggestions_view,
+        name="document-ai-suggestions-stream",
     ),
     path("security/incidents", incidents_collection, name="security-incident-list"),
     path(

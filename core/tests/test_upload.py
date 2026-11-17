@@ -151,7 +151,13 @@ class StoreUploadedFileTests(TestCase):
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     @mock.patch(
         "core.services.temp_upload_service.ingest_text",
-        return_value={"text": "texto extraido", "extraction": "SUCCESS", "detail": None},
+        return_value={
+            "text": "texto extraido",
+            "extraction": "SUCCESS",
+            "detail": None,
+            "title_excerpt": "Primeira página",
+            "content_excerpt": "Conteúdo após o sumário",
+        },
     )
     def test_given_valid_pdf_when_stored_then_extracts_text_for_ai_upfront(
         self, mock_extract, mock_mongo
@@ -165,6 +171,8 @@ class StoreUploadedFileTests(TestCase):
             0
         ][0]
         self.assertEqual(inserted_metadata["extracted_text"], "texto extraido")
+        self.assertEqual(inserted_metadata["title_excerpt"], "Primeira página")
+        self.assertEqual(inserted_metadata["content_excerpt"], "Conteúdo após o sumário")
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_given_pdf_extraction_fails_when_stored_then_response_is_not_blocked(self, mock_mongo):

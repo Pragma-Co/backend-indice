@@ -22,6 +22,7 @@ from classifier.vector_store import VectorStoreError, get_vector_store, vectoriz
 def add_network_options(parser: argparse.ArgumentParser) -> None:
     defaults = TrainingConfig()
     parser.add_argument("--hidden-size", type=int, default=defaults.hidden_size)
+    parser.add_argument("--head-hidden-size", type=int, default=defaults.head_hidden_size)
     parser.add_argument("--dropout", type=float, default=defaults.dropout)
     parser.add_argument("--weight-decay", type=float, default=defaults.weight_decay)
     parser.add_argument("--filter-noise", action="store_true")
@@ -30,6 +31,7 @@ def add_network_options(parser: argparse.ArgumentParser) -> None:
 def config_from(arguments) -> TrainingConfig:
     return TrainingConfig(
         hidden_size=arguments.hidden_size,
+        head_hidden_size=arguments.head_hidden_size,
         dropout=arguments.dropout,
         weight_decay=arguments.weight_decay,
     )
