@@ -883,7 +883,7 @@ Card SCRUM-102 automates the communication that the lifecycle above demands befo
 */30 * * * *  cd /path/to/backend && docker compose exec -T api python manage.py send_incident_notifications
 ```
 
-**E-mail settings.** Django's mail stack, configured by environment (see `.env.example`): `EMAIL_BACKEND` (default `django.core.mail.backends.console.EmailBackend`, which prints the messages in the `api` log, enough for development and for the automated tests), `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_TIMEOUT`, `DEFAULT_FROM_EMAIL` and `INCIDENT_CONTACT_EMAIL`. Production needs the SMTP backend (`django.core.mail.backends.smtp.EmailBackend`) and the credentials of the client's mail service; no mail server is bundled in `docker-compose.yml`.
+**E-mail settings.** Django's mail stack, configured by environment (see `.env.example`): `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_TIMEOUT`, `DEFAULT_FROM_EMAIL` and `INCIDENT_CONTACT_EMAIL`. In development `docker-compose.yml` runs a [Mailpit](https://mailpit.axllent.org/) container (`api6-mailpit`) that captures every message: the `api` service delivers to it by default (SMTP backend, host `mailpit`, port 1025, no TLS) and the messages are read at `http://127.0.0.1:8025` (`MAILPIT_PORT`). Setting `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` prints them in the `api` log instead, and the automated tests always use Django's in-memory backend. Production points the same variables to the client's mail service.
 
 ## Backups and snapshots
 
