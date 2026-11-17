@@ -678,7 +678,10 @@ Internal alerts shown in the navbar bell. They are created by the backend, in th
 | `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester | `Seu pedido de acesso ao documento <title> foi aprovado.` |
 | `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester | `Seu pedido de acesso ao documento <title> foi recusado.` |
 
-Rejected revisions create no notification. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
+| `REVISION_APPROVED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | the revision author | `Sua revisão (REV02) do documento <title> foi aprovada.` |
+| `REVISION_REJECTED` | `POST /manager/revisions/<id>/decision` with `REJECTED` | the revision author | `Sua revisão (REV02) do documento <title> foi recusada.` |
+
+A rejected revision notifies only its author; `DOCUMENT_UPDATED` is sent only on approval. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
 
 Notification object:
 
