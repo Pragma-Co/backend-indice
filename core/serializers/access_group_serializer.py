@@ -20,3 +20,7 @@ def serialize_member(membership):
         "added_by": membership.added_by_id,
         "added_at": membership.added_at.isoformat(),
     }
+
+
+def serialize_area_user(user):
+    return {"id": user.pk, "name": user.name, "email": user.email}
