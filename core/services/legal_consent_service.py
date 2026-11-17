@@ -75,6 +75,31 @@ def legal_documents() -> list[tuple[LegalDocument, LegalDocumentVersion]]:
     )
 
 
+def _pending_version_ids(user):
+    current = {}
+    published = _published_versions().order_by("document_id", "-version")
+    for document_id, version_id in published.values_list("document_id", "pk"):
+        current.setdefault(document_id, version_id)
+    accepted = set(
+        UserLegalAcceptance.objects.filter(
+            user=user,
+            version_id__in=current.values(),
+            accepted=True,
+            revoked_at__isnull=True,
+        ).values_list("version_id", flat=True)
+    )
+    return [version_id for version_id in current.values() if version_id not in accepted]
+
+
+def has_pending_legal_terms(user) -> bool:
+    return bool(_pending_version_ids(user))
+
+
+def pending_legal_documents(user) -> list[tuple[LegalDocument, LegalDocumentVersion]]:
+    pending = set(_pending_version_ids(user))
+    return [item for item in legal_documents() if item[1].pk in pending]
+
+
 def user_acceptances(user):
     return (
         UserLegalAcceptance.objects.filter(user=user)
