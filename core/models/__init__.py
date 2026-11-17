@@ -32,7 +32,6 @@ from core.models.choices import (
     PersonalDataCategory,
     RevisionStatus,
     Role,
-    SubjectNotificationReason,
     SubjectNotificationStatus,
     VisibilityScope,
 )
@@ -112,7 +111,6 @@ __all__ = [
     "SavedDocument",
     "SearchHistory",
     "SecrecyLevel",
-    "SubjectNotificationReason",
     "SubjectNotificationStatus",
     "Tag",
     "User",

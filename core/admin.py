@@ -257,7 +257,6 @@ class DataIncidentSubjectNotificationInline(admin.TabularInline):
     can_delete = False
     readonly_fields = (
         "user",
-        "reason",
         "status",
         "attempts",
         "last_attempt_at",

@@ -26,7 +26,6 @@ from core.models import (
     Revision,
     RevisionStatus,
     Role,
-    SubjectNotificationReason,
     SubjectNotificationStatus,
     User,
 )
@@ -67,25 +66,26 @@ class SubjectNotificationFixtureMixin:
         self.responsible = self._user("responsible@example.com", Role.AUTHOR)
         self.reviewer = self._user("reviewer@example.com", Role.AUDITOR)
         self.requester = self._user("requester@example.com", Role.VIEWER)
+        self.linked = self._user("linked@example.com", Role.AUTHOR)
         self.document = Document.objects.create(
             code="AK-2100-EST-DWG-0001",
             title="Desenho da caverna 14",
             project=Project.objects.create(code="AK-2100", name="Fuselagem"),
             discipline=Discipline.objects.create(code="EST", name="Estruturas"),
             document_type=DocumentType.objects.create(code="DWG", name="Desenho"),
-            responsible=self.responsible,
-            created_by=self.responsible,
+            responsible=self.linked,
+            created_by=self.linked,
         )
         Revision.objects.create(
             document=self.document,
             version=1,
             status=RevisionStatus.PENDING,
             issue_date=timezone.localdate(),
-            author=self.reviewer,
+            author=self.linked,
         )
         DocumentAccess.objects.create(
             document=self.document,
-            user=self.requester,
+            user=self.linked,
             justification="Preciso consultar o desenho para a inspeção.",
             requested_at=timezone.now(),
         )
@@ -108,7 +108,12 @@ class SubjectNotificationFixtureMixin:
             "detected_at": (now - timedelta(days=1)).isoformat(),
             "affected_data_categories": ["IDENTIFICATION", "CREDENTIALS"],
             "affected_subjects_count": 4,
-            "affected_user_ids": [self.listed.id],
+            "affected_user_ids": [
+                self.listed.id,
+                self.responsible.id,
+                self.reviewer.id,
+                self.requester.id,
+            ],
             "affected_document_ids": [self.document.id],
         }
         payload.update(overrides)
@@ -132,32 +137,19 @@ class SubjectNotificationFixtureMixin:
 
 
 class IdentifyAffectedUsersTests(SubjectNotificationFixtureMixin, TestCase):
-    def test_should_identify_listed_users_and_people_linked_to_the_affected_documents(self):
+    def test_should_identify_only_the_users_listed_in_the_incident(self):
         recipients = identify_affected_users(self.incident)
 
-        self.assertEqual(
-            recipients,
-            [
-                (self.listed, SubjectNotificationReason.AFFECTED_USER),
-                (self.responsible, SubjectNotificationReason.DOCUMENT_RESPONSIBLE),
-                (self.reviewer, SubjectNotificationReason.REVISION_AUTHOR),
-                (self.requester, SubjectNotificationReason.DOCUMENT_ACCESS),
-            ],
-        )
+        self.assertEqual(recipients, [self.listed, self.requester, self.responsible, self.reviewer])
+        self.assertNotIn(self.linked, recipients)
 
     def test_should_skip_inactive_users_when_identifying_recipients(self):
         User.objects.filter(pk=self.listed.pk).update(is_active=False)
 
         recipients = identify_affected_users(self.incident)
 
-        self.assertNotIn(self.listed, [user for user, _reason in recipients])
-
-    def test_should_keep_the_first_reason_when_a_user_matches_several(self):
-        incident = self._register(affected_user_ids=[self.responsible.id])
-
-        recipients = dict(identify_affected_users(incident))
-
-        self.assertEqual(recipients[self.responsible], SubjectNotificationReason.AFFECTED_USER)
+        self.assertNotIn(self.listed, recipients)
+        self.assertEqual(len(recipients), 3)
 
 
 class NotifyAffectedUsersServiceTests(SubjectNotificationFixtureMixin, TestCase):
@@ -170,7 +162,6 @@ class NotifyAffectedUsersServiceTests(SubjectNotificationFixtureMixin, TestCase)
         self.assertEqual({row.status for row in rows.values()}, {SubjectNotificationStatus.SENT})
         self.assertEqual({row.attempts for row in rows.values()}, {1})
         self.assertTrue(all(row.sent_at is not None for row in rows.values()))
-        self.assertEqual(rows["requester@example.com"].reason, "DOCUMENT_ACCESS")
 
     def test_should_render_the_official_template_with_incident_data_and_guidance(self):
         self._contain()
@@ -265,7 +256,7 @@ class NotifyAffectedUsersServiceTests(SubjectNotificationFixtureMixin, TestCase)
         self.assertEqual(mail.outbox, [])
 
     def test_should_refuse_an_incident_without_affected_users(self):
-        incident = self._register(affected_user_ids=[], affected_document_ids=[])
+        incident = self._register(affected_user_ids=[])
 
         with self.assertRaises(NoAffectedUsersError):
             notify_affected_users(incident.id)
@@ -337,7 +328,7 @@ class SubjectNotificationViewTests(SubjectNotificationFixtureMixin, TestCase):
         self.assertEqual(audit.record["reference"], self.incident.reference)
 
     def test_should_answer_409_without_recipients_and_404_for_an_unknown_incident(self):
-        incident = self._register(affected_user_ids=[], affected_document_ids=[])
+        incident = self._register(affected_user_ids=[])
         self.client.force_login(self.admin)
 
         empty = self.client.post(self._url(incident.id))

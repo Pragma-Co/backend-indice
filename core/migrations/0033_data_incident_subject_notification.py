@@ -20,22 +20,6 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    "reason",
-                    models.CharField(
-                        choices=[
-                            ("AFFECTED_USER", "Listed as affected in the incident"),
-                            ("DOCUMENT_RESPONSIBLE", "Responsible for an affected document"),
-                            ("DOCUMENT_CREATOR", "Registered an affected document"),
-                            ("REVISION_AUTHOR", "Authored a revision of an affected document"),
-                            (
-                                "DOCUMENT_ACCESS",
-                                "Requested or holds access to an affected document",
-                            ),
-                        ],
-                        max_length=25,
-                    ),
-                ),
-                (
                     "status",
                     models.CharField(
                         choices=[("PENDING", "Pending"), ("SENT", "Sent"), ("FAILED", "Failed")],

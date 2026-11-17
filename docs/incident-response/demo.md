@@ -76,14 +76,14 @@ A resposta é `409 {"error": "IncidentClosureBlocked", "reasons": ["authority_no
 
 ## 5. Comunicar os titulares pelo sistema
 
-O `GET` mostra quem será avisado, o motivo de cada um e a prévia exata do e-mail; o `POST` envia e devolve o resultado.
+O `GET` mostra quem será avisado (os usuários listados no incidente) e a prévia exata do e-mail; o `POST` envia e devolve o resultado.
 
 ```bash
 api "$BASE/security/incidents/1/subject-notifications"
 api -X POST "$BASE/security/incidents/1/subject-notifications"
 ```
 
-No `GET`, mostre `recipients[].reason` (por exemplo `AFFECTED_USER`, `DOCUMENT_RESPONSIBLE`) e `preview.text`. No `POST`, `result` traz `sent`, `failed` e `skipped`, cada destinatário passa a `SENT` com `sent_at`, e o incidente ganha `subjects_notified_at`. Com o backend de console (padrão em desenvolvimento) as mensagens aparecem no log da api:
+No `GET`, mostre `recipients` (os usuários listados em `affected_user_ids`, com status `PENDING`) e `preview.text`. No `POST`, `result` traz `sent`, `failed` e `skipped`, cada destinatário passa a `SENT` com `sent_at`, e o incidente ganha `subjects_notified_at`. Com o backend de console (padrão em desenvolvimento) as mensagens aparecem no log da api:
 
 ```bash
 docker compose logs api --since 5m | grep -A 40 "Comunicado sobre incidente"

@@ -53,11 +53,9 @@ A ANPD é comunicada em até 3 dias úteis a partir da detecção (Resolução C
 | ANPD | Severidade MEDIUM, HIGH ou CRITICAL (padrão; o administrador pode ligar ou desligar) | 3 dias úteis após a detecção; a listagem marca os vencidos | Feita fora do sistema, pelo canal da ANPD; o administrador registra a data no incidente |
 | Titulares afetados | Sempre, antes do encerramento | Assim que a contenção permitir informar o que aconteceu | E-mail oficial enviado pelo sistema (SCRUM-102) ou comunicação externa registrada com a data |
 
-O e-mail aos titulares (SCRUM-102) identifica automaticamente os afetados: os usuários listados no incidente e, para cada documento afetado, responsável, quem cadastrou, autores de revisão e quem pediu acesso. O administrador vê a lista com o motivo de cada pessoa e a prévia exata da mensagem antes de enviar. A mensagem traz o que aconteceu, quais dados, as medidas já tomadas, se a ANPD foi comunicada, orientações por categoria de dado (troca de senha, atenção a golpes) e o contato do encarregado; descrição interna e causa raiz nunca saem.
+O e-mail aos titulares (SCRUM-102) vai para os usuários listados como afetados no incidente, decisão da product owner: quem está ligado aos documentos afetados (responsável, quem cadastrou, autores de revisão, quem pediu acesso) só é comunicado se o administrador o incluir na lista. O administrador vê a lista e a prévia exata da mensagem antes de enviar. A mensagem traz o que aconteceu, quais dados, as medidas já tomadas, se a ANPD foi comunicada, orientações por categoria de dado (troca de senha, atenção a golpes) e o contato do encarregado; descrição interna e causa raiz nunca saem.
 
 Cada envio fica registrado por pessoa com status, tentativas, data e o nome do erro quando falha. Falha de um destinatário não para os outros; uma rotina no servidor reenvia só o que falhou, até três tentativas. Quando todos recebem, o incidente é marcado como comunicado aos titulares, o que libera o encerramento.
-
-Ponto em aberto com a product owner: a regra derivada dos documentos tende a notificar mais gente do que o estritamente afetado. Se preferir só os usuários listados, a mudança é pequena.
 
 ## Backups
 
@@ -100,4 +98,3 @@ O plano está implementado e os dois PRs estão verdes no CI, aguardando review.
 - [ ] Mesclar os PRs #66 e #70 antes de congelar o schema na VM
 - [ ] Guardar a chave de criptografia dos backups e a chave do registro de exclusões no gerenciador de senhas da equipe
 - [ ] Produção: credenciais SMTP do cliente para o envio real dos e-mails (hoje o padrão escreve as mensagens no log)
-- [ ] Product owner: confirmar a regra de identificação dos afetados (somente listados ou também os ligados aos documentos)

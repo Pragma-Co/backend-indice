@@ -9,7 +9,6 @@ from core.models.choices import (
     IncidentStatus,
     IncidentType,
     PersonalDataCategory,
-    SubjectNotificationReason,
     SubjectNotificationStatus,
 )
 from core.models.document import Document
@@ -231,7 +230,6 @@ class DataIncidentSubjectNotification(models.Model):
         on_delete=models.PROTECT,
         related_name="incident_subject_notifications",
     )
-    reason = models.CharField(max_length=25, choices=SubjectNotificationReason.choices)
     status = models.CharField(
         max_length=10,
         choices=SubjectNotificationStatus.choices,

@@ -88,7 +88,6 @@ def serialize_incident_detail(incident):
 def serialize_subject_notification(row):
     return {
         "user": _user(row.user),
-        "reason": row.reason,
         "status": row.status,
         "attempts": row.attempts,
         "last_attempt_at": _iso(row.last_attempt_at),

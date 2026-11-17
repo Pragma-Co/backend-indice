@@ -5,18 +5,12 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from core.models import (
-    DataIncident,
-    DataIncidentSubjectNotification,
-    DocumentAccess,
-    Revision,
-)
+from core.models import DataIncident, DataIncidentSubjectNotification
 from core.models.choices import (
     IncidentActionKind,
     IncidentStatus,
     IncidentType,
     PersonalDataCategory,
-    SubjectNotificationReason,
     SubjectNotificationStatus,
 )
 from core.services.data_incident_exceptions import (
@@ -92,43 +86,7 @@ def _active(users):
 
 
 def identify_affected_users(incident) -> list:
-    recipients = {}
-
-    def include(users, reason):
-        for user in _active(users):
-            recipients.setdefault(user.pk, (user, reason))
-
-    include(
-        incident.affected_users.order_by("name", "id"),
-        SubjectNotificationReason.AFFECTED_USER,
-    )
-    documents = list(
-        incident.affected_documents.select_related("responsible", "created_by").order_by("id")
-    )
-    include(
-        [document.responsible for document in documents],
-        SubjectNotificationReason.DOCUMENT_RESPONSIBLE,
-    )
-    include(
-        [document.created_by for document in documents],
-        SubjectNotificationReason.DOCUMENT_CREATOR,
-    )
-    revisions = (
-        Revision.objects.filter(document__in=documents)
-        .select_related("author")
-        .order_by("document_id", "version")
-    )
-    include(
-        [revision.author for revision in revisions],
-        SubjectNotificationReason.REVISION_AUTHOR,
-    )
-    accesses = (
-        DocumentAccess.objects.filter(document__in=documents)
-        .select_related("user")
-        .order_by("document_id", "id")
-    )
-    include([access.user for access in accesses], SubjectNotificationReason.DOCUMENT_ACCESS)
-    return list(recipients.values())
+    return _active(incident.affected_users.order_by("name", "id"))
 
 
 def _incident(incident_id):
@@ -148,8 +106,8 @@ def sync_recipients(incident) -> list:
     known = set(incident.subject_notifications.values_list("user_id", flat=True))
     DataIncidentSubjectNotification.objects.bulk_create(
         [
-            DataIncidentSubjectNotification(incident=incident, user=user, reason=reason)
-            for user, reason in identify_affected_users(incident)
+            DataIncidentSubjectNotification(incident=incident, user=user)
+            for user in identify_affected_users(incident)
             if user.pk not in known
         ]
     )
@@ -158,10 +116,8 @@ def sync_recipients(incident) -> list:
 
 def planned_recipients(incident) -> list:
     rows = {row.user_id: row for row in recorded_recipients(incident)}
-    for user, reason in identify_affected_users(incident):
-        rows.setdefault(
-            user.pk, DataIncidentSubjectNotification(incident=incident, user=user, reason=reason)
-        )
+    for user in identify_affected_users(incident):
+        rows.setdefault(user.pk, DataIncidentSubjectNotification(incident=incident, user=user))
     return sorted(rows.values(), key=lambda row: (row.user.name, row.user_id))
 
 
