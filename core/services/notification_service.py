@@ -1,7 +1,7 @@
 from django.core.paginator import Paginator
 from django.utils import timezone
 
-from core.models import AccessStatus, Notification, NotificationType, User
+from core.models import AccessStatus, Notification, NotificationType, RevisionStatus, User
 from core.services.document_code_service import revision_label
 from core.services.notification_exceptions import (
     NotificationNotFoundError,
@@ -18,6 +18,14 @@ ACCESS_DECISION_TYPES = {
 ACCESS_DECISION_WORDS = {
     AccessStatus.APPROVED: "aprovado",
     AccessStatus.REJECTED: "recusado",
+}
+REVISION_DECISION_TYPES = {
+    RevisionStatus.APPROVED: NotificationType.REVISION_APPROVED,
+    RevisionStatus.REJECTED: NotificationType.REVISION_REJECTED,
+}
+REVISION_DECISION_WORDS = {
+    RevisionStatus.APPROVED: "aprovada",
+    RevisionStatus.REJECTED: "recusada",
 }
 
 
@@ -49,6 +57,22 @@ def notify_revision_published(revision, actor=None) -> list[Notification]:
         if is_visible(document, saver)
     ]
     return Notification.objects.bulk_create(notifications)
+
+
+def notify_revision_decided(revision) -> Notification | None:
+    notification_type = REVISION_DECISION_TYPES.get(revision.status)
+    if notification_type is None:
+        return None
+    document = revision.document
+    return Notification.objects.create(
+        recipient_id=revision.author_id,
+        type=notification_type,
+        document=document,
+        title=(
+            f"Sua revisão ({revision_label(revision.version)}) do documento "
+            f"{document.title} foi {REVISION_DECISION_WORDS[revision.status]}."
+        ),
+    )
 
 
 def notify_access_decided(access) -> Notification | None:
