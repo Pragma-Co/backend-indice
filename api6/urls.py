@@ -18,6 +18,7 @@ from core.views.access_request_view import (
 from core.views.api_root_view import api_root
 from core.views.auth_view import csrf_view, login_view, logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
+from core.views.decision_history_view import decision_history_view
 from core.views.document_ai_view import (
     stream_document_suggestions_view,
     suggest_document_metadata_view,
@@ -138,6 +139,7 @@ urlpatterns = [
     ),
     path("manager/activities", manager_activities_view, name="manager-activities"),
     path("access-groups", access_group_options_view, name="access-group-options"),
+    path("manager/decision-history", decision_history_view, name="manager-decision-history"),
     path("manager/users", manager_area_users_view, name="manager-area-users"),
     path("manager/access-groups", access_groups_view, name="manager-access-groups"),
     path(
