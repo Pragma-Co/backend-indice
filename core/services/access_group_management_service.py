@@ -15,6 +15,10 @@ def groups_for_manager(manager):
     return AccessGroup.objects.filter(scope=AccessGroupScope.AREA, area_id=manager.area_id)
 
 
+def area_users_for_manager(manager):
+    return User.objects.filter(is_active=True, area_id=manager.area_id).order_by("name", "id")
+
+
 def get_group(manager, group_id):
     group = groups_for_manager(manager).filter(pk=group_id).first()
     if group is None:

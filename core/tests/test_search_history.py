@@ -8,8 +8,11 @@ from django.utils import timezone
 from core.models import Area, SearchHistory, User
 from core.services.search_history_service import (
     SEARCH_HISTORY_LIMIT,
+    SearchHistoryTermError,
+    clear_search_history,
     list_search_history,
     record_search,
+    remove_search_term,
 )
 
 
@@ -78,11 +81,111 @@ class SearchHistoryTests(TestCase):
         record_search(self.user, "private")
         self.assertEqual(list_search_history(self.user), [])
 
-    def test_endpoint_requires_authentication_and_only_allows_get(self):
+    def test_endpoint_requires_authentication_and_only_allows_get_and_delete(self):
         url = reverse("user-search-history")
-        self.assertEqual(Client().get(url).status_code, 401)
-        self.assertEqual(self.client.post(url).status_code, 405)
+
+        anonymous_get = Client().get(url)
+        anonymous_delete = Client().delete(url)
+        post = self.client.post(url)
+
+        self.assertEqual(anonymous_get.status_code, 401)
+        self.assertEqual(anonymous_delete.status_code, 401)
+        self.assertEqual(post.status_code, 405)
         self.assertEqual(self.client.get(url).json(), {"results": []})
+
+    def test_should_clear_only_the_history_of_the_signed_in_user(self):
+        record_search(self.user, "bridge")
+        record_search(self.user, "concrete")
+        record_search(self.other_user, "private")
+
+        response = self.client.delete(reverse("user-search-history"))
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(list_search_history(self.user), [])
+        self.assertEqual(list_search_history(self.other_user), ["private"])
+
+    def test_should_answer_no_content_when_clearing_an_empty_history(self):
+        response = self.client.delete(reverse("user-search-history"))
+
+        self.assertEqual(response.status_code, 204)
+
+    def test_should_remove_a_single_term_ignoring_case_and_whitespace(self):
+        now = timezone.now()
+        with mock.patch("core.services.search_history_service.timezone.now") as clock:
+            clock.return_value = now
+            record_search(self.user, "Steel Bridge")
+            clock.return_value = now + timedelta(seconds=1)
+            record_search(self.user, "concrete")
+        record_search(self.other_user, "steel bridge")
+
+        response = self.client.delete(
+            f"{reverse('user-search-history')}?term=%20steel%20%20BRIDGE%20"
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(list_search_history(self.user), ["concrete"])
+        self.assertEqual(list_search_history(self.other_user), ["steel bridge"])
+
+    def test_should_answer_no_content_when_the_term_is_not_in_the_history(self):
+        record_search(self.user, "bridge")
+
+        response = self.client.delete(f"{reverse('user-search-history')}?term=missing")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(list_search_history(self.user), ["bridge"])
+
+    def test_should_reject_a_blank_term_without_touching_the_history(self):
+        record_search(self.user, "bridge")
+
+        response = self.client.delete(f"{reverse('user-search-history')}?term=%20%20")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["errors"]["term"]["code"], "required")
+        self.assertEqual(list_search_history(self.user), ["bridge"])
+
+    def test_delete_requires_the_csrf_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.user)
+        record_search(self.user, "bridge")
+
+        response = csrf_client.delete(reverse("user-search-history"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(list_search_history(self.user), ["bridge"])
+
+    def test_history_delete_failure_answers_without_internal_details(self):
+        with mock.patch(
+            "core.views.search_history_view.clear_search_history", side_effect=RuntimeError
+        ):
+            with self.assertLogs("core.views.search_history_view", level="ERROR"):
+                response = self.client.delete(reverse("user-search-history"))
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"error": "RuntimeError"})
+
+    def test_service_removes_a_single_term(self):
+        record_search(self.user, "bridge")
+        record_search(self.user, "concrete")
+
+        remove_search_term(self.user, "BRIDGE")
+
+        self.assertEqual(list_search_history(self.user), ["concrete"])
+
+    def test_service_clears_the_history(self):
+        record_search(self.user, "bridge")
+        record_search(self.user, "concrete")
+
+        clear_search_history(self.user)
+
+        self.assertEqual(list_search_history(self.user), [])
+
+    def test_service_rejects_a_blank_term(self):
+        record_search(self.user, "bridge")
+
+        with self.assertRaises(SearchHistoryTermError):
+            remove_search_term(self.user, "   ")
+
+        self.assertEqual(list_search_history(self.user), ["bridge"])
 
     def test_document_search_records_only_successful_queries(self):
         search_url = reverse("document-search")

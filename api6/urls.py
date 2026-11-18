@@ -8,6 +8,7 @@ from core.views.access_group_view import (
     access_group_user_view,
     access_group_users_view,
     access_groups_view,
+    manager_area_users_view,
 )
 from core.views.access_request_view import (
     access_request_decision_view,
@@ -173,6 +174,7 @@ urlpatterns = [
     path("security/backups", backup_runs_view, name="security-backup-list"),
     path("manager/activities", manager_activities_view, name="manager-activities"),
     path("access-groups", access_group_options_view, name="access-group-options"),
+    path("manager/users", manager_area_users_view, name="manager-area-users"),
     path("manager/access-groups", access_groups_view, name="manager-access-groups"),
     path(
         "manager/access-groups/<int:group_id>/users",

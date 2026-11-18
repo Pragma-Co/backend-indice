@@ -26,6 +26,7 @@ from core.services.notification_service import (
     mark_all_notifications_as_read,
     mark_notification_as_read,
     notify_access_decided,
+    notify_revision_decided,
     notify_revision_published,
 )
 from core.services.revision_review_service import decide_revision
@@ -112,7 +113,9 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
 
         decide_revision(self.pending.pk, self.reviewer, {"decision": "APPROVED"})
 
-        notifications = Notification.objects.order_by("recipient_id")
+        notifications = Notification.objects.filter(
+            type=NotificationType.DOCUMENT_UPDATED
+        ).order_by("recipient_id")
         self.assertEqual(
             [item.recipient for item in notifications], [self.reader, self.other_reader]
         )
@@ -126,7 +129,7 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
         self.assertEqual(notifications[0].document, self.document)
         self.assertIsNone(notifications[0].read_at)
 
-    def test_should_not_notify_anyone_when_the_revision_is_rejected(self):
+    def test_should_not_notify_savers_when_the_revision_is_rejected(self):
         SavedDocument.objects.create(user=self.reader, document=self.document)
 
         decide_revision(
@@ -135,7 +138,9 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
             {"decision": "REJECTED", "justification": "Furação diverge do ensaio aprovado"},
         )
 
-        self.assertFalse(Notification.objects.exists())
+        self.assertFalse(
+            Notification.objects.filter(type=NotificationType.DOCUMENT_UPDATED).exists()
+        )
 
     def test_should_not_notify_users_who_did_not_save_the_document(self):
         other_document = self._document("AK-2100-EST-DWG-0002", "Desenho da caverna 15")
@@ -143,7 +148,9 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
 
         decide_revision(self.pending.pk, self.reviewer, {"decision": "APPROVED"})
 
-        self.assertFalse(Notification.objects.exists())
+        self.assertFalse(
+            Notification.objects.filter(type=NotificationType.DOCUMENT_UPDATED).exists()
+        )
 
     def test_should_not_notify_inactive_users(self):
         inactive = self._user("inactive@example.com", "Inactive", is_active=False)
@@ -151,7 +158,9 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
 
         decide_revision(self.pending.pk, self.reviewer, {"decision": "APPROVED"})
 
-        self.assertFalse(Notification.objects.exists())
+        self.assertFalse(
+            Notification.objects.filter(type=NotificationType.DOCUMENT_UPDATED).exists()
+        )
 
     def test_should_not_notify_savers_who_can_no_longer_see_the_document(self):
         confidential = self._document("AK-2100-EST-DWG-0003", "Desenho sigiloso", "CONFIDENTIAL")
@@ -162,7 +171,9 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
 
         decide_revision(pending.pk, self.reviewer, {"decision": "APPROVED"})
 
-        self.assertFalse(Notification.objects.exists())
+        self.assertFalse(
+            Notification.objects.filter(type=NotificationType.DOCUMENT_UPDATED).exists()
+        )
 
     def test_should_not_notify_the_user_who_published_the_revision(self):
         SavedDocument.objects.create(user=self.reviewer, document=self.document)
@@ -171,6 +182,39 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
         created = notify_revision_published(self.pending, actor=self.reviewer)
 
         self.assertEqual(created, [])
+
+
+class RevisionDecisionTriggerTests(NotificationFixtureMixin, TestCase):
+    def test_should_notify_the_author_when_the_revision_is_approved(self):
+        decide_revision(self.pending.pk, self.reviewer, {"decision": "APPROVED"})
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.recipient, self.author)
+        self.assertEqual(notification.type, NotificationType.REVISION_APPROVED)
+        self.assertEqual(notification.document, self.document)
+        self.assertEqual(
+            notification.title,
+            "Sua revisão (REV02) do documento Desenho da caverna 14 foi aprovada.",
+        )
+
+    def test_should_notify_the_author_when_the_revision_is_rejected(self):
+        decide_revision(
+            self.pending.pk,
+            self.reviewer,
+            {"decision": "REJECTED", "justification": "Furação diverge do ensaio aprovado"},
+        )
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.recipient, self.author)
+        self.assertEqual(notification.type, NotificationType.REVISION_REJECTED)
+        self.assertEqual(
+            notification.title,
+            "Sua revisão (REV02) do documento Desenho da caverna 14 foi recusada.",
+        )
+
+    def test_should_ignore_a_pending_revision(self):
+        self.assertIsNone(notify_revision_decided(self.pending))
+        self.assertFalse(Notification.objects.exists())
 
 
 class AccessDecisionTriggerTests(NotificationFixtureMixin, TestCase):
