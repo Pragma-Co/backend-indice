@@ -4,7 +4,7 @@ from django.db.models import Prefetch
 from django.utils import timezone
 
 from core.models import Document, File, Revision, RevisionStatus, Role
-from core.services.notification_service import notify_revision_published
+from core.services.notification_service import notify_revision_decided, notify_revision_published
 from core.services.revision_review_exceptions import (
     OutdatedRevisionError,
     OwnRevisionReviewError,
@@ -172,6 +172,7 @@ def decide_revision(revision_id, reviewer, payload) -> tuple[Revision, Revision 
         revision.audited_at = timezone.now()
         revision.save(update_fields=["status", "auditor", "auditor_comment", "audited_at"])
         revision.document = document
+        notify_revision_decided(revision)
         if revision.status == RevisionStatus.APPROVED:
             notify_revision_published(revision, actor=reviewer)
 

@@ -44,6 +44,8 @@ class NotificationType(models.TextChoices):
     DOCUMENT_UPDATED = "DOCUMENT_UPDATED", "Document updated"
     ACCESS_APPROVED = "ACCESS_APPROVED", "Access approved"
     ACCESS_REJECTED = "ACCESS_REJECTED", "Access rejected"
+    REVISION_APPROVED = "REVISION_APPROVED", "Revision approved"
+    REVISION_REJECTED = "REVISION_REJECTED", "Revision rejected"
 
 
 class VisibilityScope(models.TextChoices):
