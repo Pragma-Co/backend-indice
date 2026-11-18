@@ -1,6 +1,6 @@
 from django.test import TestCase, override_settings
 
-from core.models import Area, ExcludedIdentifier, User
+from core.models import Area, ErasureKind, ExcludedIdentifier, User
 from core.services.excluded_identifier_service import (
     ExcludedIdentifierError,
     is_identifier_excluded,
@@ -14,7 +14,7 @@ class ExcludedIdentifierServiceTests(TestCase):
         self.area = Area.objects.create(acronym="SEC", name="Segurança")
 
     def test_store_persists_only_a_hash_and_timestamp(self):
-        excluded = store_excluded_identifier("Sensitive.User@example.com")
+        excluded = store_excluded_identifier("Sensitive.User@example.com", ErasureKind.ANONYMIZED)
 
         self.assertEqual(len(excluded.identifier_hash), 64)
         self.assertNotIn("Sensitive.User@example.com", excluded.identifier_hash)
@@ -23,7 +23,7 @@ class ExcludedIdentifierServiceTests(TestCase):
         self.assertEqual(ExcludedIdentifier.objects.count(), 1)
 
     def test_excluded_identifier_cannot_be_used_to_create_an_account(self):
-        store_excluded_identifier("blocked@example.com")
+        store_excluded_identifier("blocked@example.com", ErasureKind.DELETED)
 
         with self.assertRaises(ExcludedIdentifierError):
             User.objects.create_user(

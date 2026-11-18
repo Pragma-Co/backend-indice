@@ -5,6 +5,7 @@ from core.models import (
     Area,
     Document,
     DocumentAccess,
+    ErasureKind,
     LegalDocumentVersion,
     Revision,
     RevisionStatus,
@@ -98,7 +99,7 @@ def delete_user_account(user):
     """Hard delete, requested by the user. Audit rows keep their actor name in `record`."""
     with transaction.atomic():
         replacement = _require_replacement(user)
-        store_excluded_identifier(user.email)
+        store_excluded_identifier(user.email, ErasureKind.DELETED)
 
         reassigned = _reassign_responsibilities(user, replacement)
         reassigned.update(_reassign_history(user, replacement))
@@ -116,7 +117,7 @@ def anonymize_user(user):
     with transaction.atomic():
         User.objects.select_for_update().get(pk=user.pk)
         replacement = _require_replacement(user)
-        store_excluded_identifier(user.email)
+        store_excluded_identifier(user.email, ErasureKind.ANONYMIZED)
 
         reassigned = _reassign_responsibilities(user, replacement)
         removed_requests, _ = DocumentAccess.objects.filter(

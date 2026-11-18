@@ -1,7 +1,7 @@
 from django.test import TestCase, override_settings
 
 from core.admin import CoreUserChangeForm, CoreUserCreationForm
-from core.models import Area, Role, User
+from core.models import Area, ErasureKind, Role, User
 from core.services.excluded_identifier_service import store_excluded_identifier
 
 
@@ -15,7 +15,7 @@ class UserAdminFormTests(TestCase):
             name="Existing User",
             area=self.area,
         )
-        store_excluded_identifier("blocked@example.com")
+        store_excluded_identifier("blocked@example.com", ErasureKind.ANONYMIZED)
 
     def test_creation_form_rejects_excluded_email(self):
         form = CoreUserCreationForm(
