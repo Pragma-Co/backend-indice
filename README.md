@@ -684,14 +684,13 @@ Internal alerts shown in the navbar bell. They are created by the backend, in th
 
 | `type` | Trigger | Recipients | `title` (pt-BR) |
 |--------|---------|------------|-----------------|
-| `DOCUMENT_UPDATED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | every active user who saved the document in the personal library and can still see it (see *Document visibility*), except the reviewer | `Nova revisão (REV02) publicada para o documento <title>.` |
-| `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester | `Seu pedido de acesso ao documento <title> foi aprovado.` |
-| `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester | `Seu pedido de acesso ao documento <title> foi recusado.` |
+| `DOCUMENT_UPDATED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | every active collaborator who saved the document in the personal library and can still see it (see *Document visibility*), except the reviewer | `Nova revisão (REV02) publicada para o documento <title>.` |
+| `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester, when a collaborator | `Seu pedido de acesso ao documento <title> foi aprovado.` |
+| `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester, when a collaborator | `Seu pedido de acesso ao documento <title> foi recusado.` |
+| `REVISION_APPROVED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | the revision author, when a collaborator | `Sua revisão (REV02) do documento <title> foi aprovada.` |
+| `REVISION_REJECTED` | `POST /manager/revisions/<id>/decision` with `REJECTED` | the revision author, when a collaborator | `Sua revisão (REV02) do documento <title> foi recusada.` |
 
-| `REVISION_APPROVED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | the revision author | `Sua revisão (REV02) do documento <title> foi aprovada.` |
-| `REVISION_REJECTED` | `POST /manager/revisions/<id>/decision` with `REJECTED` | the revision author | `Sua revisão (REV02) do documento <title> foi recusada.` |
-
-A rejected revision notifies only its author; `DOCUMENT_UPDATED` is sent only on approval. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
+Only collaborators (`AUTHOR` and `VIEWER`) are notified: managers (`AUDITOR` and `ADMIN`, `MANAGER_ROLES` in `core/models/choices.py`) decide the requests themselves and the frontend hides the bell for them, so no notification is created when the saver, author or requester is a manager. A rejected revision notifies only its author; `DOCUMENT_UPDATED` is sent only on approval. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
 
 Notification object:
 

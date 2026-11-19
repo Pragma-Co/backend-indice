@@ -14,6 +14,7 @@ from core.models.catalog import (
     Tag,
 )
 from core.models.choices import (
+    MANAGER_ROLES,
     AccessGroupScope,
     AccessStatus,
     AccessType,
@@ -61,6 +62,7 @@ from core.models.search import DocumentContent
 from core.models.search_history import SearchHistory
 
 __all__ = [
+    "MANAGER_ROLES",
     "MAX_FILE_SIZE_BYTES",
     "AccessGroup",
     "AccessGroupMember",
