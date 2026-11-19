@@ -843,6 +843,71 @@ For group creation, send `{"name": "Engineering secret", "description": "Enginee
 
 The API returns `400` for invalid JSON or payloads, `401` without an active session, `403` for insufficient privileges or an inactive area, `404` for inaccessible groups or missing users/members, and `409` for duplicate names, duplicate area/level combinations, existing memberships or additions to an inactive group.
 
+## Data incident register (LGPD)
+
+Card SCRUM-101 adds the register of personal data incidents (leaks, improper access, losses) and the tools to follow their treatment. Everything is restricted to administrators (`role = ADMIN`, the security officers of the application): other roles get `403 {"error": "PermissionDenied"}`, anonymous requests `401`. Every read and every write is recorded in `audit_log` (`entity = "data_incident"`), and writes are only committed when the audit entry is written (`503 {"error": "AuditUnavailable"}` otherwise). There is no frontend screen for the register (governance records belong to the administrator, as the product owner confirmed); the Django admin shows incidents, actions and history read-only. The action plan written for the product owner and the step-by-step demo script, both in Portuguese because they are handed to the client, live in [`docs/incident-response/`](docs/incident-response/plan.md).
+
+### Model
+
+| Table | Content |
+|-------|---------|
+| `data_incident` | `reference` (`INC-<year>-<sequence>`), title, description, `incident_type`, `severity`, `status`, `occurred_at`, `detected_at`, `reported_at`, `affected_data_categories`, `affected_subjects_count`, `reported_by`, `assigned_to` (an administrator), `root_cause`, the authority notification (`required`, `due_at`, `notified_at`), `subjects_notified_at`, `resolved_at`, `closed_at`. |
+| `data_incident_affected_user`, `data_incident_affected_document` | Users and documents involved in the incident. |
+| `data_incident_action` | Containment, eradication, recovery and communication actions: kind, description, when, who performed it and who recorded it. |
+| `data_incident_status_change` | Append-only history of status changes (a database trigger rejects `UPDATE` and `DELETE`, like `audit_log`), with the author and an optional note. |
+
+Classification (confirmed by the product owner): `incident_type` is `UNAUTHORIZED_ACCESS`, `IMPROPER_DISCLOSURE`, `DATA_LOSS`, `CREDENTIAL_EXPOSURE`, `MISDIRECTED_DELIVERY`, `MALICIOUS_SOFTWARE` or `OTHER`; `severity` is `LOW`, `MEDIUM`, `HIGH` or `CRITICAL`; `affected_data_categories` lists `IDENTIFICATION`, `CREDENTIALS`, `PROFESSIONAL`, `ACCESS_HISTORY`, `DOCUMENT_CONTENT` or `OTHER`; action kinds are `CONTAINMENT`, `ERADICATION`, `RECOVERY`, `COMMUNICATION` or `OTHER`.
+
+Lifecycle: `REPORTED` → `CONTAINMENT` → `ANALYSIS` → `RESOLVED` → `CLOSED`. `REPORTED` may go straight to `ANALYSIS`, `ANALYSIS` may go back to `CONTAINMENT` and `RESOLVED` back to `ANALYSIS` (which clears `resolved_at`); any other jump answers `409 {"error": "InvalidStatusTransition", "status"}`. Closing requires at least one recorded action, the communication to the data subjects (`subjects_notified_at`) and, when it is required, the communication to the authority; otherwise `409 {"error": "IncidentClosureBlocked", "reasons": ["no_actions_recorded" | "authority_not_notified" | "data_subjects_not_notified"]}`. A closed incident is frozen: actions, notifications and updates answer `409 {"error": "IncidentClosed"}`.
+
+LGPD deadlines: `MEDIUM`, `HIGH` and `CRITICAL` incidents require the communication to the national authority by default (`authority_notification_required`, editable); `authority_notification_due_at` is `detected_at` plus three business days (ANPD Resolution 15/2024), and `authority_notification.overdue` is `true` while the deadline has passed without `notified_at`. The communication to the data subjects is recorded in `subjects_notified_at`.
+
+### Endpoints
+
+- `GET /security/incidents`: paginated list (`page`, `page_size`), filters `status`, `severity`, `type` and `overdue=true`. Each item is the incident summary.
+- `POST /security/incidents`: registers an incident. Body: `title`, `description`, `incident_type`, `severity`, `occurred_at` (ISO 8601), `detected_at` (optional, default now), `affected_data_categories` (non-empty list), `affected_subjects_count` (optional), `affected_user_ids` and `affected_document_ids` (optional lists), `assigned_to_id` (optional administrator), `root_cause` (optional), `authority_notification_required` (optional boolean). Answers `201` with the detail; `400 {"errors": {"<field>": {"code", "message"}}}` with codes `required`, `invalid`, `invalid_choice`, `too_long`, `in_the_future`, `before_occurrence`, `not_found` and `not_security_officer`; `400 {"error": "InvalidJSON"}`.
+- `GET /security/incidents/<id>`: the detail: summary plus `description`, `root_cause`, `affected_users`, `affected_documents`, `actions` and `status_changes`. `404 {"error": "IncidentNotFound"}`.
+- `PATCH /security/incidents/<id>`: updates `severity`, `root_cause`, `assigned_to_id` (`null` unassigns), `affected_subjects_count`, `affected_data_categories` or `authority_notification_required` (recomputes the deadline). Other fields answer `400` with code `unknown_fields`.
+- `POST /security/incidents/<id>/actions`: records an action: `kind`, `description`, `performed_at` (optional, default now), `performed_by_id` (optional active user, default the caller). Answers `201` with the action.
+- `POST /security/incidents/<id>/status`: `{"status": "<next status>", "note": "<optional>"}`. Answers `200` with the detail.
+- `POST /security/incidents/<id>/notifications`: `{"recipient": "AUTHORITY" | "DATA_SUBJECTS", "notified_at": "<optional ISO 8601>"}`. Answers `200` with the detail.
+- `GET /security/backups`: the history of snapshot runs (see below), paginated, filter `target=postgres|mongodb`.
+
+Audit events: `INCIDENT_REGISTERED` (`CREATE`), `INCIDENT_UPDATED`, `INCIDENT_ACTION_RECORDED`, `INCIDENT_STATUS_CHANGED`, `INCIDENT_NOTIFICATION_RECORDED` (`UPDATE`), `INCIDENT_LIST_VIEWED`, `INCIDENT_VIEWED` and `BACKUP_HISTORY_VIEWED` (`READ`).
+
+## Backups and snapshots
+
+`manage.py backup_snapshot` exports an encrypted, compressed snapshot of each database and records the run in `backup_run` (target, status, start and end, file name, size, SHA-256, number of records, error name when it fails, and `pruned_at` once the retention removed the file). The register is the structured log the card asks for and is served by `GET /security/backups`.
+
+```bash
+docker compose exec api python manage.py backup_snapshot                  # both databases
+docker compose exec api python manage.py backup_snapshot --target postgres --keep 42
+docker compose exec api python manage.py backup_snapshot --target mongodb --keep 30
+docker compose exec api python manage.py backup_decrypt backups/postgres/<file>.json.gz.enc
+```
+
+- **What is exported.** PostgreSQL: every table of the application as Django fixtures (`dumpdata`, excluding content types, permissions, admin log and sessions), restorable with `manage.py loaddata`. MongoDB: every collection of the database as Extended JSON (`bson.json_util`), restorable with `mongoimport` or a short pymongo script. No database binaries (`pg_dump`, `mongodump`) are needed inside the `api` image.
+- **Encryption.** Each file is gzip-compressed and then encrypted with AES-256-GCM (library `cryptography`), with a random nonce per file and the file header authenticated; the key is `BACKUP_ENCRYPTION_KEY` (64 hex characters, generated by `scripts/setup_env.py` and listed in `CREDENTIALS.txt`). Without a valid key the run is recorded as `FAILED` with `BackupConfigurationError` and nothing is written. A snapshot without the key cannot be read, so its custody follows the rule below.
+- **Key custody.** The production key lives in the team password manager, owned by the infrastructure teammate who administers the server; whoever deploys copies it into the `.env` of the host and nowhere else (not in the repository, not in chats, not in tickets). `scripts/setup_env.py` generates a different key for each development machine, which protects nothing beyond that machine. To rotate the key: generate a new 64 hex value (`python -c "import secrets; print(secrets.token_hex(32))"`), store it in the password manager, update `.env` on the server and restart the `api` service; the next snapshots use the new key. Keep the previous key in the password manager until the last file encrypted with it is pruned (seven days for PostgreSQL, thirty for MongoDB) and read those older files by passing it explicitly: `docker compose exec -T -e BACKUP_ENCRYPTION_KEY=<previous key> api python manage.py backup_decrypt backups/postgres/<file>.json.gz.enc`.
+- **Where.** `BACKUP_DIR` (default `backups/`, ignored by git), one folder per target: `backups/postgres/postgres-20261109T030000Z.json.gz.enc`. The files stay on the host that runs the containers; the copy to a destination outside the machine (the shared database VM offered by the infrastructure teammate, or an object storage) was left to a separate card, so this routine only writes to `BACKUP_DIR` and the destination can change through that variable alone.
+- **Retention.** The product owner defined seven days of PostgreSQL snapshots and thirty days of MongoDB snapshots, so the defaults are `BACKUP_KEEP_POSTGRES=42` (every 4 hours for seven days) and `BACKUP_KEEP_MONGODB=30` (one per day for thirty days); `--keep` overrides them for a single run. Older files are deleted and their `backup_run` rows receive `pruned_at`.
+- **Schedule.** The card asks for PostgreSQL every 4 hours and MongoDB every 24 hours; the team decided to run them from a crontab on the server that hosts the containers:
+
+```cron
+0 */4 * * *  cd /path/to/backend && docker compose exec -T api python manage.py backup_snapshot --target postgres
+0 3 * * *    cd /path/to/backend && docker compose exec -T api python manage.py backup_snapshot --target mongodb
+```
+
+### Restoring a snapshot
+
+Restores are manual and rare, so they are a procedure rather than a command. The order matters because of the LGPD erasures:
+
+1. Decrypt the snapshot: `docker compose exec api python manage.py backup_decrypt backups/postgres/<file>.json.gz.enc` (an older file needs the previous key, see "Key custody").
+2. PostgreSQL: on an empty database (`migrate` first), `docker compose exec api python manage.py loaddata backups/postgres/<file>.json`. MongoDB: one `mongoimport` per collection of the decrypted file, or a short pymongo script. `loaddata` merges by primary key, so a restore over a live database keeps the rows created after the snapshot.
+3. Re-apply the erasures: `docker compose exec api python manage.py reapply_user_erasures --from-snapshot backups/postgres/<most recent file>.json.gz.enc`.
+
+A user who asked for the deletion of the account, or was anonymized when dismissed, exists in every snapshot taken before that moment with name, e-mail, password, acceptances and search history. The exclusion register (`excluded_identifier`: HMAC-SHA256 of the e-mail, the `kind` of erasure, `ANONYMIZED` or `DELETED`, and the date) is the memory of who must not come back, besides blocking new accounts with those addresses. `reapply_user_erasures` compares every user of the restored database with the register and repeats the anonymization or the hard delete through the same services used at the time (work handed over to a replacement manager, audit entry `USER_ERASURE_REAPPLIED`); it continues when a user has no replacement manager and exits with an error listing them. `--from-snapshot` first merges the register of the most recent PostgreSQL snapshot, which is newer than the one being restored, and `DELETED` always wins over `ANONYMIZED` for the same address. The register entries are hashes keyed by `EXCLUDED_IDENTIFIER_HMAC_KEY`, so that key follows the same custody as the backup key: without it the register cannot be matched. The snapshot files keep the erased data until the retention prunes them (seven and thirty days); the rule is that a snapshot never goes back into use without this step.
+
 ## LGPD & security notes
 
 This project handles personal data topics this semester, so the environment was configured with LGPD in mind:
@@ -853,6 +918,7 @@ This project handles personal data topics this semester, so the environment was 
 - **MongoDB** runs with mandatory authentication (no anonymous access).
 - **Nothing is exposed to the network** — the API (8000) and both databases (5433/27018) are bound to `127.0.0.1` only; other machines on your LAN cannot reach them.
 - **Health/error responses never include connection details** — database failures are logged server-side; HTTP responses carry no usernames, hosts or stack traces.
+- **Incident response and backups** — personal data incidents are registered and followed in `/security/incidents` (administrators only, every access audited), `manage.py backup_snapshot` keeps encrypted snapshots of both databases with a structured run history, and `manage.py reapply_user_erasures` repeats the anonymizations and deletions after a restore so that erased users never come back (see the two sections above).
 - **Team rules:** never commit `.env`, never log or seed real personal data, rotate credentials if they leak, and collect only the data the application actually needs (data minimization).
 
 ## Troubleshooting
