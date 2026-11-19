@@ -59,9 +59,7 @@ DATE_RANGES = {
 
 def build_simple_filters():
     return {
-        "areas": list(
-            Area.objects.filter(active=True).order_by("name").values("acronym", "name")
-        ),
+        "areas": list(Area.objects.filter(active=True).order_by("name").values("acronym", "name")),
         "types": list(
             DocumentType.objects.filter(active=True).order_by("name").values("code", "name")
         ),

@@ -86,9 +86,7 @@ class RevisionReviewFixtureMixin:
 
 class DecideRevisionServiceTests(RevisionReviewFixtureMixin, TestCase):
     def test_should_make_the_approved_revision_the_latest_approved_one(self):
-        revision = decide_revision(
-            self.pending.pk, self.manager, {"decision": "APPROVED"}
-        )
+        revision = decide_revision(self.pending.pk, self.manager, {"decision": "APPROVED"})
 
         self.current.refresh_from_db()
         self.document.refresh_from_db()
