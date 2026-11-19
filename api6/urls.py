@@ -27,6 +27,7 @@ from core.views.data_incident_view import (
     incident_subject_notifications_view,
     incidents_collection,
 )
+from core.views.decision_history_view import decision_history_view
 from core.views.document_ai_view import (
     stream_document_suggestions_view,
     suggest_document_metadata_view,
@@ -174,6 +175,7 @@ urlpatterns = [
     path("security/backups", backup_runs_view, name="security-backup-list"),
     path("manager/activities", manager_activities_view, name="manager-activities"),
     path("access-groups", access_group_options_view, name="access-group-options"),
+    path("manager/decision-history", decision_history_view, name="manager-decision-history"),
     path("manager/users", manager_area_users_view, name="manager-area-users"),
     path("manager/access-groups", access_groups_view, name="manager-access-groups"),
     path(

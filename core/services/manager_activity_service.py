@@ -178,14 +178,14 @@ def _load_references(entries) -> dict:
     revisions = {
         revision.pk: revision
         for revision in Revision.objects.filter(pk__in=ids[ENTITY_REVISION]).select_related(
-            "document"
+            "document", "author"
         )
     }
     accesses = {
         access.pk: access
         for access in DocumentAccess.objects.filter(
             pk__in=ids[ENTITY_DOCUMENT_ACCESS]
-        ).select_related("document")
+        ).select_related("document", "user")
     }
     document_ids = (
         ids[ENTITY_DOCUMENT]
