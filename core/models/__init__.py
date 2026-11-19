@@ -32,6 +32,7 @@ from core.models.choices import (
     PersonalDataCategory,
     RevisionStatus,
     Role,
+    SubjectNotificationStatus,
     VisibilityScope,
 )
 from core.models.document import Document, DocumentArea, DocumentTag
@@ -42,6 +43,7 @@ from core.models.incident import (
     DataIncidentAffectedDocument,
     DataIncidentAffectedUser,
     DataIncidentStatusChange,
+    DataIncidentSubjectNotification,
 )
 from core.models.legal import (
     LegalClause,
@@ -77,6 +79,7 @@ __all__ = [
     "DataIncidentAffectedDocument",
     "DataIncidentAffectedUser",
     "DataIncidentStatusChange",
+    "DataIncidentSubjectNotification",
     "Discipline",
     "Document",
     "DocumentAccess",
@@ -108,6 +111,7 @@ __all__ = [
     "SavedDocument",
     "SearchHistory",
     "SecrecyLevel",
+    "SubjectNotificationStatus",
     "Tag",
     "User",
     "UserClauseConsent",
