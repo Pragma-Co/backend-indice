@@ -8,6 +8,7 @@ from core.views.access_group_view import (
     access_group_user_view,
     access_group_users_view,
     access_groups_view,
+    manager_area_users_view,
 )
 from core.views.access_request_view import (
     access_request_decision_view,
@@ -17,6 +18,16 @@ from core.views.access_request_view import (
 from core.views.api_root_view import api_root
 from core.views.auth_view import csrf_view, login_view, logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
+from core.views.data_incident_view import (
+    backup_runs_view,
+    incident_actions_view,
+    incident_notifications_view,
+    incident_resource,
+    incident_status_view,
+    incident_subject_notifications_view,
+    incidents_collection,
+)
+from core.views.decision_history_view import decision_history_view
 from core.views.document_ai_view import (
     stream_document_suggestions_view,
     suggest_document_metadata_view,
@@ -41,6 +52,7 @@ from core.views.legal_consent_view import (
     legal_acceptances_view,
     legal_documents_view,
     legal_version_view,
+    pending_legal_terms_view,
     revoke_legal_acceptance_view,
 )
 from core.views.manager_activity_view import manager_activities_view
@@ -76,6 +88,7 @@ urlpatterns = [
         request_user_deletion,
         name="user-deletion-request",
     ),
+    path("users/me/legal-pending", pending_legal_terms_view, name="user-legal-pending"),
     path("users/me/legal-acceptances", legal_acceptances_view, name="user-legal-acceptances"),
     path(
         "users/me/legal-acceptances/<int:acceptance_id>/revoke",
@@ -133,8 +146,37 @@ urlpatterns = [
         stream_document_suggestions_view,
         name="document-ai-suggestions-stream",
     ),
+    path("security/incidents", incidents_collection, name="security-incident-list"),
+    path(
+        "security/incidents/<int:incident_id>",
+        incident_resource,
+        name="security-incident-detail",
+    ),
+    path(
+        "security/incidents/<int:incident_id>/actions",
+        incident_actions_view,
+        name="security-incident-actions",
+    ),
+    path(
+        "security/incidents/<int:incident_id>/status",
+        incident_status_view,
+        name="security-incident-status",
+    ),
+    path(
+        "security/incidents/<int:incident_id>/notifications",
+        incident_notifications_view,
+        name="security-incident-notifications",
+    ),
+    path(
+        "security/incidents/<int:incident_id>/subject-notifications",
+        incident_subject_notifications_view,
+        name="security-incident-subject-notifications",
+    ),
+    path("security/backups", backup_runs_view, name="security-backup-list"),
     path("manager/activities", manager_activities_view, name="manager-activities"),
     path("access-groups", access_group_options_view, name="access-group-options"),
+    path("manager/decision-history", decision_history_view, name="manager-decision-history"),
+    path("manager/users", manager_area_users_view, name="manager-area-users"),
     path("manager/access-groups", access_groups_view, name="manager-access-groups"),
     path(
         "manager/access-groups/<int:group_id>/users",

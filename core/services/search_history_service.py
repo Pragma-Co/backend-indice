@@ -8,9 +8,17 @@ from core.models import SearchHistory, User
 SEARCH_HISTORY_LIMIT = 10
 
 
+class SearchHistoryTermError(Exception):
+    pass
+
+
+def normalize_search_term(term):
+    return " ".join(term.split()).casefold()
+
+
 def record_search(user, term):
     term = term.strip()
-    normalized_term = " ".join(term.split()).casefold()
+    normalized_term = normalize_search_term(term)
     if not normalized_term:
         return
 
@@ -45,3 +53,14 @@ def list_search_history(user):
         .order_by("-searched_at", "-id")
         .values_list("term", flat=True)[:SEARCH_HISTORY_LIMIT]
     )
+
+
+def clear_search_history(user):
+    SearchHistory.objects.filter(user=user).delete()
+
+
+def remove_search_term(user, term):
+    normalized_term = normalize_search_term(term)
+    if not normalized_term:
+        raise SearchHistoryTermError
+    SearchHistory.objects.filter(user=user, normalized_term=normalized_term).delete()
