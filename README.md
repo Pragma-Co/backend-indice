@@ -189,7 +189,7 @@ Main listing of the document library: serves both the direct navigation ("Ver to
 | `tipo` | document type code(s), e.g. `DWG` |
 | `area` | area acronym(s), e.g. `EST` |
 | `discipline` | discipline code(s), e.g. `MAT` |
-| `status` | status of the most recent revision: `PENDING`, `APPROVED`, `REJECTED`, `OBSOLETE` |
+| `status` | status of the most recent revision: `PENDING`, `APPROVED`, `REJECTED` |
 | `tags` | tag name(s), case-insensitive, exact match |
 | `responsible_id` | id of the responsible user |
 | `data` | creation date preset: `last_7_days`, `last_month` or `last_year` |
@@ -493,10 +493,10 @@ Revisions of archived documents are left out of the queue and cannot be decided.
 
 Records the manager's decision on a pending revision. Same permission rules as the queue. Body `{"decision": "APPROVED" | "REJECTED", "justification": "<text>"}`; the justification is required to reject, optional to approve, and when present must have 20 to 1000 characters. It is stored as the revision's `auditor_comment`, together with the manager as `auditor` and `audited_at`.
 
-- **Approval** makes the revision the official one: the previously approved revision of the document becomes `OBSOLETE` and the document's `updated_by` is set to the manager, all in one transaction.
+- **Approval** makes the revision the official one: the document's `updated_by` is set to the manager, all in one transaction.
 - **Rejection** marks the revision `REJECTED` and leaves the current approved revision untouched.
 
-Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
+Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at"}`. Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
 
 An approval also notifies the users who saved the document (`DOCUMENT_UPDATED`, see *Notifications*).
 

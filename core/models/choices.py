@@ -26,7 +26,6 @@ class RevisionStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
-    OBSOLETE = "OBSOLETE", "Obsolete"
 
 
 class AccessStatus(models.TextChoices):

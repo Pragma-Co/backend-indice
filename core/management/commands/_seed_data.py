@@ -40,6 +40,9 @@ USERS = [
     ("patricia.lemos", "Patrícia Lemos", "AUDITOR", "QUA", True),
     ("beatriz.canuto", "Beatriz Canuto", "AUDITOR", "CER", True),
     ("samuel.rocha", "Samuel Rocha", "VIEWER", "MFG", True),
+    ("renato.fontes", "Renato Fontes", "AUTHOR", "COM", True),
+    ("luciana.maeda", "Luciana Maeda", "AUTHOR", "HID", True),
+    ("andre.cardoso", "André Cardoso", "AUTHOR", "INT", True),
     # Deactivated instead of deleted, so authorship and audit stay intact
     ("origenes.mota", "Origenes Mota", "VIEWER", "SIS", False),
 ]
@@ -63,6 +66,7 @@ DISCIPLINES = [
     ("NAV", "Sistemas Navais", True),
     ("RFE", "Radiofrequência", True),
     ("EMB", "Embalagens", True),
+    ("COM", "Sistemas de Combustível", True),
     # Kept only for the closed program below
     ("PNE", "Sistemas Pneumáticos", False),
 ]
@@ -123,44 +127,93 @@ TAGS = [
     "junção estrutural",
     "cargas limite",
     "P&ID",
+    "vazão de combustível",
+    "hidráulica de alta pressão",
+    "compatibilidade eletromagnética",
+    "alinhamento óptico",
+    "munição inerte",
+    "embalagem",
+    "vedação",
+    "vibração",
 ]
 
 # --- documents ---------------------------------------------------------------
 # (code, title, description, project, discipline, type, confidentiality,
 #  responsible, created_by, areas, tags, created_days_ago)
+# The code is <project>-<discipline>-<type>-<sequence>: the sequence counts the
+# documents sharing the same prefix in insertion order (0001, 0002, ...), so the
+# older document of a prefix always comes first here.
+# Visibility rules the data honours:
+#   PUBLIC       - every user sees it.
+#   CONFIDENTIAL - only the users of the document's areas (plus explicit grants);
+#                  the areas always include those of the responsible, of every
+#                  revision author and of every auditor.
+#   SECRET       - only selected users: the responsible, the grants in
+#                  DOCUMENT_ACCESS and the members of a matching access group.
+# created_by is always the author of revision 1, as the creation flow does.
 DOCUMENTS = [
+    # --- AK-2100 -------------------------------------------------------------
     (
         "AK-2100-EST-DWG-0001",
         "Desenho de conjunto da caverna 14",
-        "Conjunto soldado da caverna 14 da fuselagem central, com detalhamento "
-        "de furação e sequência de rebitagem.",
+        "Conjunto soldado da caverna 14 da fuselagem central, com detalhamento de furação e "
+        "sequência de rebitagem.",
         "AK-2100",
         "EST",
         "DWG",
         "CONFIDENTIAL",
         "caio.bertoni",
-        "beatriz.canuto",
-        ["EST"],
+        "caio.bertoni",
+        ["EST", "QUA"],
         ["alumínio 7075", "rebitagem"],
         430,
     ),
     (
-        "AK-2100-EST-MEM-0002",
+        "AK-2100-EST-DWG-0002",
+        "Desenho de conjunto da caverna 15",
+        "Conjunto da caverna 15, vizinha à caverna 14, com a junção ao revestimento inferior.",
+        "AK-2100",
+        "EST",
+        "DWG",
+        "CONFIDENTIAL",
+        "leticia.amaral",
+        "leticia.amaral",
+        ["EST", "QUA"],
+        ["alumínio 7075", "junção estrutural"],
+        280,
+    ),
+    (
+        "AK-2100-EST-MEM-0001",
         "Memorial de cálculo do revestimento inferior",
-        "Verificação de tensões e vida em fadiga do revestimento inferior sob "
-        "cargas de manobra e pressurização.",
+        "Verificação de tensões e vida em fadiga do revestimento inferior sob cargas de manobra e "
+        "pressurização.",
         "AK-2100",
         "EST",
         "MEM",
         "CONFIDENTIAL",
         "leticia.amaral",
-        "beatriz.canuto",
+        "leticia.amaral",
         ["EST", "CER"],
         ["fadiga", "junção estrutural"],
         395,
     ),
     (
-        "AK-2100-MAT-ESP-0003",
+        "AK-2100-EST-MEM-0002",
+        "Memorial de cálculo das cavernas 14 e 15",
+        "Dimensionamento das cavernas 14 e 15 para as cargas limite e verificação de fadiga nas "
+        "junções.",
+        "AK-2100",
+        "EST",
+        "MEM",
+        "CONFIDENTIAL",
+        "caio.bertoni",
+        "caio.bertoni",
+        ["EST", "CER"],
+        ["fadiga", "junção estrutural", "cargas limite"],
+        150,
+    ),
+    (
+        "AK-2100-MAT-ESP-0001",
         "Especificação de tratamento superficial de peças usinadas",
         "Requisitos de anodização crômica e selagem para peças usinadas em liga de alumínio.",
         "AK-2100",
@@ -168,31 +221,60 @@ DOCUMENTS = [
         "ESP",
         "PUBLIC",
         "joana.prado",
-        "caio.bertoni",
+        "joana.prado",
         ["MFG", "QUA"],
         ["anodização", "tratamento térmico"],
         380,
     ),
     (
-        "AK-2100-ENS-REV-0004",
+        "AK-2100-MAT-ESP-0002",
+        "Especificação de pintura e selagem da superfície externa",
+        "Sistema de pintura, espessuras e critérios de aceitação para a superfície externa da "
+        "fuselagem.",
+        "AK-2100",
+        "MAT",
+        "ESP",
+        "PUBLIC",
+        "joana.prado",
+        "bruno.kimura",
+        ["MFG", "QUA"],
+        ["anodização"],
+        120,
+    ),
+    (
+        "AK-2100-MAT-PRO-0001",
+        "Procedimento de anodização crômica",
+        "Passo a passo do banho de anodização crômica, controle de concentração e inspeção final.",
+        "AK-2100",
+        "MAT",
+        "PRO",
+        "PUBLIC",
+        "joana.prado",
+        "joana.prado",
+        ["MFG", "QUA"],
+        ["anodização", "tratamento térmico"],
+        90,
+    ),
+    (
+        "AK-2100-ENS-REV-0001",
         "Relatório de verificação do ensaio de fadiga do painel central",
-        "Resultados do ensaio de fadiga em escala de painel, com correlação "
-        "contra o modelo de elementos finitos.",
+        "Resultados do ensaio de fadiga em escala de painel, com correlação contra o modelo de "
+        "elementos finitos.",
         "AK-2100",
         "ENS",
         "REV",
         "SECRET",
         "thiago.serpa",
-        "beatriz.canuto",
+        "thiago.serpa",
         ["QUA", "CER", "EST"],
         ["fadiga", "ensaio de tração"],
         240,
     ),
     (
-        "AK-2100-PES-MEM-0005",
+        "AK-2100-PES-MEM-0001",
         "Balanço de massa do conjunto de fuselagem central",
-        "Distribuição de massa e centro de gravidade do conjunto entregue, "
-        "por estação de fuselagem.",
+        "Distribuição de massa e centro de gravidade do conjunto entregue, por estação de "
+        "fuselagem.",
         "AK-2100",
         "PES",
         "MEM",
@@ -203,101 +285,118 @@ DOCUMENTS = [
         ["cargas limite"],
         60,
     ),
+    # --- AK-2200 -------------------------------------------------------------
     (
         "AK-2200-EST-DWG-0001",
         "Desenho de montagem da longarina da deriva",
-        "Montagem da longarina principal da empenagem vertical, incluindo "
-        "ferragens de fixação em titânio.",
+        "Montagem da longarina principal da empenagem vertical, incluindo ferragens de fixação em "
+        "titânio.",
         "AK-2200",
         "EST",
         "DWG",
         "CONFIDENTIAL",
         "caio.bertoni",
         "caio.bertoni",
-        ["EST"],
+        ["EST", "QUA"],
         ["titânio", "junção estrutural"],
         350,
     ),
     (
-        "AK-2200-AER-MEM-0002",
+        "AK-2200-AER-MEM-0001",
         "Cargas aerodinâmicas na empenagem vertical",
-        "Envelope de cargas aerodinâmicas em manobra de guinada e rajada "
-        "lateral, para dimensionamento estrutural.",
+        "Envelope de cargas aerodinâmicas em manobra de guinada e rajada lateral, para "
+        "dimensionamento estrutural.",
         "AK-2200",
         "AER",
         "MEM",
         "SECRET",
         "helena.tavares",
-        "beatriz.canuto",
-        ["AER", "EST"],
+        "helena.tavares",
+        ["AER", "EST", "CER"],
         ["cargas limite"],
         340,
     ),
     (
-        "AK-2200-MAT-LDM-0003",
+        "AK-2200-MAT-LDM-0001",
         "Lista de materiais do conjunto de deriva",
-        "Relação de matéria-prima, fixadores e itens de catálogo do conjunto "
-        "de empenagem vertical.",
+        "Relação de matéria-prima, fixadores e itens de catálogo do conjunto de empenagem "
+        "vertical.",
         "AK-2200",
         "MAT",
         "LDM",
         "CONFIDENTIAL",
         "bruno.kimura",
         "bruno.kimura",
-        ["MFG"],
+        ["MFG", "QUA"],
         ["alumínio 7075", "titânio"],
         300,
     ),
     (
-        "AK-2200-ENS-REV-0004",
+        "AK-2200-ENS-REV-0001",
         "Verificação dimensional pós-montagem da deriva",
-        "Inspeção dimensional por braço articulado após montagem, com análise "
-        "de desvios contra tolerância geométrica.",
+        "Inspeção dimensional por braço articulado após montagem, com análise de desvios contra "
+        "tolerância geométrica.",
         "AK-2200",
         "ENS",
         "REV",
         "CONFIDENTIAL",
         "patricia.lemos",
-        "beatriz.canuto",
+        "patricia.lemos",
         ["QUA"],
         ["tolerância geométrica", "END"],
         150,
     ),
     (
+        "AK-2200-ENS-REV-0002",
+        "Verificação dimensional da longarina após tratamento térmico",
+        "Medição da longarina da deriva depois do tratamento térmico, para detectar empenamento "
+        "residual.",
+        "AK-2200",
+        "ENS",
+        "REV",
+        "CONFIDENTIAL",
+        "thiago.serpa",
+        "thiago.serpa",
+        ["QUA", "MFG"],
+        ["tolerância geométrica", "tratamento térmico"],
+        70,
+    ),
+    # --- AK-3100 -------------------------------------------------------------
+    (
         "AK-3100-EST-DWG-0001",
         "Desenho do berço dianteiro do pilone",
-        "Berço dianteiro usinado em titânio, com interfaces para os "
-        "amortecedores de vibração do motor.",
+        "Berço dianteiro usinado em titânio, com interfaces para os amortecedores de vibração do "
+        "motor.",
         "AK-3100",
         "EST",
         "DWG",
         "CONFIDENTIAL",
         "leticia.amaral",
         "leticia.amaral",
-        ["EST"],
-        ["titânio", "usinagem CNC"],
+        ["EST", "QUA"],
+        ["titânio", "usinagem CNC", "vibração"],
         310,
     ),
     (
-        "AK-3100-HID-ESP-0002",
+        "AK-3100-HID-ESP-0001",
         "Especificação de rotas hidráulicas no pilone",
-        "Roteamento, suportação e segregação das linhas hidráulicas que "
-        "atravessam o pilone de motor.",
+        "Roteamento, suportação e segregação das linhas hidráulicas que atravessam o pilone de "
+        "motor.",
         "AK-3100",
         "HID",
         "ESP",
         "CONFIDENTIAL",
         "diego.vasques",
         "diego.vasques",
-        ["SIS"],
+        ["SIS", "HID"],
         ["P&ID"],
         45,
     ),
     (
-        "AK-3100-MAT-NOR-0003",
+        "AK-3100-MAT-NOR-0001",
         "Norma interna de aplicação de torque em fixadores críticos",
-        "Procedimento e registro de torque controlado para fixadores "
-        "classificados como críticos de voo.",
+        "Procedimento e registro de torque controlado para fixadores classificados como críticos "
+        "de voo.",
         "AK-3100",
         "MAT",
         "NOR",
@@ -309,107 +408,327 @@ DOCUMENTS = [
         270,
     ),
     (
-        "AK-3100-ENS-REV-0004",
+        "AK-3100-MAT-NOR-0002",
+        "Norma interna de rastreabilidade de fixadores",
+        "Identificação, lote e rastreabilidade dos fixadores desde o recebimento até a montagem.",
+        "AK-3100",
+        "MAT",
+        "NOR",
+        "PUBLIC",
+        "joana.prado",
+        "joana.prado",
+        ["MFG", "QUA"],
+        ["AS9100", "torque controlado"],
+        100,
+    ),
+    (
+        "AK-3100-ENS-REV-0001",
         "Relatório de verificação estrutural do pilone sob carga limite",
-        "Ensaio estático até carga limite e demonstração de conformidade para "
-        "o dossiê de certificação.",
+        "Ensaio estático até carga limite e demonstração de conformidade para o dossiê de "
+        "certificação.",
         "AK-3100",
         "ENS",
         "REV",
         "SECRET",
         "beatriz.canuto",
         "beatriz.canuto",
-        ["CER", "EST"],
+        ["CER", "EST", "QUA"],
         ["cargas limite", "fadiga"],
         200,
     ),
+    # --- AK-3400 -------------------------------------------------------------
     (
         "AK-3400-EST-DWG-0001",
         "Desenho da carenagem externa do trem principal",
-        "Painéis externos em compósito da carenagem do trem de pouso "
-        "principal, com pontos de acesso para manutenção.",
+        "Painéis externos em compósito da carenagem do trem de pouso principal, com pontos de "
+        "acesso para manutenção.",
         "AK-3400",
         "EST",
         "DWG",
         "CONFIDENTIAL",
         "caio.bertoni",
         "caio.bertoni",
-        ["EST", "MFG"],
+        ["EST", "MFG", "QUA"],
         ["compósito"],
         190,
     ),
     (
-        "AK-3400-AER-MEM-0002",
+        "AK-3400-AER-MEM-0001",
         "Arrasto adicional da carenagem em configuração de pouso",
-        "Estimativa de arrasto incremental da carenagem com trem estendido, "
-        "a partir de dados de túnel de vento.",
+        "Estimativa de arrasto incremental da carenagem com trem estendido, a partir de dados de "
+        "túnel de vento.",
         "AK-3400",
         "AER",
         "MEM",
         "CONFIDENTIAL",
         "helena.tavares",
-        "beatriz.canuto",
-        ["AER"],
+        "helena.tavares",
+        ["AER", "EST"],
         ["cargas limite"],
         30,
     ),
     (
-        "AK-3400-FER-PRO-0003",
+        "AK-3400-FER-PRO-0001",
         "Procedimento de laminação da carenagem em compósito",
-        "Sequência de laminação, ciclo de cura em autoclave e critérios de "
-        "aceitação por ultrassom.",
+        "Sequência de laminação, ciclo de cura em autoclave e critérios de aceitação por "
+        "ultrassom.",
         "AK-3400",
         "FER",
         "PRO",
         "CONFIDENTIAL",
         "bruno.kimura",
         "bruno.kimura",
-        ["MFG"],
+        ["MFG", "QUA"],
         ["compósito", "tratamento térmico"],
         170,
     ),
+    # --- AK-4000 -------------------------------------------------------------
     (
         "AK-4000-FER-DWG-0001",
         "Gabarito de furação do painel de fuselagem",
-        "Dispositivo de furação para o painel lateral, com buchas guia "
-        "substituíveis e referência de montagem.",
+        "Dispositivo de furação para o painel lateral, com buchas guia substituíveis e referência "
+        "de montagem.",
         "AK-4000",
         "FER",
         "DWG",
         "CONFIDENTIAL",
         "bruno.kimura",
         "bruno.kimura",
-        ["MFG"],
+        ["MFG", "QUA"],
         ["usinagem CNC", "rebitagem"],
         420,
     ),
     (
-        "AK-4000-ELE-ESP-0002",
+        "AK-4000-FER-DWG-0002",
+        "Gabarito de furação do painel da empenagem",
+        "Dispositivo de furação para o painel da empenagem vertical, derivado do gabarito da "
+        "fuselagem.",
+        "AK-4000",
+        "FER",
+        "DWG",
+        "CONFIDENTIAL",
+        "bruno.kimura",
+        "bruno.kimura",
+        ["MFG", "QUA"],
+        ["usinagem CNC", "rebitagem"],
+        260,
+    ),
+    (
+        "AK-4000-FER-GPR-0001",
+        "Guia de projeto de gabaritos de furação",
+        "Critérios de projeto, materiais e tolerâncias para gabaritos de furação usados na "
+        "montagem estrutural.",
+        "AK-4000",
+        "FER",
+        "GPR",
+        "PUBLIC",
+        "bruno.kimura",
+        "bruno.kimura",
+        ["MFG", "QUA", "EST"],
+        ["usinagem CNC", "tolerância geométrica"],
+        200,
+    ),
+    (
+        "AK-4000-ELE-ESP-0001",
         "Especificação elétrica do dispositivo de montagem",
-        "Alimentação, comando e aterramento do dispositivo de montagem "
-        "estrutural na linha de produção.",
+        "Alimentação, comando e aterramento do dispositivo de montagem estrutural na linha de "
+        "produção.",
         "AK-4000",
         "ELE",
         "ESP",
         "PUBLIC",
         "diego.vasques",
         "diego.vasques",
-        ["SIS", "MFG"],
+        ["SIS", "MFG", "QUA"],
         [],
         120,
     ),
+    # --- AK-4100 / AK-4300 / AK-4500 / AK-4600 ---------------------------------
+    (
+        "AK-4100-ARM-ESP-0001",
+        "Especificação de integração de armamento ao pilone",
+        "Interfaces mecânicas e elétricas para a integração do armamento ao pilone, com limites "
+        "de carga.",
+        "AK-4100",
+        "ARM",
+        "ESP",
+        "SECRET",
+        "rafael.okamoto",
+        "rafael.okamoto",
+        ["SIS", "CER"],
+        ["cargas limite"],
+        160,
+    ),
+    (
+        "AK-4100-MUN-REV-0001",
+        "Relatório de verificação de segurança de munições inertes",
+        "Resultados da verificação de segurança no manuseio e armazenagem de munições inertes de "
+        "ensaio.",
+        "AK-4100",
+        "MUN",
+        "REV",
+        "SECRET",
+        "thiago.serpa",
+        "patricia.lemos",
+        ["QUA", "CER"],
+        ["munição inerte", "END"],
+        110,
+    ),
+    (
+        "AK-4300-OPT-MEM-0001",
+        "Memorial de alinhamento do sistema de pontaria",
+        "Cadeia de tolerâncias e procedimento de boresight do sistema de pontaria.",
+        "AK-4300",
+        "OPT",
+        "MEM",
+        "SECRET",
+        "diego.vasques",
+        "diego.vasques",
+        ["SIS", "QUA"],
+        ["alinhamento óptico", "tolerância geométrica"],
+        85,
+    ),
+    (
+        "AK-4500-RFE-RTE-0001",
+        "Relatório de compatibilidade eletromagnética do chicote",
+        "Ensaios de emissão e suscetibilidade do chicote de radiofrequência instalado.",
+        "AK-4500",
+        "RFE",
+        "RTE",
+        "CONFIDENTIAL",
+        "diego.vasques",
+        "diego.vasques",
+        ["SIS", "QUA"],
+        ["compatibilidade eletromagnética"],
+        75,
+    ),
+    (
+        "AK-4600-EMB-NOR-0001",
+        "Norma interna de embalagem de peças usinadas",
+        "Requisitos de proteção, amortecimento e identificação para o transporte de peças "
+        "usinadas.",
+        "AK-4600",
+        "EMB",
+        "NOR",
+        "PUBLIC",
+        "bruno.kimura",
+        "bruno.kimura",
+        ["MFG", "QUA"],
+        ["embalagem"],
+        140,
+    ),
+    # --- AK-5100 / AK-5200 / AK-5300 / AK-5400 ---------------------------------
+    (
+        "AK-5100-COM-ESP-0001",
+        "Especificação do tanque integral de combustível",
+        "Requisitos de estanqueidade, selagem e ensaio do tanque integral de combustível da asa.",
+        "AK-5100",
+        "COM",
+        "ESP",
+        "CONFIDENTIAL",
+        "renato.fontes",
+        "renato.fontes",
+        ["COM", "QUA"],
+        ["vedação", "vazão de combustível"],
+        220,
+    ),
+    (
+        "AK-5100-COM-MEM-0001",
+        "Memorial de cálculo da vazão do sistema de transferência de combustível",
+        "Dimensionamento das bombas e linhas de transferência entre tanques.",
+        "AK-5100",
+        "COM",
+        "MEM",
+        "CONFIDENTIAL",
+        "renato.fontes",
+        "renato.fontes",
+        ["COM", "SIS", "QUA"],
+        ["vazão de combustível"],
+        130,
+    ),
+    (
+        "AK-5200-HID-ESP-0001",
+        "Especificação do atuador hidráulico do flape",
+        "Requisitos de pressão, curso e vedação do atuador hidráulico do flape.",
+        "AK-5200",
+        "HID",
+        "ESP",
+        "CONFIDENTIAL",
+        "luciana.maeda",
+        "luciana.maeda",
+        ["HID", "QUA"],
+        ["hidráulica de alta pressão", "vedação"],
+        210,
+    ),
+    (
+        "AK-5200-HID-DWG-0001",
+        "Desenho de instalação da central hidráulica",
+        "Instalação da central hidráulica na fuselagem, com suportação e conexões das linhas.",
+        "AK-5200",
+        "HID",
+        "DWG",
+        "CONFIDENTIAL",
+        "luciana.maeda",
+        "luciana.maeda",
+        ["HID", "SIS", "QUA"],
+        ["hidráulica de alta pressão", "P&ID"],
+        95,
+    ),
+    (
+        "AK-5200-HID-GPR-0001",
+        "Guia de identificação de linhas hidráulicas",
+        "Código de cores, marcações e etiquetas das linhas hidráulicas de aeronave.",
+        "AK-5200",
+        "HID",
+        "GPR",
+        "PUBLIC",
+        "luciana.maeda",
+        "luciana.maeda",
+        ["HID", "QUA"],
+        ["P&ID"],
+        50,
+    ),
+    (
+        "AK-5300-ELE-ESP-0001",
+        "Especificação elétrica do módulo de controle de voo",
+        "Alimentação, redundância e interfaces do módulo do sistema de controle de voo.",
+        "AK-5300",
+        "ELE",
+        "ESP",
+        "CONFIDENTIAL",
+        "andre.cardoso",
+        "andre.cardoso",
+        ["INT", "SIS", "QUA"],
+        ["compatibilidade eletromagnética"],
+        180,
+    ),
+    (
+        "AK-5400-EST-DWG-0001",
+        "Desenho do cilindro principal do trem de pouso",
+        "Cilindro principal em aço de alta resistência, com interfaces para o amortecedor.",
+        "AK-5400",
+        "EST",
+        "DWG",
+        "CONFIDENTIAL",
+        "leticia.amaral",
+        "leticia.amaral",
+        ["EST", "HID", "QUA"],
+        ["usinagem CNC", "vedação"],
+        140,
+    ),
+    # --- AK-1500 (closed program) -----------------------------------------------
     (
         "AK-1500-EST-MEM-0001",
         "Memorial de cálculo da nacele",
-        "Documento do programa encerrado, mantido apenas para consulta "
-        "histórica. Sem revisão vigente.",
+        "Documento do programa encerrado, mantido apenas para consulta histórica. Sem revisão "
+        "vigente.",
         "AK-1500",
         "EST",
         "MEM",
         "CONFIDENTIAL",
         "marina.duarte",
         "marina.duarte",
-        ["EST"],
+        ["EST", "CER"],
         ["fadiga"],
         900,
     ),
@@ -419,14 +738,15 @@ DOCUMENTS = [
 # Per document code:
 #   (version, status, author, auditor, created_days_ago, audited_days_ago,
 #    change_description, auditor_comment)
-# Rules honoured here: versions are sequential from 1, at most one APPROVED per
-# document, any status other than PENDING carries an auditor and a decision
-# date, and the auditor is never the author of the revision.
+# Rules honoured here: versions are sequential from 1, version 1 is created with
+# the document, any status other than PENDING carries an auditor and a decision
+# date, the auditor is never the author nor the document's responsible, and a
+# justification, when present, has at least 20 characters.
 REVISIONS = {
     "AK-2100-EST-DWG-0001": [
         (
             1,
-            "OBSOLETE",
+            "APPROVED",
             "caio.bertoni",
             "thiago.serpa",
             430,
@@ -442,7 +762,7 @@ REVISIONS = {
             300,
             292,
             "Revisão do passo de rebitagem no bordo inferior.",
-            "Conforme AS9100.",
+            "Passo de rebitagem conforme AS9100.",
         ),
         (
             3,
@@ -455,7 +775,19 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-2100-EST-MEM-0002": [
+    "AK-2100-EST-DWG-0002": [
+        (
+            1,
+            "APPROVED",
+            "leticia.amaral",
+            "thiago.serpa",
+            280,
+            272,
+            "Emissão inicial da caverna 15.",
+            None,
+        ),
+    ],
+    "AK-2100-EST-MEM-0001": [
         (
             1,
             "APPROVED",
@@ -464,13 +796,35 @@ REVISIONS = {
             395,
             388,
             "Emissão inicial do memorial de cálculo.",
-            "Margens aceitas.",
+            "Margens de segurança aceitas para as cargas limite.",
         ),
     ],
-    "AK-2100-MAT-ESP-0003": [
+    "AK-2100-EST-MEM-0002": [
         (
             1,
-            "OBSOLETE",
+            "APPROVED",
+            "caio.bertoni",
+            "beatriz.canuto",
+            150,
+            141,
+            "Emissão inicial do dimensionamento das cavernas.",
+            None,
+        ),
+        (
+            2,
+            "PENDING",
+            "leticia.amaral",
+            None,
+            10,
+            None,
+            "Atualização das cargas após revisão do desenho da caverna 14.",
+            None,
+        ),
+    ],
+    "AK-2100-MAT-ESP-0001": [
+        (
+            1,
+            "APPROVED",
             "joana.prado",
             "patricia.lemos",
             380,
@@ -489,7 +843,31 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-2100-ENS-REV-0004": [
+    "AK-2100-MAT-ESP-0002": [
+        (
+            1,
+            "APPROVED",
+            "bruno.kimura",
+            "thiago.serpa",
+            120,
+            113,
+            "Emissão inicial da especificação de pintura.",
+            None,
+        ),
+    ],
+    "AK-2100-MAT-PRO-0001": [
+        (
+            1,
+            "APPROVED",
+            "joana.prado",
+            "patricia.lemos",
+            90,
+            84,
+            "Emissão inicial do procedimento de anodização.",
+            None,
+        ),
+    ],
+    "AK-2100-ENS-REV-0001": [
         (
             1,
             "APPROVED",
@@ -498,10 +876,10 @@ REVISIONS = {
             240,
             232,
             "Relatório final do ensaio de fadiga em escala de painel.",
-            "Correlação dentro do previsto.",
+            "Correlação dentro do previsto pelo modelo.",
         ),
     ],
-    "AK-2100-PES-MEM-0005": [
+    "AK-2100-PES-MEM-0001": [
         (
             1,
             "PENDING",
@@ -535,7 +913,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-2200-AER-MEM-0002": [
+    "AK-2200-AER-MEM-0001": [
         (
             1,
             "APPROVED",
@@ -547,7 +925,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-2200-MAT-LDM-0003": [
+    "AK-2200-MAT-LDM-0001": [
         (
             1,
             "REJECTED",
@@ -569,7 +947,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-2200-ENS-REV-0004": [
+    "AK-2200-ENS-REV-0001": [
         (
             1,
             "APPROVED",
@@ -581,10 +959,22 @@ REVISIONS = {
             None,
         ),
     ],
+    "AK-2200-ENS-REV-0002": [
+        (
+            1,
+            "APPROVED",
+            "thiago.serpa",
+            "patricia.lemos",
+            70,
+            64,
+            "Emissão inicial da verificação pós tratamento térmico.",
+            None,
+        ),
+    ],
     "AK-3100-EST-DWG-0001": [
         (
             1,
-            "OBSOLETE",
+            "APPROVED",
             "leticia.amaral",
             "thiago.serpa",
             310,
@@ -603,7 +993,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-3100-HID-ESP-0002": [
+    "AK-3100-HID-ESP-0001": [
         (
             1,
             "PENDING",
@@ -615,7 +1005,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-3100-MAT-NOR-0003": [
+    "AK-3100-MAT-NOR-0001": [
         (
             1,
             "APPROVED",
@@ -624,10 +1014,22 @@ REVISIONS = {
             270,
             260,
             "Emissão inicial da norma de torque.",
-            "Aprovada para uso na linha.",
+            "Aprovada para uso na linha de montagem.",
         ),
     ],
-    "AK-3100-ENS-REV-0004": [
+    "AK-3100-MAT-NOR-0002": [
+        (
+            1,
+            "APPROVED",
+            "joana.prado",
+            "thiago.serpa",
+            100,
+            94,
+            "Emissão inicial da norma de rastreabilidade.",
+            None,
+        ),
+    ],
+    "AK-3100-ENS-REV-0001": [
         (
             1,
             "APPROVED",
@@ -661,7 +1063,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-3400-AER-MEM-0002": [
+    "AK-3400-AER-MEM-0001": [
         (
             1,
             "PENDING",
@@ -673,7 +1075,7 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-3400-FER-PRO-0003": [
+    "AK-3400-FER-PRO-0001": [
         (
             1,
             "APPROVED",
@@ -688,7 +1090,7 @@ REVISIONS = {
     "AK-4000-FER-DWG-0001": [
         (
             1,
-            "OBSOLETE",
+            "APPROVED",
             "bruno.kimura",
             "thiago.serpa",
             420,
@@ -698,7 +1100,7 @@ REVISIONS = {
         ),
         (
             2,
-            "OBSOLETE",
+            "APPROVED",
             "bruno.kimura",
             "thiago.serpa",
             330,
@@ -717,7 +1119,31 @@ REVISIONS = {
             None,
         ),
     ],
-    "AK-4000-ELE-ESP-0002": [
+    "AK-4000-FER-DWG-0002": [
+        (
+            1,
+            "APPROVED",
+            "bruno.kimura",
+            "patricia.lemos",
+            260,
+            252,
+            "Emissão inicial do gabarito da empenagem.",
+            None,
+        ),
+    ],
+    "AK-4000-FER-GPR-0001": [
+        (
+            1,
+            "APPROVED",
+            "bruno.kimura",
+            "thiago.serpa",
+            200,
+            192,
+            "Emissão inicial do guia de projeto.",
+            None,
+        ),
+    ],
+    "AK-4000-ELE-ESP-0001": [
         (
             1,
             "APPROVED",
@@ -729,10 +1155,194 @@ REVISIONS = {
             None,
         ),
     ],
+    "AK-4100-ARM-ESP-0001": [
+        (
+            1,
+            "APPROVED",
+            "rafael.okamoto",
+            "beatriz.canuto",
+            160,
+            150,
+            "Emissão inicial da especificação de integração.",
+            None,
+        ),
+    ],
+    "AK-4100-MUN-REV-0001": [
+        (
+            1,
+            "APPROVED",
+            "patricia.lemos",
+            "beatriz.canuto",
+            110,
+            100,
+            "Emissão inicial do relatório de segurança.",
+            "Procedimentos de manuseio considerados adequados.",
+        ),
+    ],
+    "AK-4300-OPT-MEM-0001": [
+        (
+            1,
+            "APPROVED",
+            "diego.vasques",
+            "thiago.serpa",
+            85,
+            78,
+            "Emissão inicial do memorial de alinhamento.",
+            None,
+        ),
+        (
+            2,
+            "PENDING",
+            "rafael.okamoto",
+            None,
+            15,
+            None,
+            "Inclusão da contribuição térmica na cadeia de tolerâncias.",
+            None,
+        ),
+    ],
+    "AK-4500-RFE-RTE-0001": [
+        (
+            1,
+            "APPROVED",
+            "diego.vasques",
+            "patricia.lemos",
+            75,
+            68,
+            "Emissão inicial do relatório de compatibilidade.",
+            None,
+        ),
+    ],
+    "AK-4600-EMB-NOR-0001": [
+        (
+            1,
+            "APPROVED",
+            "bruno.kimura",
+            "patricia.lemos",
+            140,
+            133,
+            "Emissão inicial da norma de embalagem.",
+            None,
+        ),
+    ],
+    "AK-5100-COM-ESP-0001": [
+        (
+            1,
+            "APPROVED",
+            "renato.fontes",
+            "thiago.serpa",
+            220,
+            212,
+            "Emissão inicial da especificação do tanque.",
+            None,
+        ),
+        (
+            2,
+            "PENDING",
+            "renato.fontes",
+            None,
+            25,
+            None,
+            "Inclusão de ensaio de estanqueidade após ciclagem de pressão.",
+            None,
+        ),
+    ],
+    "AK-5100-COM-MEM-0001": [
+        (
+            1,
+            "APPROVED",
+            "renato.fontes",
+            "thiago.serpa",
+            130,
+            121,
+            "Emissão inicial do memorial de vazão.",
+            None,
+        ),
+    ],
+    "AK-5200-HID-ESP-0001": [
+        (
+            1,
+            "APPROVED",
+            "luciana.maeda",
+            "patricia.lemos",
+            210,
+            203,
+            "Emissão inicial da especificação do atuador.",
+            None,
+        ),
+        (
+            2,
+            "APPROVED",
+            "luciana.maeda",
+            "patricia.lemos",
+            90,
+            84,
+            "Ajuste do curso útil após ensaio de bancada.",
+            None,
+        ),
+    ],
+    "AK-5200-HID-DWG-0001": [
+        (
+            1,
+            "APPROVED",
+            "luciana.maeda",
+            "thiago.serpa",
+            95,
+            88,
+            "Emissão inicial da instalação da central hidráulica.",
+            None,
+        ),
+        (
+            2,
+            "PENDING",
+            "luciana.maeda",
+            None,
+            6,
+            None,
+            "Reposicionamento do filtro de retorno para facilitar a manutenção.",
+            None,
+        ),
+    ],
+    "AK-5200-HID-GPR-0001": [
+        (
+            1,
+            "APPROVED",
+            "luciana.maeda",
+            "patricia.lemos",
+            50,
+            44,
+            "Emissão inicial do guia de identificação.",
+            None,
+        ),
+    ],
+    "AK-5300-ELE-ESP-0001": [
+        (
+            1,
+            "APPROVED",
+            "andre.cardoso",
+            "patricia.lemos",
+            180,
+            172,
+            "Emissão inicial da especificação elétrica do módulo.",
+            None,
+        ),
+    ],
+    "AK-5400-EST-DWG-0001": [
+        (
+            1,
+            "APPROVED",
+            "leticia.amaral",
+            "thiago.serpa",
+            140,
+            132,
+            "Emissão inicial do cilindro principal.",
+            None,
+        ),
+    ],
     "AK-1500-EST-MEM-0001": [
         (
             1,
-            "OBSOLETE",
+            "APPROVED",
             "marina.duarte",
             "beatriz.canuto",
             900,
@@ -755,6 +1365,9 @@ FILES_BY_TYPE = {
     "REV": [("", "pdf"), ("-inspecao", "jpeg")],
     "PRO": [("", "docx")],
     "LDM": [("", "pdf")],
+    "GPR": [("", "pdf")],
+    "MMA": [("", "pdf")],
+    "RTE": [("", "pdf")],
 }
 
 MIME_TYPES = {
@@ -782,8 +1395,10 @@ SIZE_RANGES = {
 # its areas, and a PENDING row never carries an approver. A direct grant has
 # no requested_at: nobody asked, the manager just gave access.
 DOCUMENT_ACCESS = [
+    # SECRET: the responsible plus these users, who include every auditor and
+    # revision author that is not the responsible
     (
-        "AK-2100-ENS-REV-0004",
+        "AK-2100-ENS-REV-0001",
         "samuel.rocha",
         "PENDING",
         None,
@@ -792,7 +1407,7 @@ DOCUMENT_ACCESS = [
         "Preciso dos resultados de fadiga para preparar o plano de inspeção da linha.",
     ),
     (
-        "AK-2100-ENS-REV-0004",
+        "AK-2100-ENS-REV-0001",
         "diego.vasques",
         "APPROVED",
         "thiago.serpa",
@@ -800,9 +1415,11 @@ DOCUMENT_ACCESS = [
         38,
         "Avaliação do impacto dos resultados nas rotas de sistemas.",
     ),
-    ("AK-2200-AER-MEM-0002", "bruno.kimura", "APPROVED", "marina.duarte", None, 25, None),
+    ("AK-2100-ENS-REV-0001", "beatriz.canuto", "APPROVED", "thiago.serpa", None, 235, None),
+    ("AK-2200-AER-MEM-0001", "bruno.kimura", "APPROVED", "marina.duarte", None, 25, None),
+    ("AK-2200-AER-MEM-0001", "beatriz.canuto", "APPROVED", "helena.tavares", None, 338, None),
     (
-        "AK-3100-ENS-REV-0004",
+        "AK-3100-ENS-REV-0001",
         "caio.bertoni",
         "PENDING",
         None,
@@ -811,7 +1428,7 @@ DOCUMENT_ACCESS = [
         "Referência para o dimensionamento do berço na próxima revisão.",
     ),
     (
-        "AK-3100-ENS-REV-0004",
+        "AK-3100-ENS-REV-0001",
         "samuel.rocha",
         "REJECTED",
         "beatriz.canuto",
@@ -819,9 +1436,27 @@ DOCUMENT_ACCESS = [
         66,
         "Curiosidade técnica sobre o ensaio.",
     ),
-    ("AK-2100-EST-MEM-0002", "samuel.rocha", "APPROVED", "leticia.amaral", None, 55, None),
+    ("AK-3100-ENS-REV-0001", "patricia.lemos", "APPROVED", "beatriz.canuto", None, 198, None),
+    ("AK-3100-ENS-REV-0001", "leticia.amaral", "APPROVED", "beatriz.canuto", None, 195, None),
+    ("AK-4100-ARM-ESP-0001", "beatriz.canuto", "APPROVED", "rafael.okamoto", None, 158, None),
+    ("AK-4100-ARM-ESP-0001", "diego.vasques", "APPROVED", "rafael.okamoto", None, 140, None),
+    ("AK-4100-MUN-REV-0001", "patricia.lemos", "APPROVED", "thiago.serpa", None, 108, None),
+    ("AK-4100-MUN-REV-0001", "beatriz.canuto", "APPROVED", "thiago.serpa", None, 108, None),
     (
-        "AK-3100-HID-ESP-0002",
+        "AK-4100-MUN-REV-0001",
+        "samuel.rocha",
+        "PENDING",
+        None,
+        2,
+        None,
+        "Necessário conhecer os requisitos de segurança para embalar as munições inertes.",
+    ),
+    ("AK-4300-OPT-MEM-0001", "thiago.serpa", "APPROVED", "diego.vasques", None, 84, None),
+    ("AK-4300-OPT-MEM-0001", "rafael.okamoto", "APPROVED", "diego.vasques", None, 80, None),
+    # CONFIDENTIAL: users outside the document's areas asking for access
+    ("AK-2100-EST-MEM-0001", "samuel.rocha", "APPROVED", "leticia.amaral", None, 55, None),
+    (
+        "AK-3100-HID-ESP-0001",
         "helena.tavares",
         "PENDING",
         None,
@@ -829,7 +1464,33 @@ DOCUMENT_ACCESS = [
         None,
         "Verificar interferência entre rotas hidráulicas e o carenamento.",
     ),
-    ("AK-3400-FER-PRO-0003", "patricia.lemos", "APPROVED", "bruno.kimura", None, 80, None),
+    (
+        "AK-3400-FER-PRO-0001",
+        "diego.vasques",
+        "APPROVED",
+        "bruno.kimura",
+        100,
+        96,
+        "Alinhar o ferramental de laminação com a instalação elétrica da autoclave.",
+    ),
+    (
+        "AK-5100-COM-MEM-0001",
+        "helena.tavares",
+        "PENDING",
+        None,
+        4,
+        None,
+        "Verificar o impacto do arrasto dos tanques na estimativa de desempenho.",
+    ),
+    (
+        "AK-5200-HID-DWG-0001",
+        "samuel.rocha",
+        "REJECTED",
+        "luciana.maeda",
+        30,
+        28,
+        "Consulta sem relação com as atividades da manufatura.",
+    ),
 ]
 
 # -- Legal documents ---------------------------------------------------------

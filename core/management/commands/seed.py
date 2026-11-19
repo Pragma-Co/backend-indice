@@ -267,11 +267,7 @@ class Command(BaseCommand):
 
                 audited_at = self._ago(audited_days_ago) if audited_days_ago is not None else None
                 # A revision is issued when it leaves the pending state
-                issue_date = (
-                    audited_at.date()
-                    if status in (RevisionStatus.APPROVED, RevisionStatus.OBSOLETE)
-                    else None
-                )
+                issue_date = audited_at.date() if status == RevisionStatus.APPROVED else None
                 revision, created = Revision.objects.get_or_create(
                     document=document,
                     version=version,
@@ -473,7 +469,7 @@ class Command(BaseCommand):
 
         for document in documents.values():
             entry(
-                document.responsible,
+                document.created_by,
                 AuditAction.CREATE,
                 "document",
                 document.pk,
@@ -540,7 +536,7 @@ class Command(BaseCommand):
             max(d.pk for d in documents.values()) + 137,
             self._ago(88),
             {
-                "code": "AK-1500-MAT-ESP-0002",
+                "code": "AK-1500-MAT-ESP-0001",
                 "title": "Especificação de nacele substituída",
                 "confidentiality_level": "CONFIDENTIAL",
             },

@@ -32,7 +32,7 @@ from core.services.documents_exceptions import (
     UserNotFoundError,
 )
 
-SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters:v2"
+SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters:v3"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -47,7 +47,6 @@ STATUS_FILTERS = [
     {"value": RevisionStatus.PENDING.value, "label": "Em revisão"},
     {"value": RevisionStatus.APPROVED.value, "label": "Vigente"},
     {"value": RevisionStatus.REJECTED.value, "label": "Rejeitado"},
-    {"value": RevisionStatus.OBSOLETE.value, "label": "Obsoleto"},
 ]
 
 
@@ -61,13 +60,13 @@ DATE_RANGES = {
 def build_simple_filters():
     return {
         "areas": list(
-            Area.objects.filter(active=True).order_by("acronym").values("acronym", "name")
+            Area.objects.filter(active=True).order_by("name").values("acronym", "name")
         ),
         "types": list(
-            DocumentType.objects.filter(active=True).order_by("code").values("code", "name")
+            DocumentType.objects.filter(active=True).order_by("name").values("code", "name")
         ),
         "disciplines": list(
-            Discipline.objects.filter(active=True).order_by("code").values("code", "name")
+            Discipline.objects.filter(active=True).order_by("name").values("code", "name")
         ),
         "statuses": STATUS_FILTERS,
         "dates": DATE_FILTERS,
@@ -312,6 +311,7 @@ def serialize_document(document):
             "label": revision_label(document.latest_version),
         },
         "status": document.status,
+        "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "created_by": {
             "id": document.created_by_id,

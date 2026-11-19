@@ -127,7 +127,7 @@ def validate_decision_payload(payload) -> dict:
     return {"decision": decision, "justification": justification}
 
 
-def decide_revision(revision_id, reviewer, payload) -> tuple[Revision, Revision | None]:
+def decide_revision(revision_id, reviewer, payload) -> Revision:
     cleaned = validate_decision_payload(payload)
 
     with transaction.atomic():
@@ -153,16 +153,12 @@ def decide_revision(revision_id, reviewer, payload) -> tuple[Revision, Revision 
         previous_revision = (
             Revision.objects.select_for_update()
             .filter(document_id=document_id, status=RevisionStatus.APPROVED)
+            .order_by("-version")
             .first()
         )
-        superseded_revision = None
         if cleaned["decision"] == RevisionStatus.APPROVED:
             if previous_revision is not None and previous_revision.version > revision.version:
                 raise OutdatedRevisionError(previous_revision.version)
-            if previous_revision is not None:
-                previous_revision.status = RevisionStatus.OBSOLETE
-                previous_revision.save(update_fields=["status"])
-                superseded_revision = previous_revision
             document.updated_by = reviewer
             document.save(update_fields=["updated_by"])
 
@@ -176,4 +172,4 @@ def decide_revision(revision_id, reviewer, payload) -> tuple[Revision, Revision 
         if revision.status == RevisionStatus.APPROVED:
             notify_revision_published(revision, actor=reviewer)
 
-    return revision, superseded_revision
+    return revision
