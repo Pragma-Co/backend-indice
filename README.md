@@ -408,12 +408,19 @@ Known limitations of the audit entry:
 
 ### `POST /documents/<id>/revisions`
 
-Creates the next revision of an existing document with status `PENDING` (awaiting approval); the version is the latest one plus one and the current approved revision stays in the collection untouched. Two request formats are accepted:
+Creates the next revision of an existing document with status `PENDING` (awaiting approval); the version is the latest one plus one and the current approved revision stays in the collection untouched. The session user becomes the revision `author`, so the review queue and the decision notifications point at who submitted it. Who may open a revision (card SCRUM-109, checked in this order before anything is validated or stored):
+
+- the user must see the document (see *Document visibility*), otherwise `404 DocumentNotFound`, as in the detail;
+- the user must be able to read it, the same rule as `GET /files/<id>/view` (responsible or approved, unexpired `document_access` grant), otherwise `403 {"error": "AccessDenied"}` and a `DOCUMENT_ACCESS_DENIED` security event;
+- the user's area must be one of the document areas, otherwise `403 {"error": "RevisionOutsideArea"}`;
+- no revision of the document may be `PENDING`, otherwise `409 {"error": "RevisionInProgress", "revision": {"id", "version"}}`.
+
+Two request formats are accepted:
 
 - `multipart/form-data` with the new binary in `file` (repeat the field for a package) and the justification in `change_description`. The document and the justification are validated before anything is stored; the file then goes through the same checks as `POST /documents/upload` (`400 MissingFile` / `InvalidFileType`, `413 FileTooLarge`, `409` when already registered).
 - JSON referencing files already sent to `POST /documents/upload`: `{"temp_file_ids": ["<uuid>", ...], "change_description": "<text>"}` (`temp_file_id` with a single uuid is also accepted).
 
-In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `404 DocumentNotFound` / `TempFileNotFound`; `409` when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
+In both formats `change_description` is required, 20 to 255 characters, and is stored on the revision; the document detail returns it as `revision.change_description`. Answers `201 {"id", "document_id", "version", "status": "PENDING", "change_description"}`; `400 {"errors": {"change_description": {"code": "required" | "too_short" | "too_long", ...}}}` or `{"error": "InvalidJSON"}`; `403 AccessDenied` / `RevisionOutsideArea`; `404 DocumentNotFound` / `TempFileNotFound`; `409 RevisionInProgress`, when a file is already registered (`document` in the body) or repeated inside the package (`DuplicateFileInRevision`); `500` masked.
 
 ### Authentication
 

@@ -207,7 +207,7 @@ class DocumentIndexServiceTests(DocumentSearchTestCase):
 
         with override_settings(TEMP_UPLOAD_DIR=temp_dir):
             revision = document_creation_service.create_document_revision(
-                document.id, [temp_file_id], "Atualiza o memorial da ponte"
+                document.id, self.owner, [temp_file_id], "Atualiza o memorial da ponte"
             )
 
         indexed = DocumentContent.objects.get(pk=document.pk)

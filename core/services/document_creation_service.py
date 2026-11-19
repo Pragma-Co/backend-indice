@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Prefetch
 from django.utils import timezone
 
 from core.models import (
@@ -24,6 +25,7 @@ from core.models import (
 )
 from core.models.upload_file_type import ALLOWED_FILE_TYPES
 from core.mongo import get_mongo_db
+from core.services.access_group_service import shares_area
 from core.services.document_code_service import (
     build_code_prefix,
     build_document_code,
@@ -35,6 +37,8 @@ from core.services.document_exceptions import (
     DocumentValidationError,
     DuplicateDocumentFileError,
     DuplicateRevisionUploadError,
+    RevisionInProgressError,
+    RevisionOutsideAreaError,
     TempFileNotFoundError,
 )
 from core.services.document_index_service import index_document_safely
@@ -42,7 +46,9 @@ from core.services.document_permission_service import (
     clean_access_permissions,
     grant_access_permissions,
 )
-from core.services.documents_exceptions import DocumentNotFoundError
+from core.services.document_visibility_service import is_visible
+from core.services.documents_exceptions import AccessDeniedError, DocumentNotFoundError
+from core.services.documents_service import can_view_document
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import MissingFileError
 
@@ -403,19 +409,34 @@ def validate_change_description(value) -> str:
     return text
 
 
-def _revisable_document(document_id) -> Document:
+def _revisable_document(document_id, user) -> Document:
     document = (
         Document.objects.select_related("responsible")
+        .prefetch_related(Prefetch("revisions", queryset=Revision.objects.order_by("-version")))
         .filter(pk=document_id, document_type__active=True, archived_at__isnull=True)
         .first()
     )
-    if document is None:
+    if document is None or not is_visible(document, user):
         raise DocumentNotFoundError()
+    if not can_view_document(document, user):
+        raise AccessDeniedError(document, user)
+    if not shares_area(document, user):
+        raise RevisionOutsideAreaError()
+    pending = next(
+        (
+            revision
+            for revision in document.revisions.all()
+            if revision.status == RevisionStatus.PENDING
+        ),
+        None,
+    )
+    if pending is not None:
+        raise RevisionInProgressError(pending)
     return document
 
 
-def submit_document_revision(document_id, uploaded_files, change_description):
-    _revisable_document(document_id)
+def submit_document_revision(document_id, user, uploaded_files, change_description):
+    _revisable_document(document_id, user)
     change_description = validate_change_description(change_description)
     if not uploaded_files:
         raise MissingFileError()
@@ -423,12 +444,12 @@ def submit_document_revision(document_id, uploaded_files, change_description):
     temp_file_ids = [
         store_uploaded_file(uploaded_file)["temp_file_id"] for uploaded_file in uploaded_files
     ]
-    revision = create_document_revision(document_id, temp_file_ids, change_description)
+    revision = create_document_revision(document_id, user, temp_file_ids, change_description)
     return revision, temp_file_ids
 
 
-def create_document_revision(document_id, temp_file_ids, change_description=None) -> Revision:
-    document = _revisable_document(document_id)
+def create_document_revision(document_id, user, temp_file_ids, change_description=None) -> Revision:
+    document = _revisable_document(document_id, user)
 
     change_description = validate_change_description(change_description)
 
@@ -470,7 +491,7 @@ def create_document_revision(document_id, temp_file_ids, change_description=None
             status=RevisionStatus.PENDING,
             issue_date=timezone.localdate(),
             change_description=change_description,
-            author=document.responsible,
+            author=user,
         )
         for file_index, temp_file in enumerate(temp_files):
             storage_path = storage_path_for(
