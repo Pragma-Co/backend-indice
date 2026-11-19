@@ -41,6 +41,13 @@ Database: {POSTGRES_DB}
 User:     {POSTGRES_USER}
 Password: {POSTGRES_PASSWORD}
 
+--- PostgreSQL (deleted-users tombstone) ---
+Host:     localhost (from your machine) / postgres-tombstone (inside Docker)
+Port:     {TOMBSTONE_PORT}
+Database: {TOMBSTONE_DB}
+User:     {TOMBSTONE_USER}
+Password: {TOMBSTONE_PASSWORD}
+
 --- MongoDB ---
 Host:     localhost (from your machine) / mongodb (inside Docker)
 Port:     {MONGO_PORT}

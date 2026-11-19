@@ -14,20 +14,24 @@ def normalize_identifier(identifier):
     return identifier.strip().casefold()
 
 
-def _identifier_hash(identifier):
+def hash_identifier(identifier):
     key = settings.EXCLUDED_IDENTIFIER_HMAC_KEY.encode("utf-8")
     message = b"excluded-identifier:v1:" + normalize_identifier(identifier).encode("utf-8")
     return hmac.new(key, message, hashlib.sha256).hexdigest()
 
 
 def store_excluded_identifier(identifier):
-    identifier_hash = _identifier_hash(identifier)
+    identifier_hash = hash_identifier(identifier)
     excluded, _ = ExcludedIdentifier.objects.get_or_create(identifier_hash=identifier_hash)
     return excluded
 
 
 def is_identifier_excluded(identifier):
-    return ExcludedIdentifier.objects.filter(identifier_hash=_identifier_hash(identifier)).exists()
+    return ExcludedIdentifier.objects.filter(identifier_hash=hash_identifier(identifier)).exists()
+
+
+def excluded_identifier_hashes():
+    return set(ExcludedIdentifier.objects.values_list("identifier_hash", flat=True))
 
 
 def ensure_identifier_is_available(identifier):

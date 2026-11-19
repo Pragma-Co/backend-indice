@@ -722,6 +722,12 @@ Immediate, irreversible account removal requested by the logged-in user (`401` w
 
 Hard delete, run by an operator (not an HTTP endpoint). The row is removed from the database and everything that referenced it is reassigned to another active manager (documents, revisions, access approvals, legal versions, area `manager`); the user's own access requests and legal acceptances are deleted. Audit rows keep the name in `record.actor.name`, with `audit_log.user_id` set to `NULL`. Fails without changes if no other manager exists.
 
+### Deleted-users tombstone and `python manage.py reapply_deletions`
+
+The excluded-identifier hashes live in a separate PostgreSQL database (`api6_tombstone`, Django alias `tombstone`, configured through `TOMBSTONE_*` in `.env`), so a restore of the application database does not wipe them. After `migrate`, also run `python manage.py migrate --database=tombstone` (the compose `api` service already does).
+
+After restoring a backup, run `python manage.py reapply_deletions --dry-run` to list the restored accounts whose email hash is in the tombstone, then run it without `--dry-run` to anonymize them again (`--hard` removes the row instead, like `delete_user`). The output only contains user ids. It exits with an error if no other active manager can take over a user's records.
+
 ## Useful commands
 
 ```bash
