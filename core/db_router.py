@@ -24,7 +24,9 @@ class TombstoneRouter:
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
         if model_name is not None:
-            holds_tombstone = app_label == TOMBSTONE_APP_LABEL and model_name == TOMBSTONE_MODEL_NAME
+            holds_tombstone = (
+                app_label == TOMBSTONE_APP_LABEL and model_name == TOMBSTONE_MODEL_NAME
+            )
             return holds_tombstone == (db == TOMBSTONE_ALIAS)
         if hints.get("tombstone_copy"):
             return db == TOMBSTONE_ALIAS

@@ -116,9 +116,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.environ.get("TOMBSTONE_DB", "api6_tombstone"),
         "USER": os.environ.get("TOMBSTONE_USER", os.environ.get("POSTGRES_USER", "api6_admin")),
-        "PASSWORD": os.environ.get(
-            "TOMBSTONE_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "")
-        ),
+        "PASSWORD": os.environ.get("TOMBSTONE_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "")),
         "HOST": os.environ.get("TOMBSTONE_HOST", os.environ.get("POSTGRES_HOST", "localhost")),
         "PORT": os.environ.get("TOMBSTONE_PORT", os.environ.get("POSTGRES_PORT", "5433")),
     },
