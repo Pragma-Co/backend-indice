@@ -3,7 +3,7 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 
-from core.models import Document, File, Revision, RevisionStatus, Role
+from core.models import MANAGER_ROLES, Document, File, Revision, RevisionStatus
 from core.services.notification_service import notify_revision_decided, notify_revision_published
 from core.services.revision_review_exceptions import (
     OutdatedRevisionError,
@@ -13,7 +13,6 @@ from core.services.revision_review_exceptions import (
     RevisionReviewValidationError,
 )
 
-REVIEWER_ROLES = frozenset({Role.AUDITOR, Role.ADMIN})
 DECISIONS = (RevisionStatus.APPROVED, RevisionStatus.REJECTED)
 
 DEFAULT_PAGE_SIZE = 20
@@ -24,7 +23,7 @@ JUSTIFICATION_MAX_LENGTH = 1000
 
 
 def is_revision_reviewer(user) -> bool:
-    return bool(user and user.is_authenticated and user.is_active and user.role in REVIEWER_ROLES)
+    return bool(user and user.is_authenticated and user.is_active and user.role in MANAGER_ROLES)
 
 
 def _error(code, message):
