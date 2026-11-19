@@ -16,7 +16,21 @@ def groups_for_manager(manager):
 
 
 def area_users_for_manager(manager):
-    return User.objects.filter(is_active=True, area_id=manager.area_id).order_by("name", "id")
+    return (
+        User.objects.filter(is_active=True, area_id=manager.area_id)
+        .exclude(pk=manager.pk)
+        .order_by("name", "id")
+    )
+
+
+def ensure_manageable_user(manager, user):
+    if user is None or not user.is_active:
+        raise GroupManagementError("UserNotFound", 404)
+    if user.pk == manager.pk:
+        raise GroupManagementError("CannotManageSelf", 403)
+    if user.area_id != manager.area_id:
+        raise GroupManagementError("UserOutsideArea", 403)
+    return user
 
 
 def get_group(manager, group_id):
@@ -73,9 +87,7 @@ def add_member(manager, group_id, payload):
             raise GroupManagementError(
                 "InvalidPayload", errors={"user_id": "Must be a positive integer."}
             )
-        user = User.objects.filter(pk=user_id, is_active=True).first()
-        if user is None:
-            raise GroupManagementError("UserNotFound", 404)
+        user = ensure_manageable_user(manager, User.objects.filter(pk=user_id).first())
         membership, created = AccessGroupMember.objects.get_or_create(
             group=group, user=user, defaults={"added_by": manager}
         )
@@ -85,7 +97,14 @@ def add_member(manager, group_id, payload):
 
 
 def remove_member(manager, group_id, user_id):
-    group = get_group(manager, group_id)
-    deleted, _ = AccessGroupMember.objects.filter(group=group, user_id=user_id).delete()
-    if not deleted:
-        raise GroupManagementError("AccessGroupMemberNotFound", 404)
+    with transaction.atomic():
+        group = get_group(manager, group_id)
+        membership = (
+            AccessGroupMember.objects.select_related("user")
+            .filter(group=group, user_id=user_id)
+            .first()
+        )
+        if membership is None:
+            raise GroupManagementError("AccessGroupMemberNotFound", 404)
+        ensure_manageable_user(manager, membership.user)
+        membership.delete()

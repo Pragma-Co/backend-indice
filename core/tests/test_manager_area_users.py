@@ -16,7 +16,7 @@ class ManagerAreaUsersTests(TestCase):
         )
         self.client.force_login(self.manager)
 
-    def test_should_list_only_active_users_of_managers_area_ordered_by_name(self):
+    def test_should_list_only_active_users_of_managers_area_without_the_manager(self):
         bruno = User.objects.create_user(
             email="bruno@example.com", password="secret", name="Bruno", area=self.area
         )
@@ -42,7 +42,6 @@ class ManagerAreaUsersTests(TestCase):
             [
                 {"id": ana.id, "name": "Ana", "email": "ana@example.com"},
                 {"id": bruno.id, "name": "Bruno", "email": "bruno@example.com"},
-                {"id": self.manager.id, "name": "Manager", "email": "manager@example.com"},
             ],
         )
 

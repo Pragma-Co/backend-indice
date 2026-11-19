@@ -41,6 +41,19 @@ class AccessGroupApiTests(TestCase):
         )
         self.client.force_login(self.manager)
 
+    def _user(self, email, name, area=None, is_active=True):
+        return User.objects.create_user(
+            email=email,
+            password="secret",
+            name=name,
+            role=Role.VIEWER,
+            area=area or self.area,
+            is_active=is_active,
+        )
+
+    def _membership(self, user):
+        return AccessGroupMember.objects.create(group=self.group, user=user, added_by=self.manager)
+
     def test_list_only_includes_groups_of_managers_area(self):
         response = self.client.get("/manager/access-groups")
 
@@ -103,13 +116,7 @@ class AccessGroupApiTests(TestCase):
         self.assertIn("name", caught.exception.errors)
 
     def test_members_can_be_added_listed_and_removed(self):
-        member = User.objects.create_user(
-            email="member@example.com",
-            password="secret",
-            name="Member",
-            role=Role.VIEWER,
-            area=self.other_area,
-        )
+        member = self._user("member@example.com", "Member")
         path = f"/manager/access-groups/{self.group.id}/users"
         response = self.client.post(path, {"user_id": member.id}, content_type="application/json")
         self.assertEqual(response.status_code, 201)
@@ -126,6 +133,80 @@ class AccessGroupApiTests(TestCase):
         self.assertEqual(self.client.delete(f"{path}/{member.id}").status_code, 204)
         self.assertFalse(AccessGroupMember.objects.filter(group=self.group, user=member).exists())
         self.assertEqual(self.client.delete(f"{path}/{member.id}").status_code, 404)
+
+    def test_should_expose_whether_each_member_is_active(self):
+        self._membership(self._user("active@example.com", "Active"))
+        self._membership(self._user("gone@example.com", "Gone", is_active=False))
+
+        response = self.client.get(f"/manager/access-groups/{self.group.id}/users")
+
+        self.assertEqual(
+            [(item["name"], item["is_active"]) for item in response.json()["results"]],
+            [("Active", True), ("Gone", False)],
+        )
+
+    def test_should_refuse_to_add_the_manager_to_the_group(self):
+        response = self.client.post(
+            f"/manager/access-groups/{self.group.id}/users",
+            {"user_id": self.manager.id},
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            (response.status_code, response.json()["error"]), (403, "CannotManageSelf")
+        )
+        self.assertFalse(AccessGroupMember.objects.filter(user=self.manager).exists())
+
+    def test_should_refuse_to_add_a_user_of_another_area(self):
+        outsider = self._user("outsider@example.com", "Outsider", area=self.other_area)
+
+        response = self.client.post(
+            f"/manager/access-groups/{self.group.id}/users",
+            {"user_id": outsider.id},
+            content_type="application/json",
+        )
+
+        self.assertEqual((response.status_code, response.json()["error"]), (403, "UserOutsideArea"))
+        self.assertFalse(AccessGroupMember.objects.filter(user=outsider).exists())
+
+    def test_should_refuse_to_remove_an_inactive_member(self):
+        gone = self._user("gone@example.com", "Gone", is_active=False)
+        membership = self._membership(gone)
+
+        response = self.client.delete(f"/manager/access-groups/{self.group.id}/users/{gone.id}")
+
+        self.assertEqual((response.status_code, response.json()["error"]), (404, "UserNotFound"))
+        self.assertTrue(AccessGroupMember.objects.filter(pk=membership.pk).exists())
+
+    def test_should_refuse_to_remove_a_member_of_another_area(self):
+        outsider = self._user("outsider@example.com", "Outsider", area=self.other_area)
+        membership = self._membership(outsider)
+
+        response = self.client.delete(f"/manager/access-groups/{self.group.id}/users/{outsider.id}")
+
+        self.assertEqual((response.status_code, response.json()["error"]), (403, "UserOutsideArea"))
+        self.assertTrue(AccessGroupMember.objects.filter(pk=membership.pk).exists())
+
+    def test_should_refuse_to_remove_the_manager_from_the_group(self):
+        membership = self._membership(self.manager)
+
+        response = self.client.delete(
+            f"/manager/access-groups/{self.group.id}/users/{self.manager.id}"
+        )
+
+        self.assertEqual(
+            (response.status_code, response.json()["error"]), (403, "CannotManageSelf")
+        )
+        self.assertTrue(AccessGroupMember.objects.filter(pk=membership.pk).exists())
+
+    def test_should_answer_member_not_found_before_checking_who_the_user_is(self):
+        outsider = self._user("outsider@example.com", "Outsider", area=self.other_area)
+
+        response = self.client.delete(f"/manager/access-groups/{self.group.id}/users/{outsider.id}")
+
+        self.assertEqual(
+            (response.status_code, response.json()["error"]), (404, "AccessGroupMemberNotFound")
+        )
 
     def test_member_payload_and_missing_user(self):
         path = f"/manager/access-groups/{self.group.id}/users"
