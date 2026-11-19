@@ -90,7 +90,7 @@ SVG export: [overview.svg](./overview.svg)
 | Documents list and details (`/documents`, `/documents/:id`) | `GET /documents`, `GET /documents/<id>`, `GET /files/<id>/view`, `POST /documents/<id>/request-access` |
 | New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions` (local classifier), `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `POST /documents` |
 | New revision (`/documents/:id/new-revision`) | `POST /documents/<id>/revisions` |
-| Manager panel (`/revisions`) | `GET /manager/pending-revisions`, `POST /manager/revisions/<id>/decision`, `GET /manager/pending-access-requests`, `POST /manager/access-requests/<id>/decision`, `GET /manager/activities` |
+| Manager panel (`/revisions`) | `GET /manager/pending-revisions`, `POST /manager/revisions/<id>/decision`, `GET /manager/pending-access-requests`, `POST /manager/access-requests/<id>/decision`, `GET /manager/activities`, `GET /manager/decision-history` |
 | Profile / data subject management (`/profile`) | `GET`/`PUT /users/me`, `POST /users/me/request-deletion`, `GET /legal-documents`, `GET /legal-documents/versions/<id>`, `GET`/`POST /users/me/legal-acceptances`, `POST /users/me/legal-acceptances/<id>/revoke`, `POST /auth/logout` |
 | Not called by the frontend yet | `GET /health/`, `/admin/`, `DELETE /documents/<id>`, `GET /documents/archived`, `POST /documents/<id>/restore` (archiving has no screen yet), `POST /documents/search/ai-summary` (search summary) |
 
