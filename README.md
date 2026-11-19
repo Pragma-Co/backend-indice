@@ -875,6 +875,29 @@ LGPD deadlines: `MEDIUM`, `HIGH` and `CRITICAL` incidents require the communicat
 
 Audit events: `INCIDENT_REGISTERED` (`CREATE`), `INCIDENT_UPDATED`, `INCIDENT_ACTION_RECORDED`, `INCIDENT_STATUS_CHANGED`, `INCIDENT_NOTIFICATION_RECORDED` (`UPDATE`), `INCIDENT_LIST_VIEWED`, `INCIDENT_VIEWED` and `BACKUP_HISTORY_VIEWED` (`READ`).
 
+### Communication to the affected users by e-mail
+
+Card SCRUM-102 automates the communication that the lifecycle above demands before an incident can be closed. Everything is restricted to administrators and audited like the rest of the register.
+
+**Who is notified.** `identify_affected_users` (`core/services/incident_subject_notification_service.py`) returns the users listed as affected in the incident (`affected_user_ids`), ordered by name, skipping inactive and anonymized accounts. The product owner decided that the people linked to the affected documents (responsible, creator, revision authors, access requesters) are not notified automatically: the administrator lists everyone who must be communicated when registering or updating the incident.
+
+**Endpoints.**
+
+- `GET /security/incidents/<id>/subject-notifications`: preview before sending. Answers `200 {"incident": {"id", "reference", "status", "subjects_notified_at"}, "summary": {"identified", "sent", "failed", "pending", "exhausted"}, "recipients": [{"user": {"id", "name"}, "status", "attempts", "last_attempt_at", "sent_at", "last_error"}], "preview": {"subject", "text"}}`. Recipients not yet persisted appear as `PENDING` with zero attempts; `preview.text` is the exact message (with a generic salutation), so the administrator can read it, and the containment measures it quotes, before anything goes out. Audited as `INCIDENT_SUBJECT_NOTIFICATIONS_VIEWED`.
+- `POST /security/incidents/<id>/subject-notifications` (no body): records every identified recipient in `data_incident_subject_notification` and sends the e-mail to each one that was not delivered yet, one message per person, one failure never stopping the others. Answers `200` with the same payload plus `"result": {"sent", "failed", "skipped"}`; `404 IncidentNotFound`; `409 {"error": "IncidentClosed"}`; `409 {"error": "NoAffectedUsers"}` when nobody can be identified. Audited as `INCIDENT_SUBJECTS_NOTIFIED` with the counts; the audit entry is mandatory, but because an e-mail cannot be un-sent the delivery records are kept even when the entry fails (`503 AuditUnavailable`), so a retry never re-sends what already went out.
+
+**Delivery register.** Table `data_incident_subject_notification` (`incident_id` + `user_id` unique): `status` (`PENDING`, `SENT`, `FAILED`), `attempts`, `last_attempt_at`, `sent_at` and `last_error` (the exception name only, the full error goes to the server log). A failed delivery is retried on the next `POST` or by the command below, up to three attempts (`MAX_ATTEMPTS`); after that the row counts as `exhausted` and is skipped until someone fixes the address or the mail server. Users already `SENT` are skipped. When every recipient is `SENT` the incident's `subjects_notified_at` is filled automatically, which unblocks the closure; `POST /security/incidents/<id>/notifications` with `DATA_SUBJECTS` still exists for communications made outside the system. The Django admin shows the rows inline, read-only.
+
+**Message.** Templates `core/templates/emails/data_incident_subject_notification.{txt,html}` (plain text plus an HTML alternative), in Portuguese because they reach the data subjects: subject `[Índice] Comunicado sobre incidente de segurança <reference>`, what happened (title, type, when it occurred and was detected), which categories of personal data may be affected, the containment, eradication and recovery actions already recorded, whether the ANPD was or will be notified, guidance per data category (change the password for `CREDENTIALS`, phishing awareness for `IDENTIFICATION`, and so on) and the contact of the data protection officer (`INCIDENT_CONTACT_EMAIL`) for LGPD rights. The description and root cause of the incident are internal and never sent.
+
+**Retries from the server.** `manage.py send_incident_notifications [--incident <id>]` resends the `PENDING` and `FAILED` rows of open incidents (attempts below the limit), prints one line per incident and exits with an error while any delivery still fails, so a crontab entry can alert on it:
+
+```cron
+*/30 * * * *  cd /path/to/backend && docker compose exec -T api python manage.py send_incident_notifications
+```
+
+**E-mail settings.** Django's mail stack, configured by environment (see `.env.example`): `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_TIMEOUT`, `DEFAULT_FROM_EMAIL` and `INCIDENT_CONTACT_EMAIL`. In development `docker-compose.yml` runs a [Mailpit](https://mailpit.axllent.org/) container (`api6-mailpit`) that captures every message: the `api` service delivers to it by default (SMTP backend, host `mailpit`, port 1025, no TLS) and the messages are read at `http://127.0.0.1:8025` (`MAILPIT_PORT`). Setting `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` prints them in the `api` log instead, and the automated tests always use Django's in-memory backend. Production points the same variables to the client's mail service.
+
 ## Backups and snapshots
 
 `manage.py backup_snapshot` exports an encrypted, compressed snapshot of each database and records the run in `backup_run` (target, status, start and end, file name, size, SHA-256, number of records, error name when it fails, and `pruned_at` once the retention removed the file). The register is the structured log the card asks for and is served by `GET /security/backups`.

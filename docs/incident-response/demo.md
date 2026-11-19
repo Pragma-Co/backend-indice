@@ -7,7 +7,7 @@ Cerca de 15 minutos, na ordem em que um incidente real acontece. Executado de po
 - `docker compose up -d`, `docker compose exec api python manage.py migrate` e `seed`. A senha dos usuários do seed é a `SEED_PASSWORD` usada ao semear.
 - Os comandos de backup e de reaplicação precisam de `BACKUP_ENCRYPTION_KEY` (64 caracteres hexadecimais) no `.env`. Sem ela, passe a chave no próprio comando: `docker compose exec -e BACKUP_ENCRYPTION_KEY=<chave> api python manage.py ...`.
 - Os passos 5 e 10 dependem do código dos PRs #70 (SCRUM-102) e #66 (SCRUM-101) no branch em uso.
-- Não há tela no frontend, então a demonstração usa a API direto (curl, Insomnia ou Postman) e o admin do Django em `http://127.0.0.1:8000/admin/`.
+- Não há tela no frontend, então a demonstração usa a API direto (curl, Insomnia ou Postman), o admin do Django em `http://127.0.0.1:8000/admin/` e o Mailpit em `http://127.0.0.1:8025` para os e-mails.
 
 ## 1. Entrar como administradora e aceitar os termos
 
@@ -76,18 +76,14 @@ A resposta é `409 {"error": "IncidentClosureBlocked", "reasons": ["authority_no
 
 ## 5. Comunicar os titulares pelo sistema
 
-O `GET` mostra quem será avisado, o motivo de cada um e a prévia exata do e-mail; o `POST` envia e devolve o resultado.
+O `GET` mostra quem será avisado (os usuários listados no incidente) e a prévia exata do e-mail; o `POST` envia e devolve o resultado.
 
 ```bash
 api "$BASE/security/incidents/1/subject-notifications"
 api -X POST "$BASE/security/incidents/1/subject-notifications"
 ```
 
-No `GET`, mostre `recipients[].reason` (por exemplo `AFFECTED_USER`, `DOCUMENT_RESPONSIBLE`) e `preview.text`. No `POST`, `result` traz `sent`, `failed` e `skipped`, cada destinatário passa a `SENT` com `sent_at`, e o incidente ganha `subjects_notified_at`. Com o backend de console (padrão em desenvolvimento) as mensagens aparecem no log da api:
-
-```bash
-docker compose logs api --since 5m | grep -A 40 "Comunicado sobre incidente"
-```
+No `GET`, mostre `recipients` (os usuários listados em `affected_user_ids`, com status `PENDING`) e `preview.text`. No `POST`, `result` traz `sent`, `failed` e `skipped`, cada destinatário passa a `SENT` com `sent_at`, e o incidente ganha `subjects_notified_at`. Em desenvolvimento as mensagens chegam ao Mailpit, o container que captura os e-mails: abra `http://127.0.0.1:8025` e mostre a mensagem com o texto e a versão HTML. (Se `EMAIL_BACKEND` estiver no backend de console, elas aparecem no log da api: `docker compose logs api --since 5m | grep -A 40 "Comunicado sobre incidente"`.)
 
 Um segundo `POST` não reenvia a ninguém (`skipped`). Para mostrar falha e reenvio, aponte `EMAIL_BACKEND` para SMTP com um `EMAIL_HOST` inalcançável, reinicie a api e envie: os destinatários ficam `FAILED` com `last_error`; a rotina do servidor reenvia só esses, até três tentativas:
 
