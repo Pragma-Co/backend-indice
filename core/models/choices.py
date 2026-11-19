@@ -130,6 +130,12 @@ class NotificationRecipient(models.TextChoices):
     DATA_SUBJECTS = "DATA_SUBJECTS", "Data subjects"
 
 
+class SubjectNotificationStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    SENT = "SENT", "Sent"
+    FAILED = "FAILED", "Failed"
+
+
 class BackupTarget(models.TextChoices):
     POSTGRES = "POSTGRES", "PostgreSQL"
     MONGODB = "MONGODB", "MongoDB"

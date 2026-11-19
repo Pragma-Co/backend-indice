@@ -77,6 +77,19 @@ services:
       ollama:
         condition: service_healthy
 
+  mailpit:
+    image: axllent/mailpit:v1.33
+    container_name: api6-mailpit
+    restart: unless-stopped
+    ports:
+      # Web UI with the captured e-mails, localhost only; SMTP (1025) stays inside the Docker network
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: .
     container_name: api6-django
@@ -88,6 +101,11 @@ services:
       POSTGRES_PORT: "5432"
       MONGO_HOST: ${MONGO_HOST:-mongodb}
       MONGO_PORT: "27017"
+      # Development e-mails go to the Mailpit container unless .env points to a real SMTP service
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
     volumes:
       - .:/app
     ports:
