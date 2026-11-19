@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
-from core.models import Document
+from core.models import MANAGER_ROLES, Document
 from core.services.documents_exceptions import ArchivePermissionDeniedError, DocumentNotFoundError
 from core.services.documents_service import (
     filter_documents,
@@ -9,11 +9,10 @@ from core.services.documents_service import (
     parse_document_query,
     serialize_document,
 )
-from core.services.revision_review_service import REVIEWER_ROLES
 
 
 def is_manager(user) -> bool:
-    return bool(user and user.is_authenticated and user.is_active and user.role in REVIEWER_ROLES)
+    return bool(user and user.is_authenticated and user.is_active and user.role in MANAGER_ROLES)
 
 
 def can_archive_document(document, user) -> bool:

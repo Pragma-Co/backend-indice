@@ -16,6 +16,9 @@ class Role(models.TextChoices):
     ADMIN = "ADMIN", "Administrator"
 
 
+MANAGER_ROLES = frozenset({Role.AUDITOR, Role.ADMIN})
+
+
 class ConfidentialityLevel(models.TextChoices):
     PUBLIC = "PUBLIC", "Public"
     CONFIDENTIAL = "CONFIDENTIAL", "Confidential"
