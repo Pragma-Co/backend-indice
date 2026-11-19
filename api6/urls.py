@@ -18,7 +18,6 @@ from core.views.access_request_view import (
 from core.views.api_root_view import api_root
 from core.views.auth_view import csrf_view, login_view, logout_view
 from core.views.catalog_view import list_areas, list_disciplines, list_document_types, list_projects
-from core.views.decision_history_view import decision_history_view
 from core.views.data_incident_view import (
     backup_runs_view,
     incident_actions_view,
@@ -27,6 +26,7 @@ from core.views.data_incident_view import (
     incident_status_view,
     incidents_collection,
 )
+from core.views.decision_history_view import decision_history_view
 from core.views.document_ai_view import (
     stream_document_suggestions_view,
     suggest_document_metadata_view,
