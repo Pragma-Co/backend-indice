@@ -1,6 +1,13 @@
 from django.db import IntegrityError, transaction
 
-from core.models import AccessGroup, AccessGroupMember, AccessGroupScope, SecrecyLevel, User
+from core.models import (
+    MANAGER_ROLES,
+    AccessGroup,
+    AccessGroupMember,
+    AccessGroupScope,
+    SecrecyLevel,
+    User,
+)
 
 
 class GroupManagementError(Exception):
@@ -18,8 +25,17 @@ def groups_for_manager(manager):
 def area_users_for_manager(manager):
     return (
         User.objects.filter(is_active=True, area_id=manager.area_id)
-        .exclude(pk=manager.pk)
+        .exclude(role__in=MANAGER_ROLES)
         .order_by("name", "id")
+    )
+
+
+def group_members_for_manager(manager, group):
+    return (
+        group.memberships.select_related("user")
+        .filter(user__area_id=manager.area_id)
+        .exclude(user__role__in=MANAGER_ROLES)
+        .order_by("user__name", "user_id")
     )
 
 
@@ -28,6 +44,8 @@ def ensure_manageable_user(manager, user):
         raise GroupManagementError("UserNotFound", 404)
     if user.pk == manager.pk:
         raise GroupManagementError("CannotManageSelf", 403)
+    if user.role in MANAGER_ROLES:
+        raise GroupManagementError("CannotManageManager", 403)
     if user.area_id != manager.area_id:
         raise GroupManagementError("UserOutsideArea", 403)
     return user

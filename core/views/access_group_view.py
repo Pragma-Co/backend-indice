@@ -14,6 +14,7 @@ from core.services.access_group_management_service import (
     area_users_for_manager,
     create_group,
     get_group,
+    group_members_for_manager,
     groups_for_manager,
     remove_member,
 )
@@ -84,7 +85,7 @@ def access_group_users_view(request, group_id):
     try:
         if request.method == "GET":
             group = get_group(request.user, group_id)
-            memberships = group.memberships.select_related("user").order_by("user__name", "user_id")
+            memberships = group_members_for_manager(request.user, group)
             return JsonResponse({"results": [serialize_member(member) for member in memberships]})
         member = add_member(request.user, group_id, _payload(request))
         return JsonResponse(serialize_member(member), status=201)

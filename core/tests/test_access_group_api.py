@@ -134,9 +134,14 @@ class AccessGroupApiTests(TestCase):
         self.assertFalse(AccessGroupMember.objects.filter(group=self.group, user=member).exists())
         self.assertEqual(self.client.delete(f"{path}/{member.id}").status_code, 404)
 
-    def test_should_expose_whether_each_member_is_active(self):
+    def test_should_list_only_the_collaborators_of_the_managers_area_among_the_members(self):
         self._membership(self._user("active@example.com", "Active"))
         self._membership(self._user("gone@example.com", "Gone", is_active=False))
+        self._membership(self._user("outsider@example.com", "Outsider", area=self.other_area))
+        auditor = self._user("auditor@example.com", "Auditor")
+        auditor.role = Role.AUDITOR
+        auditor.save(update_fields=["role"])
+        self._membership(auditor)
 
         response = self.client.get(f"/manager/access-groups/{self.group.id}/users")
 
@@ -144,6 +149,35 @@ class AccessGroupApiTests(TestCase):
             [(item["name"], item["is_active"]) for item in response.json()["results"]],
             [("Active", True), ("Gone", False)],
         )
+
+    def test_should_refuse_to_add_another_manager_to_the_group(self):
+        auditor = self._user("auditor@example.com", "Auditor")
+        auditor.role = Role.AUDITOR
+        auditor.save(update_fields=["role"])
+
+        response = self.client.post(
+            f"/manager/access-groups/{self.group.id}/users",
+            {"user_id": auditor.id},
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            (response.status_code, response.json()["error"]), (403, "CannotManageManager")
+        )
+        self.assertFalse(AccessGroupMember.objects.filter(user=auditor).exists())
+
+    def test_should_refuse_to_remove_another_manager_from_the_group(self):
+        admin = self._user("admin@example.com", "Admin")
+        admin.role = Role.ADMIN
+        admin.save(update_fields=["role"])
+        membership = self._membership(admin)
+
+        response = self.client.delete(f"/manager/access-groups/{self.group.id}/users/{admin.id}")
+
+        self.assertEqual(
+            (response.status_code, response.json()["error"]), (403, "CannotManageManager")
+        )
+        self.assertTrue(AccessGroupMember.objects.filter(pk=membership.pk).exists())
 
     def test_should_refuse_to_add_the_manager_to_the_group(self):
         response = self.client.post(
