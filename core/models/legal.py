@@ -132,9 +132,9 @@ class LegalClause(models.Model):
 
 
 class UserLegalAcceptance(models.Model):
-    """A user's signature of one version: the proof of consent.
+    """A user's response to one version, including its overall acceptance outcome.
 
-    Append-only evidence. Revoking sets `revoked_at` instead of deleting.
+    Append-only evidence. Revoking an acceptance sets `revoked_at` instead of deleting.
     """
 
     user = models.ForeignKey(
@@ -145,6 +145,7 @@ class UserLegalAcceptance(models.Model):
     version = models.ForeignKey(
         LegalDocumentVersion, on_delete=models.PROTECT, related_name="acceptances"
     )
+    accepted = models.BooleanField(default=True)
     accepted_at = models.DateTimeField(db_default=Now(), editable=False)
     revoked_at = models.DateTimeField(null=True, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
@@ -155,7 +156,7 @@ class UserLegalAcceptance(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["user", "version"],
-                condition=models.Q(revoked_at__isnull=True),
+                condition=models.Q(accepted=True, revoked_at__isnull=True),
                 name="uq_user_legal_acceptance_in_force",
             ),
             models.CheckConstraint(

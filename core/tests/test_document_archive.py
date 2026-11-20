@@ -240,6 +240,8 @@ class ArchivedDocumentVisibilityTests(DocumentArchiveFixtureMixin, TestCase):
         archive_document(self.document.pk, self.manager)
 
     def test_should_hide_archived_documents_from_the_listing(self):
+        self.client.force_login(self.author)
+
         response = self.client.get(reverse("document-list"))
 
         self.assertEqual(response.status_code, 200)
@@ -255,6 +257,8 @@ class ArchivedDocumentVisibilityTests(DocumentArchiveFixtureMixin, TestCase):
         self.assertEqual(response.json(), {"error": "DocumentNotFound"})
 
     def test_should_refuse_new_revisions_for_an_archived_document(self):
+        self.client.force_login(self.author)
+
         response = self.client.post(
             reverse("document-revision-create", args=[self.document.pk]),
             data=json.dumps(
@@ -289,10 +293,16 @@ class ArchivedDocumentVisibilityTests(DocumentArchiveFixtureMixin, TestCase):
 
     def test_should_refuse_access_requests_and_file_views_for_an_archived_document(self):
         file = self.current.files.get()
+        self.client.force_login(self.other_manager)
 
         access = self.client.post(
             reverse("document-request-access", args=[self.document.pk]),
-            data=json.dumps({"user_id": self.other_manager.pk, "justification": "Preciso"}),
+            data=json.dumps(
+                {
+                    "justification": "Preciso do documento para a auditoria.",
+                    "access_type": "PERMANENT",
+                }
+            ),
             content_type="application/json",
         )
         view = self.client.get(

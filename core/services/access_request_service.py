@@ -1,39 +1,123 @@
+from datetime import date
+
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from core.models import AccessStatus, Area, Document, DocumentAccess
+from core.models import AccessStatus, AccessType, Document, DocumentAccess
 from core.services.access_request_exceptions import (
     AccessRequestAlreadyDecidedError,
+    AccessRequestExpiredError,
     AccessRequestNotFoundError,
     AccessRequestValidationError,
     OwnAccessRequestReviewError,
 )
+from core.services.notification_service import notify_access_decided
+from core.services.revision_review_service import is_revision_reviewer
 
 DECISIONS = (AccessStatus.APPROVED, AccessStatus.REJECTED)
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+JUSTIFICATION_MIN_LENGTH = 20
+JUSTIFICATION_MAX_LENGTH = 1000
 
 
 def _error(code, message):
     return {"code": code, "message": message}
 
 
-def decidable_documents(approver):
-    return Document.objects.filter(document_type__active=True).filter(
-        Q(responsible=approver) | Q(areas__manager=approver, areas__active=True)
+def active_grant_filter() -> Q:
+    return Q(status=AccessStatus.APPROVED) & (
+        Q(expires_on__isnull=True) | Q(expires_on__gte=timezone.localdate())
     )
+
+
+def _justification_error(justification, field="justification"):
+    if justification is None or (isinstance(justification, str) and not justification.strip()):
+        return _error("required", f"{field.capitalize()} is required.")
+    if not isinstance(justification, str):
+        return _error("invalid", f"{field} must be a string.")
+    length = len(justification.strip())
+    if length < JUSTIFICATION_MIN_LENGTH:
+        return _error(
+            "too_short", f"{field} must have at least {JUSTIFICATION_MIN_LENGTH} characters."
+        )
+    if length > JUSTIFICATION_MAX_LENGTH:
+        return _error(
+            "too_long", f"{field} must have at most {JUSTIFICATION_MAX_LENGTH} characters."
+        )
+    return None
+
+
+def _clean_access_type(raw_access_type, errors):
+    if raw_access_type is None or (
+        isinstance(raw_access_type, str) and not raw_access_type.strip()
+    ):
+        errors["access_type"] = _error("required", "access_type is required.")
+        return None
+    normalized = raw_access_type.strip().upper() if isinstance(raw_access_type, str) else None
+    if normalized not in AccessType.values:
+        errors["access_type"] = _error(
+            "invalid_choice", f"access_type must be one of {AccessType.values}."
+        )
+        return None
+    return AccessType(normalized)
+
+
+def _clean_expires_on(raw_expires_on, access_type, errors):
+    if access_type == AccessType.PERMANENT and raw_expires_on is not None:
+        errors["expires_on"] = _error(
+            "not_allowed", "expires_on is only accepted for TEMPORARY access."
+        )
+        return None
+    if access_type != AccessType.TEMPORARY:
+        return None
+    if raw_expires_on is None or raw_expires_on == "":
+        errors["expires_on"] = _error("required", "expires_on is required for TEMPORARY access.")
+        return None
+    try:
+        expires_on = date.fromisoformat(raw_expires_on)
+    except (TypeError, ValueError):
+        errors["expires_on"] = _error("invalid", "expires_on must be a date in YYYY-MM-DD format.")
+        return None
+    if expires_on < timezone.localdate():
+        errors["expires_on"] = _error("in_the_past", "expires_on cannot be in the past.")
+        return None
+    return expires_on
+
+
+def validate_access_request_payload(payload) -> dict:
+    if not isinstance(payload, dict):
+        raise AccessRequestValidationError(
+            {"body": _error("invalid", "Request body must be a JSON object.")}
+        )
+
+    errors = {}
+    justification = payload.get("justification")
+    justification_error = _justification_error(justification)
+    if justification_error is not None:
+        errors["justification"] = justification_error
+    access_type = _clean_access_type(payload.get("access_type"), errors)
+    expires_on = _clean_expires_on(payload.get("expires_on"), access_type, errors)
+    if errors:
+        raise AccessRequestValidationError(errors)
+    return {
+        "justification": justification.strip(),
+        "access_type": access_type,
+        "expires_on": expires_on,
+    }
+
+
+def decidable_documents(approver):
+    if not is_access_approver(approver):
+        return Document.objects.none()
+    return Document.objects.filter(document_type__active=True, archived_at__isnull=True)
 
 
 def is_access_approver(user) -> bool:
-    if not (user and user.is_authenticated and user.is_active):
-        return False
-    return (
-        Area.objects.filter(manager=user, active=True).exists()
-        or decidable_documents(user).exists()
-    )
+    return is_revision_reviewer(user)
 
 
 def _positive_int(params, name, default, errors):
@@ -74,6 +158,29 @@ def pending_access_requests(approver):
     )
 
 
+def get_access_request_detail(access_id, approver) -> DocumentAccess:
+    access = (
+        DocumentAccess.objects.filter(
+            pk=access_id,
+            document__in=decidable_documents(approver).values("pk"),
+        )
+        .exclude(user=approver)
+        .select_related(
+            "user__area",
+            "approver",
+            "document__project",
+            "document__discipline",
+            "document__document_type",
+            "document__responsible",
+        )
+        .prefetch_related("document__areas")
+        .first()
+    )
+    if access is None:
+        raise AccessRequestNotFoundError()
+    return access
+
+
 def list_pending_access_requests(approver, params) -> dict:
     query = parse_pending_query(params)
     paginator = Paginator(pending_access_requests(approver), query["page_size"])
@@ -108,7 +215,11 @@ def validate_decision_payload(payload) -> dict:
                 )
             }
         )
-    return {"decision": AccessStatus(decision.strip().upper())}
+    opinion = payload.get("opinion")
+    opinion_error = _justification_error(opinion, field="opinion")
+    if opinion_error:
+        raise AccessRequestValidationError({"opinion": opinion_error})
+    return {"decision": AccessStatus(decision.strip().upper()), "opinion": opinion.strip()}
 
 
 def decide_access_request(access_id, approver, payload) -> DocumentAccess:
@@ -127,10 +238,18 @@ def decide_access_request(access_id, approver, payload) -> DocumentAccess:
             raise OwnAccessRequestReviewError()
         if access.status != AccessStatus.PENDING:
             raise AccessRequestAlreadyDecidedError(access.status)
+        if (
+            cleaned["decision"] == AccessStatus.APPROVED
+            and access.expires_on is not None
+            and access.expires_on < timezone.localdate()
+        ):
+            raise AccessRequestExpiredError(access.expires_on)
 
         access.status = cleaned["decision"]
+        access.decision_opinion = cleaned["opinion"]
         access.approver = approver
         access.decided_at = timezone.now()
-        access.save(update_fields=["status", "approver", "decided_at"])
+        access.save(update_fields=["status", "decision_opinion", "approver", "decided_at"])
+        notify_access_decided(access)
 
     return access

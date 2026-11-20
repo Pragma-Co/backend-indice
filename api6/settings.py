@@ -64,6 +64,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.middleware.login_required_middleware.LoginRequiredJsonMiddleware",
+    "core.middleware.document_visibility_middleware.DocumentVisibilityMiddleware",
+    "core.middleware.legal_consent_middleware.LegalConsentRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -108,8 +111,19 @@ DATABASES = {
                 "timeout": float(os.environ.get("POSTGRES_POOL_TIMEOUT", "10")),
             }
         },
-    }
+    },
+    "tombstone": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("TOMBSTONE_DB", "api6_tombstone"),
+        "USER": os.environ.get("TOMBSTONE_USER", os.environ.get("POSTGRES_USER", "api6_admin")),
+        "PASSWORD": os.environ.get("TOMBSTONE_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "")),
+        "HOST": os.environ.get("TOMBSTONE_HOST", os.environ.get("POSTGRES_HOST", "localhost")),
+        "PORT": os.environ.get("TOMBSTONE_PORT", os.environ.get("POSTGRES_PORT", "5433")),
+    },
 }
+
+DATABASE_ROUTERS = ["core.db_router.TombstoneRouter"]
+TEST_RUNNER = "api6.test_runner.AllDatabasesRunner"
 
 # Non-relational database: MongoDB (accessed through pymongo, see core/mongo.py).
 # Kept as individual settings instead of an assembled URI: Django's debug-page
@@ -129,6 +143,20 @@ AUTH_USER_MODEL = "core.User"
 MAX_UPLOAD_SIZE_BYTES = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", 100 * 1024 * 1024))
 TEMP_UPLOAD_DIR = Path(os.environ.get("TEMP_UPLOAD_DIR", BASE_DIR / "tmp_uploads"))
 DOCUMENT_STORAGE_DIR = Path(os.environ.get("DOCUMENT_STORAGE_DIR", BASE_DIR / "media"))
+BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", BASE_DIR / "backups"))
+BACKUP_ENCRYPTION_KEY = os.environ.get("BACKUP_ENCRYPTION_KEY", "")
+BACKUP_KEEP_POSTGRES = int(os.environ.get("BACKUP_KEEP_POSTGRES", "42"))
+BACKUP_KEEP_MONGODB = int(os.environ.get("BACKUP_KEEP_MONGODB", "30"))
+
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+EMAIL_TIMEOUT = float(os.environ.get("EMAIL_TIMEOUT", "10"))
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "Índice <no-reply@indice.local>")
+INCIDENT_CONTACT_EMAIL = os.environ.get("INCIDENT_CONTACT_EMAIL", "privacidade@indice.local")
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")

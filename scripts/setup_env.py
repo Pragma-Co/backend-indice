@@ -41,6 +41,13 @@ Database: {POSTGRES_DB}
 User:     {POSTGRES_USER}
 Password: {POSTGRES_PASSWORD}
 
+--- PostgreSQL (deleted-users tombstone) ---
+Host:     localhost (from your machine) / postgres-tombstone (inside Docker)
+Port:     {TOMBSTONE_PORT}
+Database: {TOMBSTONE_DB}
+User:     {TOMBSTONE_USER}
+Password: {TOMBSTONE_PASSWORD}
+
 --- MongoDB ---
 Host:     localhost (from your machine) / mongodb (inside Docker)
 Port:     {MONGO_PORT}
@@ -55,13 +62,16 @@ Password: {DJANGO_SUPERUSER_PASSWORD}
 --- Django ---
 SECRET_KEY: {DJANGO_SECRET_KEY}
 Excluded-identifier HMAC key: {EXCLUDED_IDENTIFIER_HMAC_KEY}
+Backup encryption key: {BACKUP_ENCRYPTION_KEY}
 """
 
 
 def generate_value(key: str) -> str:
     # 64 hex chars for the signing key, 32 for passwords (128+ bits either way)
     return secrets.token_hex(
-        32 if key in ("DJANGO_SECRET_KEY", "EXCLUDED_IDENTIFIER_HMAC_KEY") else 16
+        32
+        if key in ("DJANGO_SECRET_KEY", "EXCLUDED_IDENTIFIER_HMAC_KEY", "BACKUP_ENCRYPTION_KEY")
+        else 16
     )
 
 

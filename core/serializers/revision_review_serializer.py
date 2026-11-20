@@ -44,7 +44,7 @@ def serialize_pending_page(page: dict) -> dict:
     return {**page, "results": [serialize_pending_revision(item) for item in page["results"]]}
 
 
-def serialize_revision_decision(revision: Revision, superseded: Revision | None) -> dict:
+def serialize_revision_decision(revision: Revision) -> dict:
     return {
         "id": revision.id,
         "document_id": revision.document_id,
@@ -54,12 +54,4 @@ def serialize_revision_decision(revision: Revision, superseded: Revision | None)
         "auditor": {"id": revision.auditor_id, "name": revision.auditor.name},
         "auditor_comment": revision.auditor_comment,
         "audited_at": revision.audited_at.isoformat(),
-        "superseded_revision": None
-        if superseded is None
-        else {
-            "id": superseded.id,
-            "version": superseded.version,
-            "revision": revision_label(superseded.version),
-            "status": superseded.status,
-        },
     }

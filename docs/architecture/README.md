@@ -76,7 +76,7 @@ SVG export: [overview.svg](./overview.svg)
 
 **Authentication and authorization.**
 
-- The session is a Django session: the backend sets an `HttpOnly` `sessionid` cookie and a `csrftoken` cookie. Until the real login exists, the frontend opens the session through the provisional `POST /dev/login {"user_id"}` (available only with `DJANGO_DEBUG` on) and closes it with `POST /auth/logout`.
+- The session is a Django session: the backend sets an `HttpOnly` `sessionid` cookie and a `csrftoken` cookie. The frontend fetches the CSRF cookie with `GET /auth/csrf`, opens the session with `POST /auth/login {"email", "password"}` and closes it with `POST /auth/logout`. Every other route except `/health/`, the read-only `/legal-documents` routes and the admin answers `401 AuthenticationRequired` without a session (`LoginRequiredJsonMiddleware`).
 - Django's CSRF protection stays on: every write (`POST`, `PUT`, `DELETE`) carries the `csrftoken` cookie value in the `X-CSRFToken` header, added automatically by the API client (`src/api/client.js`), and `DJANGO_CSRF_TRUSTED_ORIGINS` / `DJANGO_CORS_ALLOWED_ORIGINS` list the frontend origins.
 - Roles live in `app_user.role`: `AUTHOR` and `VIEWER` are collaborators; `AUDITOR` and `ADMIN` are technical managers (they review revisions, decide access requests, archive documents and read the activity feed). `ADMIN` also enters the Django admin. The frontend mirrors this with the `managerOnly` / `collaboratorOnly` route guards and the `public` flag of the login route.
 - Reading a document's content is a separate rule, checked on the server for the detail and for every file: the responsible user, a user with an approved access request, or a manager while the revision is pending.
@@ -85,12 +85,12 @@ SVG export: [overview.svg](./overview.svg)
 
 | Frontend screen (route) | API endpoints |
 |---|---|
-| Login (`/login`) | `POST /dev/login`, `GET /users/me` |
+| Login (`/login`) | `GET /auth/csrf`, `POST /auth/login`, `GET /users/me` |
 | Home and results (`/home`, `/results`) | `GET /documents` (filters, pagination), `GET /documents/simple-filters`, `GET /documents/search` |
 | Documents list and details (`/documents`, `/documents/:id`) | `GET /documents`, `GET /documents/<id>`, `GET /files/<id>/view`, `POST /documents/<id>/request-access` |
 | New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions` (local classifier), `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `POST /documents` |
 | New revision (`/documents/:id/new-revision`) | `POST /documents/<id>/revisions` |
-| Manager panel (`/revisions`) | `GET /manager/pending-revisions`, `POST /manager/revisions/<id>/decision`, `GET /manager/pending-access-requests`, `POST /manager/access-requests/<id>/decision`, `GET /manager/activities` |
+| Manager panel (`/revisions`) | `GET /manager/pending-revisions`, `POST /manager/revisions/<id>/decision`, `GET /manager/pending-access-requests`, `POST /manager/access-requests/<id>/decision`, `GET /manager/activities`, `GET /manager/decision-history` |
 | Profile / data subject management (`/profile`) | `GET`/`PUT /users/me`, `POST /users/me/request-deletion`, `GET /legal-documents`, `GET /legal-documents/versions/<id>`, `GET`/`POST /users/me/legal-acceptances`, `POST /users/me/legal-acceptances/<id>/revoke`, `POST /auth/logout` |
 | Not called by the frontend yet | `GET /health/`, `/admin/`, `DELETE /documents/<id>`, `GET /documents/archived`, `POST /documents/<id>/restore` (archiving has no screen yet), `POST /documents/search/ai-summary` (search summary) |
 
@@ -108,16 +108,29 @@ sequenceDiagram
     participant A as Django API
     participant DB as PostgreSQL
 
-    B->>P: POST /api/dev/login {user_id}
-    P->>A: POST /dev/login
-    A->>DB: load active user
-    A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + csrftoken
+    B->>P: GET /api/auth/csrf
+    P->>A: GET /auth/csrf
+    A-->>B: 204 · Set-Cookie csrftoken
+    B->>P: POST /api/auth/login {email, password} (X-CSRFToken)
+    P->>A: POST /auth/login · Origin localhost:5173
+    A->>A: CSRF check (cookie + header + trusted origin)
+    A->>DB: load user by email, check PBKDF2 hash and active flag
+    alt invalid credentials, inactive or anonymized
+        A-->>B: 401 InvalidCredentials
+    else valid
+        A->>DB: create session + audit_log LOGIN
+        A-->>B: 200 user · Set-Cookie sessionid (HttpOnly) + rotated csrftoken
+    end
     B->>B: store profile in Pinia, apply route guards
     B->>P: PUT /api/users/me (X-CSRFToken from the cookie)
-    P->>A: PUT /users/me · Origin localhost:5173
-    A->>A: CSRF check (cookie + header + trusted origin), session user
+    P->>A: PUT /users/me
+    A->>A: LoginRequiredJsonMiddleware (401 AuthenticationRequired without a session), CSRF check
     A->>DB: update user + audit_log (required, same transaction)
     A-->>B: 200 user · or 503 AuditUnavailable when the audit entry fails
+    B->>P: POST /api/auth/logout (X-CSRFToken)
+    P->>A: POST /auth/logout
+    A->>DB: delete session
+    A-->>B: 204 · sessionid expired
 ```
 
 SVG export: [flow-sign-in.svg](./flow-sign-in.svg)
@@ -162,7 +175,7 @@ SVG export: [flow-registration.svg](./flow-registration.svg)
 | Flow | What happens |
 |---|---|
 | New revision | `POST /documents/<id>/revisions` creates revision `n+1` as `PENDING` with its files, re-indexes the content and writes the audit event. Only the latest approved revision is the official one. |
-| Revision review | A manager lists `GET /manager/pending-revisions` and decides with `POST /manager/revisions/<id>/decision`: approval makes the revision current and the previous one `OBSOLETE`; rejection requires a justification. Managers cannot decide their own revisions. |
+| Revision review | A manager lists `GET /manager/pending-revisions` and decides with `POST /manager/revisions/<id>/decision`: approval makes the revision the current one; rejection requires a justification. Managers cannot decide their own revisions. |
 | Access to a document | Everyone sees the public metadata. Reading the description and files requires being the responsible user or holding an approved access request (`POST /documents/<id>/request-access`, decided by a manager); every denied file read is audited. |
 | Archiving | `DELETE /documents/<id>` is a soft delete by a manager of one of the document's areas; archived documents disappear from every listing and search and can be restored. |
 | Search | `GET /documents` filters by metadata; `GET /documents/search` runs PostgreSQL full-text search over title, code, description, tags and, for users who can read the document, the indexed content, with highlighted snippets; `POST /documents/search/ai-summary` asks Ollama for a short summary of those snippets (a fallback text when the model is unreachable). |
@@ -197,6 +210,14 @@ erDiagram
     APP_USER ||--o{ USER_LEGAL_ACCEPTANCE : "accepts"
     LEGAL_DOCUMENT_VERSION ||--o{ USER_LEGAL_ACCEPTANCE : ""
     USER_LEGAL_ACCEPTANCE ||--o{ USER_CLAUSE_CONSENT : "per clause"
+    SECRECY_LEVEL ||--o{ DOCUMENT : "confidentiality_level"
+    SECRECY_LEVEL ||--o{ ACCESS_GROUP : "grants up to"
+    AREA ||--o{ ACCESS_GROUP : "area groups"
+    PROJECT ||--o{ ACCESS_GROUP : "project groups"
+    ACCESS_GROUP ||--o{ ACCESS_GROUP_MEMBER : "members"
+    APP_USER ||--o{ ACCESS_GROUP_MEMBER : "member / added_by"
+    DOCUMENT ||--o{ DOCUMENT_ACCESS_GROUP : "authorized groups"
+    ACCESS_GROUP ||--o{ DOCUMENT_ACCESS_GROUP : "granted documents"
 
     DOCUMENT {
         string code
@@ -206,7 +227,7 @@ erDiagram
     }
     REVISION {
         int version
-        string status "PENDING / APPROVED / REJECTED / OBSOLETE"
+        string status "PENDING / APPROVED / REJECTED"
         string change_description
     }
     FILE {
@@ -227,6 +248,16 @@ erDiagram
     EXCLUDED_IDENTIFIER {
         string identifier_hash
     }
+    SECRECY_LEVEL {
+        string code "PUBLIC / CONFIDENTIAL / SECRET"
+        int rank
+        string visibility "EVERYONE / AREA / SELECTED_USERS"
+    }
+    ACCESS_GROUP {
+        string name
+        string scope "AREA / PROJECT"
+        bool active
+    }
 ```
 
 SVG export: [data-model.svg](./data-model.svg)
@@ -234,6 +265,7 @@ SVG export: [data-model.svg](./data-model.svg)
 Notes on the data layer:
 
 - `audit_log` is append-only at the database level (a trigger rejects `UPDATE` and `DELETE`), and `document.updated_at` is maintained by a trigger. Enumerations are guarded by `CHECK` constraints.
+- `secrecy_level` holds the three confidentiality levels with their visibility rule (everyone, users of the document areas, selected users); `document.confidentiality_level` references it. `access_group` gathers users by area or by project up to a level, `access_group_member` is the user/group pivot and `document_access_group` records the groups explicitly authorized for a document at upload; `core/services/access_group_service.py` evaluates who can see a document from these tables and from `document_access`.
 - `excluded_identifier` stores only an HMAC-SHA256 of the email of removed accounts, so the identifier can never be reused without storing readable personal data.
 - `temp_uploads` in MongoDB is transient: a record exists between the upload and the registration (or until the temporary file is discarded) and holds the metadata, the extracted text and the suggestion. `document_vectors` holds the TF-IDF vectors of the classifier's training dataset, tagged with the vectorizer version; the trained model itself (`model.pt`, `vectorizer.joblib`, `metadata.json`) is versioned in `classifier_artifacts/` and loaded in memory by the API.
 - File bytes never go to a database: temporary files stay in `tmp_uploads/`, registered files in `media/<document code>/v<version>/`, both Docker volumes.
@@ -255,19 +287,19 @@ Notes on the data layer:
 ```mermaid
 flowchart TB
     subgraph Routes["api6/urls.py"]
-        R1["/dev/login · /auth/logout · /users/me/*"]
+        R1["/auth/* · /users/me/*"]
         R2["/documents/* · /files/*"]
         R3["/manager/*"]
         R4["/legal-documents/* · /projects/ · /areas/ · /disciplines/"]
     end
     subgraph ViewsLayer["core/views"]
-        V1["user_view · dev_login_view · auth_view"]
+        V1["user_view · auth_view"]
         V2["documents_view · upload_view · file_view · document_ai_view"]
         V3["revision_review_view · access_request_view · manager_activity_view"]
         V4["legal_consent_view · catalog_view"]
     end
     subgraph ServicesLayer["core/services"]
-        S1["user_anonymization · excluded_identifier · legal_consent"]
+        S1["auth · user_anonymization · excluded_identifier · legal_consent"]
         S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
         S3["documents (listing) · document_search · document_index · document_archive"]
         S4["revision_review · access_request · manager_activity · audit"]

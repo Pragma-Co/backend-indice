@@ -5,7 +5,7 @@ from django.contrib.sessions.models import Session
 from django.db import DatabaseError
 from django.test import Client, TestCase
 
-from core.models import Area, AuditAction, AuditLog, User
+from core.models import Area, AuditAction, AuditLog, ErasureKind, User
 from core.services.excluded_identifier_service import (
     is_identifier_excluded,
     store_excluded_identifier,
@@ -235,7 +235,7 @@ class UserMeViewTests(TestCase):
             )
 
     def test_put_rejects_email_already_in_the_exclusion_table(self):
-        store_excluded_identifier("blocked@example.com")
+        store_excluded_identifier("blocked@example.com", ErasureKind.ANONYMIZED)
 
         response = self._put({"name": "Titular", "email": "blocked@example.com"})
 
@@ -257,7 +257,7 @@ class UserMeViewTests(TestCase):
         )
         for response in responses:
             self.assertEqual(response.status_code, 401)
-            self.assertEqual(response.json()["error"], "Authentication required.")
+            self.assertEqual(response.json(), {"error": "AuthenticationRequired"})
 
     def test_put_requires_a_csrf_token_for_session_authenticated_requests(self):
         client = Client(enforce_csrf_checks=True)

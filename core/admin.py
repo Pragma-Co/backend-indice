@@ -14,15 +14,24 @@ from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 from django.core.exceptions import ValidationError
 
 from core.models import (
+    AccessGroup,
+    AccessGroupMember,
     Area,
     AuditLog,
+    BackupRun,
+    DataIncident,
+    DataIncidentAction,
+    DataIncidentStatusChange,
+    DataIncidentSubjectNotification,
     Discipline,
     Document,
     DocumentAccess,
+    DocumentAccessGroup,
     DocumentType,
     File,
     Project,
     Revision,
+    SecrecyLevel,
     Tag,
     User,
 )
@@ -170,10 +179,124 @@ class FileAdmin(admin.ModelAdmin):
 
 @admin.register(DocumentAccess)
 class DocumentAccessAdmin(admin.ModelAdmin):
-    list_display = ("document", "user", "status", "requested_at", "approver", "decided_at")
-    list_filter = ("status",)
+    list_display = (
+        "document",
+        "user",
+        "status",
+        "access_type",
+        "expires_on",
+        "requested_at",
+        "approver",
+        "decided_at",
+    )
+    list_filter = ("status", "access_type")
     search_fields = ("document__code", "user__email")
     autocomplete_fields = ("document", "user", "approver")
+
+
+@admin.register(DocumentAccessGroup)
+class DocumentAccessGroupAdmin(admin.ModelAdmin):
+    list_display = ("document", "group", "granted_by", "granted_at")
+    list_filter = ("group__secrecy_level",)
+    search_fields = ("document__code", "group__name")
+    autocomplete_fields = ("document", "group", "granted_by")
+    readonly_fields = ("granted_at",)
+
+
+@admin.register(SecrecyLevel)
+class SecrecyLevelAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "rank", "visibility")
+    ordering = ("rank",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class AccessGroupMemberInline(admin.TabularInline):
+    model = AccessGroupMember
+    fk_name = "group"
+    extra = 0
+    autocomplete_fields = ("user", "added_by")
+    readonly_fields = ("added_at",)
+
+
+@admin.register(AccessGroup)
+class AccessGroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "scope", "area", "project", "secrecy_level", "active", "created_by")
+    list_filter = ("scope", "secrecy_level", "active")
+    search_fields = ("name", "area__acronym", "project__code")
+    autocomplete_fields = ("project", "created_by")
+    readonly_fields = ("created_at",)
+    inlines = [AccessGroupMemberInline]
+
+
+class ReadOnlyAdminMixin:
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class DataIncidentActionInline(admin.TabularInline):
+    model = DataIncidentAction
+    extra = 0
+    can_delete = False
+    readonly_fields = ("kind", "description", "performed_at", "performed_by", "recorded_by")
+
+
+class DataIncidentSubjectNotificationInline(admin.TabularInline):
+    model = DataIncidentSubjectNotification
+    extra = 0
+    can_delete = False
+    readonly_fields = (
+        "user",
+        "status",
+        "attempts",
+        "last_attempt_at",
+        "sent_at",
+        "last_error",
+    )
+
+
+class DataIncidentStatusChangeInline(admin.TabularInline):
+    model = DataIncidentStatusChange
+    extra = 0
+    can_delete = False
+    readonly_fields = ("from_status", "to_status", "note", "changed_by", "changed_at")
+
+
+@admin.register(DataIncident)
+class DataIncidentAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "reference",
+        "title",
+        "incident_type",
+        "severity",
+        "status",
+        "detected_at",
+        "assigned_to",
+        "authority_notification_due_at",
+    )
+    list_filter = ("status", "severity", "incident_type")
+    search_fields = ("reference", "title")
+    inlines = [
+        DataIncidentActionInline,
+        DataIncidentStatusChangeInline,
+        DataIncidentSubjectNotificationInline,
+    ]
+
+
+@admin.register(BackupRun)
+class BackupRunAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("target", "status", "started_at", "finished_at", "size_bytes", "pruned_at")
+    list_filter = ("target", "status")
 
 
 @admin.register(AuditLog)

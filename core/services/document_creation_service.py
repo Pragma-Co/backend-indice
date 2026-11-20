@@ -24,6 +24,7 @@ from core.models import (
 )
 from core.models.upload_file_type import ALLOWED_FILE_TYPES
 from core.mongo import get_mongo_db
+from core.services.access_group_service import shares_area
 from core.services.document_code_service import (
     build_code_prefix,
     build_document_code,
@@ -35,9 +36,16 @@ from core.services.document_exceptions import (
     DocumentValidationError,
     DuplicateDocumentFileError,
     DuplicateRevisionUploadError,
+    RevisionInProgressError,
+    RevisionOutsideAreaError,
     TempFileNotFoundError,
 )
 from core.services.document_index_service import index_document_safely
+from core.services.document_permission_service import (
+    clean_access_permissions,
+    grant_access_permissions,
+)
+from core.services.document_visibility_service import is_visible
 from core.services.documents_exceptions import DocumentNotFoundError
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import MissingFileError
@@ -136,7 +144,6 @@ def validate_payload(payload) -> dict:
 
     document_type = None
     type_id = _clean_id(payload.get("document_type"))
-    print(f"Validating document type: {type_id}\n\n{payload.get('document_type')}")
     if not type_id:
         errors["document_type"] = _error(REQUIRED, "Document type is required.")
     else:
@@ -187,6 +194,8 @@ def validate_payload(payload) -> dict:
         if missing:
             errors["areas"] = _error(NOT_FOUND, f"Unknown or inactive areas: {missing}.")
     cleaned["areas"] = areas
+
+    cleaned.update(clean_access_permissions(payload, confidentiality, responsible, errors))
 
     has_temp_file_ids = "temp_file_ids" in payload
     raw_temp_file_ids = payload.get("temp_file_ids")
@@ -336,6 +345,7 @@ def create_document(payload) -> Document:
         DocumentArea.objects.bulk_create(
             [DocumentArea(document=document, area=area) for area in cleaned["areas"]]
         )
+        grant_access_permissions(document, cleaned, cleaned["created_by"])
         revision = Revision.objects.create(
             document=document,
             version=INITIAL_VERSION,
@@ -397,19 +407,36 @@ def validate_change_description(value) -> str:
     return text
 
 
-def _revisable_document(document_id) -> Document:
+def _revisable_document(document_id, user) -> Document:
     document = (
         Document.objects.select_related("responsible")
         .filter(pk=document_id, document_type__active=True, archived_at__isnull=True)
         .first()
     )
-    if document is None:
+    if document is None or not is_visible(document, user):
         raise DocumentNotFoundError()
+    if document.responsible_id != user.pk and not shares_area(document, user):
+        raise RevisionOutsideAreaError()
+    _ensure_no_pending_revision(document)
     return document
 
 
-def submit_document_revision(document_id, uploaded_files, change_description):
-    _revisable_document(document_id)
+def _ensure_no_pending_revision(document) -> None:
+    pending = (
+        Revision.objects.filter(document=document, status=RevisionStatus.PENDING)
+        .order_by("-version")
+        .first()
+    )
+    if pending is not None:
+        raise RevisionInProgressError(pending)
+
+
+def _lock_document(document) -> None:
+    Document.objects.select_for_update().get(pk=document.pk)
+
+
+def submit_document_revision(document_id, user, uploaded_files, change_description):
+    document = _revisable_document(document_id, user)
     change_description = validate_change_description(change_description)
     if not uploaded_files:
         raise MissingFileError()
@@ -417,15 +444,17 @@ def submit_document_revision(document_id, uploaded_files, change_description):
     temp_file_ids = [
         store_uploaded_file(uploaded_file)["temp_file_id"] for uploaded_file in uploaded_files
     ]
-    revision = create_document_revision(document_id, temp_file_ids, change_description)
+    revision = _create_revision(document, user, temp_file_ids, change_description)
     return revision, temp_file_ids
 
 
-def create_document_revision(document_id, temp_file_ids, change_description=None) -> Revision:
-    document = _revisable_document(document_id)
-
+def create_document_revision(document_id, user, temp_file_ids, change_description=None) -> Revision:
+    document = _revisable_document(document_id, user)
     change_description = validate_change_description(change_description)
+    return _create_revision(document, user, temp_file_ids, change_description)
 
+
+def _create_revision(document, user, temp_file_ids, change_description) -> Revision:
     if isinstance(temp_file_ids, str):
         temp_file_ids = [temp_file_ids]
     if not isinstance(temp_file_ids, list) or not temp_file_ids:
@@ -449,22 +478,23 @@ def create_document_revision(document_id, temp_file_ids, change_description=None
         temp_file["temp_file_id"] = temp_file_id
         temp_files.append(temp_file)
 
-    last_version = (
-        Revision.objects.filter(document=document)
-        .order_by("-version")
-        .values_list("version", flat=True)
-        .first()
-        or 0
-    )
-    revision = None
     with transaction.atomic():
+        _lock_document(document)
+        _ensure_no_pending_revision(document)
+        last_version = (
+            Revision.objects.filter(document=document)
+            .order_by("-version")
+            .values_list("version", flat=True)
+            .first()
+            or 0
+        )
         revision = Revision.objects.create(
             document=document,
             version=last_version + 1,
             status=RevisionStatus.PENDING,
             issue_date=timezone.localdate(),
             change_description=change_description,
-            author=document.responsible,
+            author=user,
         )
         for file_index, temp_file in enumerate(temp_files):
             storage_path = storage_path_for(
