@@ -394,17 +394,26 @@ class Command(BaseCommand):
             member_keys,
             description,
         ) in data.ACCESS_GROUPS:
-            group, created = AccessGroup.objects.get_or_create(
-                name=name,
-                defaults={
-                    "description": description,
-                    "scope": scope,
-                    "area": areas[area_acronym] if area_acronym else None,
-                    "project": projects[project_code] if project_code else None,
-                    "secrecy_level": levels[level],
-                    "created_by": users[creator_key],
-                },
-            )
+            area = areas[area_acronym] if area_acronym else None
+            project = projects[project_code] if project_code else None
+            group = AccessGroup.objects.filter(
+                area=area, project=project, secrecy_level=levels[level]
+            ).first()
+            created = group is None
+            if created:
+                group = AccessGroup.objects.create(
+                    name=name,
+                    description=description,
+                    scope=scope,
+                    area=area,
+                    project=project,
+                    secrecy_level=levels[level],
+                    created_by=users[creator_key],
+                )
+            elif group.name != name:
+                group.name = name
+                group.description = description
+                group.save(update_fields=["name", "description"])
             self._count("access_group", created)
             for member_key in member_keys:
                 _membership, member_created = AccessGroupMember.objects.get_or_create(
