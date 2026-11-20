@@ -6,7 +6,6 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
 from django.utils import timezone
 
 from core.models import (
@@ -411,7 +410,6 @@ def validate_change_description(value) -> str:
 def _revisable_document(document_id, user) -> Document:
     document = (
         Document.objects.select_related("responsible")
-        .prefetch_related(Prefetch("revisions", queryset=Revision.objects.order_by("-version")))
         .filter(pk=document_id, document_type__active=True, archived_at__isnull=True)
         .first()
     )
@@ -419,21 +417,26 @@ def _revisable_document(document_id, user) -> Document:
         raise DocumentNotFoundError()
     if not shares_area(document, user):
         raise RevisionOutsideAreaError()
-    pending = next(
-        (
-            revision
-            for revision in document.revisions.all()
-            if revision.status == RevisionStatus.PENDING
-        ),
-        None,
-    )
-    if pending is not None:
-        raise RevisionInProgressError(pending)
+    _ensure_no_pending_revision(document)
     return document
 
 
+def _ensure_no_pending_revision(document) -> None:
+    pending = (
+        Revision.objects.filter(document=document, status=RevisionStatus.PENDING)
+        .order_by("-version")
+        .first()
+    )
+    if pending is not None:
+        raise RevisionInProgressError(pending)
+
+
+def _lock_document(document) -> None:
+    Document.objects.select_for_update().get(pk=document.pk)
+
+
 def submit_document_revision(document_id, user, uploaded_files, change_description):
-    _revisable_document(document_id, user)
+    document = _revisable_document(document_id, user)
     change_description = validate_change_description(change_description)
     if not uploaded_files:
         raise MissingFileError()
@@ -441,15 +444,17 @@ def submit_document_revision(document_id, user, uploaded_files, change_descripti
     temp_file_ids = [
         store_uploaded_file(uploaded_file)["temp_file_id"] for uploaded_file in uploaded_files
     ]
-    revision = create_document_revision(document_id, user, temp_file_ids, change_description)
+    revision = _create_revision(document, user, temp_file_ids, change_description)
     return revision, temp_file_ids
 
 
 def create_document_revision(document_id, user, temp_file_ids, change_description=None) -> Revision:
     document = _revisable_document(document_id, user)
-
     change_description = validate_change_description(change_description)
+    return _create_revision(document, user, temp_file_ids, change_description)
 
+
+def _create_revision(document, user, temp_file_ids, change_description) -> Revision:
     if isinstance(temp_file_ids, str):
         temp_file_ids = [temp_file_ids]
     if not isinstance(temp_file_ids, list) or not temp_file_ids:
@@ -473,15 +478,16 @@ def create_document_revision(document_id, user, temp_file_ids, change_descriptio
         temp_file["temp_file_id"] = temp_file_id
         temp_files.append(temp_file)
 
-    last_version = (
-        Revision.objects.filter(document=document)
-        .order_by("-version")
-        .values_list("version", flat=True)
-        .first()
-        or 0
-    )
-    revision = None
     with transaction.atomic():
+        _lock_document(document)
+        _ensure_no_pending_revision(document)
+        last_version = (
+            Revision.objects.filter(document=document)
+            .order_by("-version")
+            .values_list("version", flat=True)
+            .first()
+            or 0
+        )
         revision = Revision.objects.create(
             document=document,
             version=last_version + 1,

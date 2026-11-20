@@ -20,6 +20,7 @@ from core.models import (
     RevisionStatus,
     User,
 )
+from core.services import document_creation_service
 
 CHANGE_DESCRIPTION = "Corrige a furação da caverna 14 conforme ensaio"
 NEW_PDF = b"%PDF-1.4 revised drawing body"
@@ -180,6 +181,33 @@ class DocumentRevisionSubmissionTests(TestCase):
         )
         self.assertEqual(Revision.objects.count(), 2)
         self.assertEqual(list(Path(self.temp_dir).iterdir()), [])
+
+    def test_should_refuse_a_revision_opened_by_someone_else_meanwhile(self, *mongo):
+        colleague = self._collaborator("colleague@example.com", self.area)
+        self.client.force_login(self.author)
+        resolve_temp_file = document_creation_service.resolve_temp_file
+
+        def open_a_revision_then_resolve(temp_file_id):
+            Revision.objects.get_or_create(
+                document=self.document,
+                version=2,
+                defaults={"status": RevisionStatus.PENDING, "author": colleague},
+            )
+            return resolve_temp_file(temp_file_id)
+
+        with mock.patch.object(
+            document_creation_service, "resolve_temp_file", side_effect=open_a_revision_then_resolve
+        ):
+            response = self._post()
+
+        pending = Revision.objects.get(document=self.document, version=2)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json(),
+            {"error": "RevisionInProgress", "revision": {"id": pending.id, "version": 2}},
+        )
+        self.assertEqual(pending.author, colleague)
+        self.assertEqual(Revision.objects.count(), 2)
 
     def test_should_answer_404_for_a_nonexistent_document(self, *mongo):
         response = self._post(document_id=self.document.id + 1000)

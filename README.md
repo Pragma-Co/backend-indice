@@ -412,7 +412,7 @@ Creates the next revision of an existing document with status `PENDING` (awaitin
 
 - the user must see the document (see *Document visibility*), otherwise `404 DocumentNotFound`, as in the detail;
 - the user's area must be one of the document areas, otherwise `403 {"error": "RevisionOutsideArea"}`; no `document_access` grant is required, being a collaborator of one of the areas is enough;
-- no revision of the document may be `PENDING`, otherwise `409 {"error": "RevisionInProgress", "revision": {"id", "version"}}`.
+- no revision of the document may be `PENDING`, otherwise `409 {"error": "RevisionInProgress", "revision": {"id", "version"}}`. The check runs again with the document row locked when the revision is written, so two submissions sent at the same time produce one revision and one `409`, never two revisions or a `500`.
 
 Two request formats are accepted:
 
