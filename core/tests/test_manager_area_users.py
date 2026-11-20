@@ -16,9 +16,23 @@ class ManagerAreaUsersTests(TestCase):
         )
         self.client.force_login(self.manager)
 
-    def test_should_list_only_active_users_of_managers_area_ordered_by_name(self):
+    def test_should_list_only_active_collaborators_of_managers_area(self):
         bruno = User.objects.create_user(
             email="bruno@example.com", password="secret", name="Bruno", area=self.area
+        )
+        User.objects.create_user(
+            email="auditor@example.com",
+            password="secret",
+            name="Auditor",
+            area=self.area,
+            role=Role.AUDITOR,
+        )
+        User.objects.create_user(
+            email="admin@example.com",
+            password="secret",
+            name="Admin",
+            area=self.area,
+            role=Role.ADMIN,
         )
         ana = User.objects.create_user(
             email="ana@example.com", password="secret", name="Ana", area=self.area
@@ -42,7 +56,6 @@ class ManagerAreaUsersTests(TestCase):
             [
                 {"id": ana.id, "name": "Ana", "email": "ana@example.com"},
                 {"id": bruno.id, "name": "Bruno", "email": "bruno@example.com"},
-                {"id": self.manager.id, "name": "Manager", "email": "manager@example.com"},
             ],
         )
 

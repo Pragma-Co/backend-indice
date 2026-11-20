@@ -836,15 +836,16 @@ These session-authenticated endpoints require an active `AUDITOR` or `ADMIN` in 
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| `GET` | `/manager/users` | List the caller's collaborators in `results`: the active `AUTHOR` and `VIEWER` users of the caller's area (never a manager, so never the caller), as `{"id", "name", "email"}` ordered by name. |
 | `GET` | `/manager/access-groups` | List the caller's area groups, including inactive groups, in `results`. |
 | `POST` | `/manager/access-groups` | Create an area group; returns `201` and the group. |
-| `GET` | `/manager/access-groups/{group_id}/users` | List members in `results`. |
-| `POST` | `/manager/access-groups/{group_id}/users` | Add an active user; returns `201` and the membership. |
-| `DELETE` | `/manager/access-groups/{group_id}/users/{user_id}` | Remove a member; returns `204`. |
+| `GET` | `/manager/access-groups/{group_id}/users` | List in `results` the members who are the caller's collaborators (users of the caller's area that are not managers, active or deactivated), each with `user_id`, `name`, `email`, `is_active`, `added_by` and `added_at`. |
+| `POST` | `/manager/access-groups/{group_id}/users` | Add one of the caller's collaborators; returns `201` and the membership. |
+| `DELETE` | `/manager/access-groups/{group_id}/users/{user_id}` | Remove one of the caller's collaborators from the group; returns `204`. |
 
-For group creation, send `{"name": "Engineering secret", "description": "Engineering team", "secrecy_level": "SECRET"}`. `description` is optional, `secrecy_level` is an existing level code, and the area and creator come from the authenticated user. Names are globally unique and there can be only one group per area and secrecy level. To add a member, send `{"user_id": 123}`. Active users from other areas may also be added. Inactive groups cannot receive new members, but members can still be removed.
+For group creation, send `{"name": "Engineering secret", "description": "Engineering team", "secrecy_level": "SECRET"}`. `description` is optional, `secrecy_level` is an existing level code, and the area and creator come from the authenticated user. Names are globally unique and there can be only one group per area and secrecy level. To add a member, send `{"user_id": 123}`. A manager only changes their own collaborators, the users listed by `GET /manager/users`: adding or removing a user of another area answers `403 {"error": "UserOutsideArea"}`, another manager `403 {"error": "CannotManageManager"}`, the manager's own account `403 {"error": "CannotManageSelf"}`, and a deactivated user `404 {"error": "UserNotFound"}` even when the membership still exists (card SCRUM-109). Members from other areas or with a manager role, added before this rule, keep their membership but are not listed to the manager; a deactivated collaborator of the area stays listed with `is_active: false` so the frontend can show it locked. Inactive groups cannot receive new members, but members can still be removed.
 
-The API returns `400` for invalid JSON or payloads, `401` without an active session, `403` for insufficient privileges or an inactive area, `404` for inaccessible groups or missing users/members, and `409` for duplicate names, duplicate area/level combinations, existing memberships or additions to an inactive group.
+The API returns `400` for invalid JSON or payloads, `401` without an active session, `403` for insufficient privileges, an inactive area or a user the caller cannot manage, `404` for inaccessible groups or missing users/members, and `409` for duplicate names, duplicate area/level combinations, existing memberships or additions to an inactive group.
 
 ## Data incident register (LGPD)
 

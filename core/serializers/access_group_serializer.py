@@ -17,6 +17,7 @@ def serialize_member(membership):
         "user_id": membership.user_id,
         "name": membership.user.name,
         "email": membership.user.email,
+        "is_active": membership.user.is_active,
         "added_by": membership.added_by_id,
         "added_at": membership.added_at.isoformat(),
     }
