@@ -43,6 +43,23 @@ USERS = [
     ("renato.fontes", "Renato Fontes", "AUTHOR", "COM", True),
     ("luciana.maeda", "Luciana Maeda", "AUTHOR", "HID", True),
     ("andre.cardoso", "André Cardoso", "AUTHOR", "INT", True),
+    # Extra authors so every area has 2 to 5 of them
+    ("fabio.nogueira", "Fábio Nogueira", "AUTHOR", "AER", True),
+    ("camila.rezende", "Camila Rezende", "AUTHOR", "COM", True),
+    ("otavio.lins", "Otávio Lins", "AUTHOR", "HID", True),
+    ("vanessa.pires", "Vanessa Pires", "AUTHOR", "INT", True),
+    ("gustavo.neri", "Gustavo Neri", "AUTHOR", "QUA", True),
+    ("isabela.moraes", "Isabela Moraes", "AUTHOR", "QUA", True),
+    ("henrique.dantas", "Henrique Dantas", "AUTHOR", "CER", True),
+    ("monica.farias", "Mônica Farias", "AUTHOR", "CER", True),
+    # One auditor per area (QUA and CER already have theirs above)
+    ("sergio.matos", "Sérgio Matos", "AUDITOR", "EST", True),
+    ("claudia.ferraz", "Cláudia Ferraz", "AUDITOR", "SIS", True),
+    ("ricardo.brandao", "Ricardo Brandão", "AUDITOR", "AER", True),
+    ("denise.carvalho", "Denise Carvalho", "AUDITOR", "MFG", True),
+    ("marcelo.aguiar", "Marcelo Aguiar", "AUDITOR", "COM", True),
+    ("tatiana.borges", "Tatiana Borges", "AUDITOR", "HID", True),
+    ("leandro.sampaio", "Leandro Sampaio", "AUDITOR", "INT", True),
     # Deactivated instead of deleted, so authorship and audit stay intact
     ("origenes.mota", "Origenes Mota", "VIEWER", "SIS", False),
 ]
@@ -1774,17 +1791,103 @@ LEGAL_CLAUSES = [
     ),
 ]
 
-ACCESS_GROUPS = [
+# (name, scope, area, project, secrecy level, creator, members, description)
+# An area or project holds at most one group per secrecy level. The creator is
+# the area's auditor, who manages the group; members are mostly collaborators
+# of the same area, plus a few users from other areas.
+_AREA_GROUPS = [
+    # (area, label, creator, CONFIDENTIAL members, SECRET members)
     (
-        "Engenharia Estrutural — sigiloso",
-        "AREA",
         "EST",
-        None,
-        "CONFIDENTIAL",
+        "Engenharia Estrutural",
         "marina.duarte",
-        ["samuel.rocha", "helena.tavares"],
-        "Engenheiros de outras áreas que acompanham a documentação sigilosa de estruturas.",
+        ["caio.bertoni", "leticia.amaral", "samuel.rocha", "helena.tavares"],
+        ["caio.bertoni"],
     ),
+    (
+        "SIS",
+        "Engenharia de Sistemas",
+        "claudia.ferraz",
+        ["rafael.okamoto", "diego.vasques"],
+        ["rafael.okamoto", "andre.cardoso"],
+    ),
+    (
+        "AER",
+        "Aerodinâmica e Desempenho",
+        "ricardo.brandao",
+        ["helena.tavares", "fabio.nogueira"],
+        ["helena.tavares", "caio.bertoni"],
+    ),
+    (
+        "MFG",
+        "Manufatura e Montagem",
+        "denise.carvalho",
+        ["joana.prado", "bruno.kimura", "samuel.rocha"],
+        ["joana.prado"],
+    ),
+    (
+        "QUA",
+        "Qualidade e Inspeção",
+        "thiago.serpa",
+        ["gustavo.neri", "isabela.moraes", "bruno.kimura"],
+        ["gustavo.neri"],
+    ),
+    (
+        "CER",
+        "Certificação e Aeronavegabilidade",
+        "beatriz.canuto",
+        ["henrique.dantas", "monica.farias"],
+        ["henrique.dantas", "leticia.amaral"],
+    ),
+    (
+        "COM",
+        "Sistemas de Combustível",
+        "marcelo.aguiar",
+        ["renato.fontes", "camila.rezende"],
+        ["renato.fontes"],
+    ),
+    (
+        "HID",
+        "Sistemas Hidráulicos",
+        "tatiana.borges",
+        ["luciana.maeda", "otavio.lins"],
+        ["luciana.maeda", "diego.vasques"],
+    ),
+    (
+        "INT",
+        "Integração de Sistemas",
+        "leandro.sampaio",
+        ["andre.cardoso", "vanessa.pires"],
+        ["andre.cardoso", "rafael.okamoto"],
+    ),
+]
+
+ACCESS_GROUPS = [
+    group
+    for area, label, creator, confidential, secret in _AREA_GROUPS
+    for group in (
+        (
+            f"{label} — confidencial",
+            "AREA",
+            area,
+            None,
+            "CONFIDENTIAL",
+            creator,
+            confidential,
+            f"Acesso aos documentos confidenciais da área {label}.",
+        ),
+        (
+            f"{label} — sigiloso",
+            "AREA",
+            area,
+            None,
+            "SECRET",
+            creator,
+            secret,
+            f"Acesso aos documentos sigilosos da área {label}.",
+        ),
+    )
+] + [
     (
         "Fuselagem central — restrito",
         "PROJECT",
@@ -1796,13 +1899,23 @@ ACCESS_GROUPS = [
         "Usuários autorizados a consultar os documentos restritos do programa AK-2100.",
     ),
     (
-        "Qualidade e Inspeção — sigiloso",
-        "AREA",
-        "QUA",
+        "Empenagem vertical — restrito",
+        "PROJECT",
         None,
-        "CONFIDENTIAL",
-        "thiago.serpa",
-        ["bruno.kimura"],
-        "Apoio da manufatura aos documentos sigilosos de qualidade.",
+        "AK-2200",
+        "SECRET",
+        "marina.duarte",
+        ["caio.bertoni", "helena.tavares", "sergio.matos"],
+        "Usuários autorizados a consultar os documentos restritos do programa AK-2200.",
+    ),
+    (
+        "Pilone de motor — restrito",
+        "PROJECT",
+        None,
+        "AK-3100",
+        "SECRET",
+        "beatriz.canuto",
+        ["leticia.amaral", "henrique.dantas"],
+        "Usuários autorizados a consultar os documentos restritos do programa AK-3100.",
     ),
 ]

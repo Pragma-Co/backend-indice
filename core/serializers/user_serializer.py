@@ -26,6 +26,15 @@ def serialize_user(user):
             "acronym": user.area.acronym,
             "name": user.area.name,
         },
+        "access_groups": [
+            {
+                "id": group.pk,
+                "name": group.name,
+                "scope": group.scope,
+                "secrecy_level": group.secrecy_level_id,
+            }
+            for group in user.access_groups.filter(active=True).order_by("name")
+        ],
         "terms_accepted_at": _isoformat(user.terms_accepted_at),
         "is_active": user.is_active,
         "created_at": _isoformat(user.created_at),
