@@ -42,3 +42,7 @@ def is_identifier_excluded(identifier):
 def ensure_identifier_is_available(identifier):
     if is_identifier_excluded(identifier):
         raise ExcludedIdentifierError("This email address cannot be used for an account.")
+
+
+def excluded_identifier_hashes():
+    return set(ExcludedIdentifier.objects.values_list("identifier_hash", flat=True))

@@ -66,13 +66,6 @@ class Revision(models.Model):
                 | (models.Q(auditor__isnull=False) & models.Q(audited_at__isnull=False)),
                 name="ck_revision_decision_has_auditor",
             ),
-            # One current revision per document. Doubles as the read index
-            # for "give me the approved revision of this document".
-            models.UniqueConstraint(
-                fields=["document"],
-                condition=models.Q(status=RevisionStatus.APPROVED),
-                name="uq_revision_current",
-            ),
         ]
         indexes = [
             models.Index(fields=["-issue_date"], name="ix_revision_issue_date"),

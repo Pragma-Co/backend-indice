@@ -16,6 +16,9 @@ class Role(models.TextChoices):
     ADMIN = "ADMIN", "Administrator"
 
 
+MANAGER_ROLES = frozenset({Role.AUDITOR, Role.ADMIN})
+
+
 class ConfidentialityLevel(models.TextChoices):
     PUBLIC = "PUBLIC", "Public"
     CONFIDENTIAL = "CONFIDENTIAL", "Confidential"
@@ -26,7 +29,6 @@ class RevisionStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     APPROVED = "APPROVED", "Approved"
     REJECTED = "REJECTED", "Rejected"
-    OBSOLETE = "OBSOLETE", "Obsolete"
 
 
 class AccessStatus(models.TextChoices):

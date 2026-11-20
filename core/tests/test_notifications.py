@@ -72,14 +72,14 @@ class NotificationFixtureMixin:
             created_by=self.author,
         )
 
-    def _revision(self, document, version, status):
+    def _revision(self, document, version, status, author=None):
         decided = status != RevisionStatus.PENDING
         return Revision.objects.create(
             document=document,
             version=version,
             status=status,
             change_description="Atualiza a furação da caverna 14",
-            author=self.author,
+            author=author or self.author,
             auditor=self.reviewer if decided else None,
             audited_at=timezone.now() if decided else None,
         )
@@ -183,6 +183,18 @@ class RevisionPublishedTriggerTests(NotificationFixtureMixin, TestCase):
 
         self.assertEqual(created, [])
 
+    def test_should_not_notify_managers_who_saved_the_document(self):
+        admin = self._user("admin@example.com", "Admin", role=Role.ADMIN)
+        auditor = self._user("auditor@example.com", "Auditor", role=Role.AUDITOR)
+        SavedDocument.objects.create(user=admin, document=self.document)
+        SavedDocument.objects.create(user=auditor, document=self.document)
+        SavedDocument.objects.create(user=self.reader, document=self.document)
+
+        decide_revision(self.pending.pk, self.reviewer, {"decision": "APPROVED"})
+
+        notifications = Notification.objects.filter(type=NotificationType.DOCUMENT_UPDATED)
+        self.assertEqual([item.recipient for item in notifications], [self.reader])
+
 
 class RevisionDecisionTriggerTests(NotificationFixtureMixin, TestCase):
     def test_should_notify_the_author_when_the_revision_is_approved(self):
@@ -214,6 +226,16 @@ class RevisionDecisionTriggerTests(NotificationFixtureMixin, TestCase):
 
     def test_should_ignore_a_pending_revision(self):
         self.assertIsNone(notify_revision_decided(self.pending))
+        self.assertFalse(Notification.objects.exists())
+
+    def test_should_not_notify_a_manager_who_authored_the_revision(self):
+        admin = self._user("admin@example.com", "Admin", role=Role.ADMIN)
+        document = self._document("AK-2100-EST-DWG-0002", "Desenho da caverna 15")
+        self._revision(document, 1, RevisionStatus.APPROVED)
+        pending = self._revision(document, 2, RevisionStatus.PENDING, author=admin)
+
+        decide_revision(pending.pk, self.reviewer, {"decision": "APPROVED"})
+
         self.assertFalse(Notification.objects.exists())
 
 
@@ -260,6 +282,14 @@ class AccessDecisionTriggerTests(NotificationFixtureMixin, TestCase):
         notification = notify_access_decided(access)
 
         self.assertIsNone(notification)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_should_not_notify_a_manager_who_requested_access(self):
+        auditor = self._user("auditor@example.com", "Auditor", role=Role.AUDITOR)
+        access = self._access_request(auditor)
+
+        decide_access_request(access.pk, self.reviewer, APPROVAL)
+
         self.assertFalse(Notification.objects.exists())
 
 

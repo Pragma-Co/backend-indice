@@ -14,6 +14,7 @@ from django.core.management import call_command
 from django.core.paginator import Paginator
 from django.utils import timezone
 
+from core.db_router import TOMBSTONE_ALIAS
 from core.models import BackupRun
 from core.models.choices import BackupStatus, BackupTarget
 from core.mongo import get_mongo_db
@@ -24,6 +25,7 @@ FILE_MAGIC = b"api6-backup-v1\n"
 NONCE_SIZE = 12
 KEY_SIZE = 32
 FILE_SUFFIX = ".json.gz.enc"
+REGISTER_MODEL = "core.excludedidentifier"
 EXCLUDED_POSTGRES_MODELS = ("contenttypes", "auth.permission", "admin.logentry", "sessions")
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -67,10 +69,19 @@ def decrypt(blob: bytes, key: bytes) -> bytes:
 
 
 def export_postgres():
-    buffer = io.StringIO()
-    call_command("dumpdata", exclude=list(EXCLUDED_POSTGRES_MODELS), format="json", stdout=buffer)
-    payload = buffer.getvalue()
-    return payload.encode("utf-8"), len(json.loads(payload))
+    application = io.StringIO()
+    call_command(
+        "dumpdata",
+        exclude=[*EXCLUDED_POSTGRES_MODELS, REGISTER_MODEL],
+        format="json",
+        stdout=application,
+    )
+    register = io.StringIO()
+    call_command(
+        "dumpdata", REGISTER_MODEL, database=TOMBSTONE_ALIAS, format="json", stdout=register
+    )
+    items = json.loads(application.getvalue()) + json.loads(register.getvalue())
+    return json.dumps(items).encode("utf-8"), len(items)
 
 
 def export_mongodb():
