@@ -480,14 +480,14 @@ class DocumentsAdvancedFiltersTests(TestCase):
         revised = self._document("REVISED", status=RevisionStatus.APPROVED)
         self._revision(revised, 2, RevisionStatus.PENDING)
         self._document("APPROVED", status=RevisionStatus.APPROVED)
-        self._document("OBSOLETE", status=RevisionStatus.OBSOLETE)
+        self._document("REJECTED", status=RevisionStatus.REJECTED)
         self._document("NO-REVISION")
 
         pending = self.client.get("/documents", {"status": "PENDING"})
-        several = self.client.get("/documents?status=APPROVED&status=OBSOLETE")
+        several = self.client.get("/documents?status=APPROVED&status=REJECTED")
 
         self.assertEqual(self._codes(pending), ["REVISED"])
-        self.assertEqual(self._codes(several), ["APPROVED", "OBSOLETE"])
+        self.assertEqual(self._codes(several), ["APPROVED", "REJECTED"])
 
     def test_should_answer_400_for_an_unknown_status(self):
         response = self.client.get("/documents", {"status": "PENDING,DRAFT"})
@@ -724,7 +724,7 @@ class SimpleFiltersViewTests(TestCase):
         self.assertEqual(filters["disciplines"], [{"code": "EST", "name": "Estruturas"}])
         self.assertEqual(
             [status["value"] for status in filters["statuses"]],
-            ["PENDING", "APPROVED", "REJECTED", "OBSOLETE"],
+            ["PENDING", "APPROVED", "REJECTED"],
         )
         self.assertEqual(filters["statuses"][0]["label"], "Em revisão")
 

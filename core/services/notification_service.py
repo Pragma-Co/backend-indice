@@ -1,7 +1,14 @@
 from django.core.paginator import Paginator
 from django.utils import timezone
 
-from core.models import AccessStatus, Notification, NotificationType, RevisionStatus, User
+from core.models import (
+    MANAGER_ROLES,
+    AccessStatus,
+    Notification,
+    NotificationType,
+    RevisionStatus,
+    User,
+)
 from core.services.document_code_service import revision_label
 from core.services.notification_exceptions import (
     NotificationNotFoundError,
@@ -40,6 +47,7 @@ def notify_revision_published(revision, actor=None) -> list[Notification]:
     savers = (
         User.objects.filter(is_active=True, saved_documents__document=document)
         .exclude(pk=getattr(actor, "pk", None))
+        .exclude(role__in=MANAGER_ROLES)
         .order_by("id")
     )
     title = (
@@ -61,11 +69,11 @@ def notify_revision_published(revision, actor=None) -> list[Notification]:
 
 def notify_revision_decided(revision) -> Notification | None:
     notification_type = REVISION_DECISION_TYPES.get(revision.status)
-    if notification_type is None:
+    if notification_type is None or revision.author.role in MANAGER_ROLES:
         return None
     document = revision.document
     return Notification.objects.create(
-        recipient_id=revision.author_id,
+        recipient=revision.author,
         type=notification_type,
         document=document,
         title=(
@@ -77,7 +85,7 @@ def notify_revision_decided(revision) -> Notification | None:
 
 def notify_access_decided(access) -> Notification | None:
     notification_type = ACCESS_DECISION_TYPES.get(access.status)
-    if notification_type is None:
+    if notification_type is None or access.user.role in MANAGER_ROLES:
         return None
     document = access.document
     return Notification.objects.create(

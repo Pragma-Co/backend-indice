@@ -175,7 +175,7 @@ SVG export: [flow-registration.svg](./flow-registration.svg)
 | Flow | What happens |
 |---|---|
 | New revision | `POST /documents/<id>/revisions` creates revision `n+1` as `PENDING` with its files, re-indexes the content and writes the audit event. Only the latest approved revision is the official one. |
-| Revision review | A manager lists `GET /manager/pending-revisions` and decides with `POST /manager/revisions/<id>/decision`: approval makes the revision current and the previous one `OBSOLETE`; rejection requires a justification. Managers cannot decide their own revisions. |
+| Revision review | A manager lists `GET /manager/pending-revisions` and decides with `POST /manager/revisions/<id>/decision`: approval makes the revision the current one; rejection requires a justification. Managers cannot decide their own revisions. |
 | Access to a document | Everyone sees the public metadata. Reading the description and files requires being the responsible user or holding an approved access request (`POST /documents/<id>/request-access`, decided by a manager); every denied file read is audited. |
 | Archiving | `DELETE /documents/<id>` is a soft delete by a manager of one of the document's areas; archived documents disappear from every listing and search and can be restored. |
 | Search | `GET /documents` filters by metadata; `GET /documents/search` runs PostgreSQL full-text search over title, code, description, tags and, for users who can read the document, the indexed content, with highlighted snippets; `POST /documents/search/ai-summary` asks Ollama for a short summary of those snippets (a fallback text when the model is unreachable). |
@@ -227,7 +227,7 @@ erDiagram
     }
     REVISION {
         int version
-        string status "PENDING / APPROVED / REJECTED / OBSOLETE"
+        string status "PENDING / APPROVED / REJECTED"
         string change_description
     }
     FILE {

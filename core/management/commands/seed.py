@@ -103,8 +103,32 @@ class Command(BaseCommand):
         entry = self.created.setdefault(label, [0, 0])
         entry[0 if created else 1] += 1
 
-    def _ago(self, days):
-        return self.now - timedelta(days=days)
+    def _ago(self, days, *key):
+        # Stable per-key offset so rows of the same day do not share a timestamp
+        minutes = random.Random("|".join(map(str, key))).randint(30, 600)
+        return self.now - timedelta(days=days) + timedelta(minutes=minutes)
+
+    def _document_created_at(self, code, days):
+        return self._ago(days, code, "document")
+
+    def _revision_created_at(self, code, version, days):
+        if version == 1:
+            # The first revision is uploaded minutes after the document is registered
+            minutes = random.Random(f"{code}|first").randint(8, 45)
+            return self._document_created_at(code, days) + timedelta(minutes=minutes)
+        return self._ago(days, code, version, "created")
+
+    def _revision_audited_at(self, code, version, days):
+        return self._ago(days, code, version, "audited")
+
+    def _last_activity(self, code):
+        """Moment and user key of the latest revision event, for document.updated_*."""
+        events = []
+        for version, _s, author, auditor, created, audited, _d, _c in data.REVISIONS[code]:
+            events.append((self._revision_created_at(code, version, created), author))
+            if audited is not None:
+                events.append((self._revision_audited_at(code, version, audited), auditor))
+        return max(events)
 
     # -- organization ---------------------------------------------------------
 
@@ -220,6 +244,7 @@ class Command(BaseCommand):
             if not area_acronyms:
                 raise CommandError(f"{code}: a document needs at least one area.")
 
+            updated_at, updated_by_key = self._last_activity(code)
             document, created = Document.objects.get_or_create(
                 code=code,
                 defaults={
@@ -231,9 +256,9 @@ class Command(BaseCommand):
                     "confidentiality_level": confidentiality,
                     "responsible": users[responsible_key],
                     "created_by": users[created_by_key],
-                    "updated_by": users[created_by_key],
-                    "created_at": self._ago(created_days_ago),
-                    "updated_at": self._ago(created_days_ago),
+                    "updated_by": users[updated_by_key],
+                    "created_at": self._document_created_at(code, created_days_ago),
+                    "updated_at": updated_at,
                 },
             )
             self._count("document", created)
@@ -265,13 +290,13 @@ class Command(BaseCommand):
                         f"{code} v{version}: {author.email} cannot audit their own revision."
                     )
 
-                audited_at = self._ago(audited_days_ago) if audited_days_ago is not None else None
-                # A revision is issued when it leaves the pending state
-                issue_date = (
-                    audited_at.date()
-                    if status in (RevisionStatus.APPROVED, RevisionStatus.OBSOLETE)
+                audited_at = (
+                    self._revision_audited_at(code, version, audited_days_ago)
+                    if audited_days_ago is not None
                     else None
                 )
+                # A revision is issued when it leaves the pending state
+                issue_date = audited_at.date() if status == RevisionStatus.APPROVED else None
                 revision, created = Revision.objects.get_or_create(
                     document=document,
                     version=version,
@@ -283,7 +308,7 @@ class Command(BaseCommand):
                         "auditor": auditor,
                         "auditor_comment": auditor_comment or "",
                         "audited_at": audited_at,
-                        "created_at": self._ago(created_days_ago),
+                        "created_at": self._revision_created_at(code, version, created_days_ago),
                     },
                 )
                 self._count("revision", created)
@@ -473,7 +498,7 @@ class Command(BaseCommand):
 
         for document in documents.values():
             entry(
-                document.responsible,
+                document.created_by,
                 AuditAction.CREATE,
                 "document",
                 document.pk,
@@ -540,7 +565,7 @@ class Command(BaseCommand):
             max(d.pk for d in documents.values()) + 137,
             self._ago(88),
             {
-                "code": "AK-1500-MAT-ESP-0002",
+                "code": "AK-1500-MAT-ESP-0001",
                 "title": "Especificação de nacele substituída",
                 "confidentiality_level": "CONFIDENTIAL",
             },
