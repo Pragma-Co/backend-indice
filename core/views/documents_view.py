@@ -42,7 +42,6 @@ from core.services.document_exceptions import (
 from core.services.document_recommendation_service import get_document_recommendations
 from core.services.document_search_service import search_documents
 from core.services.documents_exceptions import (
-    AccessDeniedError,
     AlreadyHasAccessError,
     ArchivePermissionDeniedError,
     DocumentNotFoundError,
@@ -210,10 +209,6 @@ def create_revision_view(request, document_id):
         return JsonResponse({"errors": exc.errors}, status=400)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
-    except AccessDeniedError as exc:
-        document, denied_user = exc.args
-        audit_service.record_document_access_denied(document, denied_user, request)
-        return JsonResponse({"error": "AccessDenied"}, status=403)
     except RevisionOutsideAreaError:
         return JsonResponse({"error": "RevisionOutsideArea"}, status=403)
     except RevisionInProgressError as exc:

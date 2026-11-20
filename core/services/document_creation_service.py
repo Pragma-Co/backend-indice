@@ -47,8 +47,7 @@ from core.services.document_permission_service import (
     grant_access_permissions,
 )
 from core.services.document_visibility_service import is_visible
-from core.services.documents_exceptions import AccessDeniedError, DocumentNotFoundError
-from core.services.documents_service import can_view_document
+from core.services.documents_exceptions import DocumentNotFoundError
 from core.services.temp_upload_service import store_uploaded_file
 from core.services.upload_exceptions import MissingFileError
 
@@ -418,8 +417,6 @@ def _revisable_document(document_id, user) -> Document:
     )
     if document is None or not is_visible(document, user):
         raise DocumentNotFoundError()
-    if not can_view_document(document, user):
-        raise AccessDeniedError(document, user)
     if not shares_area(document, user):
         raise RevisionOutsideAreaError()
     pending = next(

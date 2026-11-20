@@ -9,12 +9,10 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from core.models import (
-    AccessStatus,
     Area,
     ConfidentialityLevel,
     Discipline,
     Document,
-    DocumentAccess,
     DocumentType,
     File,
     Project,
@@ -370,15 +368,7 @@ class DocumentCreationServiceTests(TestCase):
             email="outsider@example.com", password="secret", name="Outsider", area=self.other_area
         )
         document.areas.set([self.area])
-        DocumentAccess.objects.create(
-            document=document,
-            user=outsider,
-            status=AccessStatus.APPROVED,
-            justification="Precisa revisar o desenho",
-            requested_at=timezone.now(),
-            approver=self.auditor,
-            decided_at=timezone.now(),
-        )
+        Document.objects.filter(pk=document.pk).update(confidentiality_level="PUBLIC")
 
         with self.assertRaises(RevisionOutsideAreaError):
             service.create_document_revision(

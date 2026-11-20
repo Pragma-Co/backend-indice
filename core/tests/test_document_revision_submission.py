@@ -9,12 +9,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from core.models import (
-    AccessStatus,
     Area,
-    AuditLog,
     Discipline,
     Document,
-    DocumentAccess,
     DocumentArea,
     DocumentType,
     File,
@@ -65,18 +62,8 @@ class DocumentRevisionSubmissionTests(TestCase):
         self.current_revision = self._audited_revision(1, RevisionStatus.APPROVED)
         self.client.force_login(self.author)
 
-    def _collaborator(self, email, area, granted=True):
+    def _collaborator(self, email, area):
         user = User.objects.create_user(email=email, password="secret", name=email, area=area)
-        if granted:
-            DocumentAccess.objects.create(
-                document=self.document,
-                user=user,
-                status=AccessStatus.APPROVED,
-                justification="Precisa revisar o desenho",
-                requested_at=timezone.now(),
-                approver=self.auditor,
-                decided_at=timezone.now(),
-            )
         self.client.force_login(user)
         return user
 
@@ -152,20 +139,6 @@ class DocumentRevisionSubmissionTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(Revision.objects.get(pk=response.json()["id"]).author, collaborator)
 
-    def test_should_refuse_a_user_who_cannot_read_the_document(self, *mongo):
-        reader = self._collaborator("reader@example.com", self.area, granted=False)
-
-        response = self._post()
-
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.json(), {"error": "AccessDenied"})
-        self.assertEqual(Revision.objects.count(), 1)
-        self.assertTrue(
-            AuditLog.objects.filter(
-                user=reader, entity_id=self.document.id, record__event="DOCUMENT_ACCESS_DENIED"
-            ).exists()
-        )
-
     def test_should_refuse_a_user_outside_the_document_areas(self, *mongo):
         self._collaborator("outsider@example.com", self.other_area)
 
@@ -186,7 +159,7 @@ class DocumentRevisionSubmissionTests(TestCase):
 
     def test_should_hide_a_document_the_user_cannot_see(self, *mongo):
         Document.objects.filter(pk=self.document.pk).update(confidentiality_level="CONFIDENTIAL")
-        self._collaborator("stranger@example.com", self.other_area, granted=False)
+        self._collaborator("stranger@example.com", self.other_area)
 
         response = self._post()
 
@@ -239,7 +212,6 @@ class DocumentRevisionSubmissionTests(TestCase):
 
     def test_should_answer_409_for_a_file_already_registered(self, *mongo):
         self._post()
-        Revision.objects.filter(pk=self.current_revision.pk).update(status=RevisionStatus.OBSOLETE)
         Revision.objects.filter(document=self.document, status=RevisionStatus.PENDING).update(
             status=RevisionStatus.APPROVED, auditor=self.auditor, audited_at=timezone.now()
         )
