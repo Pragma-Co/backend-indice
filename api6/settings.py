@@ -111,8 +111,19 @@ DATABASES = {
                 "timeout": float(os.environ.get("POSTGRES_POOL_TIMEOUT", "10")),
             }
         },
-    }
+    },
+    "tombstone": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("TOMBSTONE_DB", "api6_tombstone"),
+        "USER": os.environ.get("TOMBSTONE_USER", os.environ.get("POSTGRES_USER", "api6_admin")),
+        "PASSWORD": os.environ.get("TOMBSTONE_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "")),
+        "HOST": os.environ.get("TOMBSTONE_HOST", os.environ.get("POSTGRES_HOST", "localhost")),
+        "PORT": os.environ.get("TOMBSTONE_PORT", os.environ.get("POSTGRES_PORT", "5433")),
+    },
 }
+
+DATABASE_ROUTERS = ["core.db_router.TombstoneRouter"]
+TEST_RUNNER = "api6.test_runner.AllDatabasesRunner"
 
 # Non-relational database: MongoDB (accessed through pymongo, see core/mongo.py).
 # Kept as individual settings instead of an assembled URI: Django's debug-page

@@ -734,6 +734,10 @@ Immediate, irreversible account removal requested by the logged-in user (`401` w
 
 Hard delete, run by an operator (not an HTTP endpoint). The row is removed from the database and everything that referenced it is reassigned to another active manager (documents, revisions, access approvals, legal versions, area `manager`); the user's own access requests and legal acceptances are deleted. Audit rows keep the name in `record.actor.name`, with `audit_log.user_id` set to `NULL`. Fails without changes if no other manager exists.
 
+### Exclusion register database (tombstone)
+
+The exclusion register (`excluded_identifier`) lives in a separate PostgreSQL database (`api6_tombstone`, Django alias `tombstone`, configured through `TOMBSTONE_*` in `.env`, routed by `core/db_router.py`), so restoring the application database does not wipe it. After `migrate`, also run `python manage.py migrate --database=tombstone` (the compose `api` service already does); that migration copies the rows of an existing `excluded_identifier` table of the application database. After a restore, `reapply_user_erasures` reads the register from this database.
+
 ## Useful commands
 
 ```bash
