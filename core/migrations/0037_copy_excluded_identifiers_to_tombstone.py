@@ -28,7 +28,7 @@ def copy_to_tombstone(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("core", "0035_merge_subject_notification_and_revision_decision_notifications")]
+    dependencies = [("core", "0036_remove_obsolete_revision_status")]
 
     operations = [
         migrations.RunPython(
