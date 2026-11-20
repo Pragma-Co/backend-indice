@@ -12,6 +12,7 @@ from core.models import (
     Area,
     Discipline,
     Document,
+    DocumentArea,
     DocumentType,
     File,
     Project,
@@ -19,6 +20,7 @@ from core.models import (
     RevisionStatus,
     User,
 )
+from core.services import document_creation_service
 
 CHANGE_DESCRIPTION = "Corrige a furação da caverna 14 conforme ensaio"
 NEW_PDF = b"%PDF-1.4 revised drawing body"
@@ -38,12 +40,13 @@ class DocumentRevisionSubmissionTests(TestCase):
         settings_override.enable()
         self.addCleanup(settings_override.disable)
 
-        area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.area = Area.objects.create(acronym="EST", name="Engenharia Estrutural")
+        self.other_area = Area.objects.create(acronym="QUA", name="Qualidade")
         self.author = User.objects.create_user(
-            email="author@example.com", password="secret", name="Author", area=area
+            email="author@example.com", password="secret", name="Author", area=self.area
         )
         self.auditor = User.objects.create_user(
-            email="auditor@example.com", password="secret", name="Auditor", area=area
+            email="auditor@example.com", password="secret", name="Auditor", area=self.area
         )
         self.document = Document.objects.create(
             code="AK-2100-EST-DWG-0001",
@@ -56,8 +59,14 @@ class DocumentRevisionSubmissionTests(TestCase):
             created_by=self.author,
             updated_by=self.author,
         )
+        DocumentArea.objects.create(document=self.document, area=self.area)
         self.current_revision = self._audited_revision(1, RevisionStatus.APPROVED)
         self.client.force_login(self.author)
+
+    def _collaborator(self, email, area):
+        user = User.objects.create_user(email=email, password="secret", name=email, area=area)
+        self.client.force_login(user)
+        return user
 
     def _audited_revision(self, version, status):
         return Revision.objects.create(
@@ -123,6 +132,91 @@ class DocumentRevisionSubmissionTests(TestCase):
         self.assertIn("/v2/", stored.storage_path)
         self.assertEqual((Path(self.storage_dir) / stored.storage_path).read_bytes(), NEW_PDF)
 
+    def test_should_record_the_user_who_submitted_the_revision_as_its_author(self, *mongo):
+        collaborator = self._collaborator("colleague@example.com", self.area)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Revision.objects.get(pk=response.json()["id"]).author, collaborator)
+
+    def test_should_refuse_a_user_outside_the_document_areas(self, *mongo):
+        self._collaborator("outsider@example.com", self.other_area)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": "RevisionOutsideArea"})
+        self.assertEqual(Revision.objects.count(), 1)
+        self.assertEqual(list(Path(self.temp_dir).iterdir()), [])
+
+    def test_should_allow_a_user_of_any_of_the_document_areas(self, *mongo):
+        DocumentArea.objects.create(document=self.document, area=self.other_area)
+        self._collaborator("outsider@example.com", self.other_area)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 201)
+
+    def test_should_allow_the_responsible_outside_the_document_areas(self, *mongo):
+        User.objects.filter(pk=self.author.pk).update(area=self.other_area)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Revision.objects.get(pk=response.json()["id"]).author, self.author)
+
+    def test_should_hide_a_document_the_user_cannot_see(self, *mongo):
+        Document.objects.filter(pk=self.document.pk).update(confidentiality_level="CONFIDENTIAL")
+        self._collaborator("stranger@example.com", self.other_area)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"error": "DocumentNotFound"})
+
+    def test_should_refuse_a_new_revision_while_another_is_pending(self, *mongo):
+        pending = Revision.objects.create(
+            document=self.document, version=2, status=RevisionStatus.PENDING, author=self.author
+        )
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json(),
+            {"error": "RevisionInProgress", "revision": {"id": pending.id, "version": 2}},
+        )
+        self.assertEqual(Revision.objects.count(), 2)
+        self.assertEqual(list(Path(self.temp_dir).iterdir()), [])
+
+    def test_should_refuse_a_revision_opened_by_someone_else_meanwhile(self, *mongo):
+        colleague = self._collaborator("colleague@example.com", self.area)
+        self.client.force_login(self.author)
+        resolve_temp_file = document_creation_service.resolve_temp_file
+
+        def open_a_revision_then_resolve(temp_file_id):
+            Revision.objects.get_or_create(
+                document=self.document,
+                version=2,
+                defaults={"status": RevisionStatus.PENDING, "author": colleague},
+            )
+            return resolve_temp_file(temp_file_id)
+
+        with mock.patch.object(
+            document_creation_service, "resolve_temp_file", side_effect=open_a_revision_then_resolve
+        ):
+            response = self._post()
+
+        pending = Revision.objects.get(document=self.document, version=2)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json(),
+            {"error": "RevisionInProgress", "revision": {"id": pending.id, "version": 2}},
+        )
+        self.assertEqual(pending.author, colleague)
+        self.assertEqual(Revision.objects.count(), 2)
+
     def test_should_answer_404_for_a_nonexistent_document(self, *mongo):
         response = self._post(document_id=self.document.id + 1000)
 
@@ -154,6 +248,9 @@ class DocumentRevisionSubmissionTests(TestCase):
 
     def test_should_answer_409_for_a_file_already_registered(self, *mongo):
         self._post()
+        Revision.objects.filter(document=self.document, status=RevisionStatus.PENDING).update(
+            status=RevisionStatus.APPROVED, auditor=self.auditor, audited_at=timezone.now()
+        )
 
         response = self._post(change_description=f"{CHANGE_DESCRIPTION} again")
 

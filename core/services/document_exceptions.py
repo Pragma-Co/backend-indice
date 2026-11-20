@@ -33,3 +33,13 @@ class DocumentQueryError(Exception):
     def __init__(self, errors: dict):
         self.errors = errors
         super().__init__(f"Invalid document query: {sorted(errors)}")
+
+
+class RevisionOutsideAreaError(Exception):
+    pass
+
+
+class RevisionInProgressError(Exception):
+    def __init__(self, revision):
+        self.revision = revision
+        super().__init__(revision.pk)

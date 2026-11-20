@@ -6,6 +6,7 @@ from unittest import mock
 
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from core.models import (
     Area,
@@ -17,6 +18,7 @@ from core.models import (
     Project,
     Revision,
     RevisionStatus,
+    Role,
     User,
 )
 from core.services import document_creation_service as service
@@ -25,6 +27,8 @@ from core.services.document_exceptions import (
     DocumentStorageError,
     DocumentValidationError,
     DuplicateDocumentFileError,
+    RevisionInProgressError,
+    RevisionOutsideAreaError,
     TempFileNotFoundError,
 )
 
@@ -51,12 +55,24 @@ class DocumentCreationServiceTests(TestCase):
         self.user = User.objects.create_user(
             email="ana@example.com", password="secret", name="Ana", area=self.area
         )
+        self.auditor = User.objects.create_user(
+            email="auditor@example.com",
+            password="secret",
+            name="Auditor",
+            area=self.area,
+            role=Role.AUDITOR,
+        )
         self.project = Project.objects.create(code="AK-2100", name="Fuselagem")
         self.other_project = Project.objects.create(code="AK-2200", name="Empenagem")
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.unlinked_discipline = Discipline.objects.create(code="HID", name="Hidráulica")
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
         self.client.force_login(self.user)
+
+    def _approve_initial_revision(self, document):
+        Revision.objects.filter(document=document).update(
+            status=RevisionStatus.APPROVED, auditor=self.auditor, audited_at=timezone.now()
+        )
 
     def _temp_file(self, temp_file_id=TEMP_FILE_ID, content=PDF_BYTES, extension="pdf"):
         path = Path(self.temp_dir) / f"{temp_file_id}.{extension}"
@@ -296,11 +312,12 @@ class DocumentCreationServiceTests(TestCase):
             "inferred_type": "application/pdf",
         }
         document = service.create_document(self._payload(temp_file_ids=[first_id, second_id]))
+        self._approve_initial_revision(document)
         original_revision = Revision.objects.get(document=document)
         self._temp_file(new_id, b"%PDF-1.4 replacement")
 
         revision = service.create_document_revision(
-            document.id, [new_id], "Substitui o desenho pela versão corrigida"
+            document.id, self.user, [new_id], "Substitui o desenho pela versão corrigida"
         )
 
         self.assertEqual(revision.version, 2)
@@ -312,6 +329,7 @@ class DocumentCreationServiceTests(TestCase):
     def test_should_create_a_revision_with_multiple_files_as_one_package(self, mongo):
         self._temp_file()
         document = service.create_document(self._payload())
+        self._approve_initial_revision(document)
         second_id = "22222222-2222-4333-8444-555555555555"
         third_id = "33333333-2222-4333-8444-555555555555"
         self._temp_file(second_id, b"%PDF-1.4 second revision file")
@@ -322,7 +340,10 @@ class DocumentCreationServiceTests(TestCase):
         }
 
         revision = service.create_document_revision(
-            document.id, [second_id, third_id], "Pacote completo da revisão com os anexos"
+            document.id,
+            self.user,
+            [second_id, third_id],
+            "Pacote completo da revisão com os anexos",
         )
 
         self.assertEqual(revision.version, 2)
@@ -336,15 +357,45 @@ class DocumentCreationServiceTests(TestCase):
             "inferred_type": "application/pdf",
         }
         document = service.create_document(self._payload())
+        self._approve_initial_revision(document)
         new_id = "44444444-2222-4333-8444-555555555555"
         self._temp_file(new_id, b"%PDF-1.4 revised content")
         return document, new_id
+
+    def test_should_refuse_a_revision_from_a_user_outside_the_document_areas(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+        outsider = User.objects.create_user(
+            email="outsider@example.com", password="secret", name="Outsider", area=self.other_area
+        )
+        document.areas.set([self.area])
+        Document.objects.filter(pk=document.pk).update(confidentiality_level="PUBLIC")
+
+        with self.assertRaises(RevisionOutsideAreaError):
+            service.create_document_revision(
+                document.id, outsider, [new_id], "Corrige a furação da caverna 14 conforme ensaio"
+            )
+
+        self.assertEqual(Revision.objects.filter(document=document).count(), 1)
+
+    def test_should_refuse_a_second_revision_while_the_first_is_pending(self, mongo):
+        document, new_id = self._document_for_revision(mongo)
+        pending = Revision.objects.get(document=document)
+        pending.status = RevisionStatus.PENDING
+        pending.save(update_fields=["status"])
+
+        with self.assertRaises(RevisionInProgressError) as ctx:
+            service.create_document_revision(
+                document.id, self.user, [new_id], "Corrige a furação da caverna 14 conforme ensaio"
+            )
+
+        self.assertEqual(ctx.exception.revision, pending)
+        self.assertEqual(Revision.objects.filter(document=document).count(), 1)
 
     def test_should_store_the_change_description_on_the_new_revision(self, mongo):
         document, new_id = self._document_for_revision(mongo)
 
         revision = service.create_document_revision(
-            document.id, [new_id], "  Corrige a furação da caverna 14 conforme ensaio  "
+            document.id, self.user, [new_id], "  Corrige a furação da caverna 14 conforme ensaio  "
         )
 
         revision.refresh_from_db()
@@ -358,7 +409,7 @@ class DocumentCreationServiceTests(TestCase):
 
         for missing in (None, "", "   "):
             with self.subTest(value=missing), self.assertRaises(DocumentValidationError) as ctx:
-                service.create_document_revision(document.id, [new_id], missing)
+                service.create_document_revision(document.id, self.user, [new_id], missing)
             self.assertEqual(ctx.exception.errors["change_description"]["code"], "required")
         self.assertEqual(Revision.objects.filter(document=document).count(), 1)
 
@@ -366,7 +417,7 @@ class DocumentCreationServiceTests(TestCase):
         document, new_id = self._document_for_revision(mongo)
 
         with self.assertRaises(DocumentValidationError) as ctx:
-            service.create_document_revision(document.id, [new_id], "Ajuste pequeno")
+            service.create_document_revision(document.id, self.user, [new_id], "Ajuste pequeno")
 
         self.assertEqual(ctx.exception.errors["change_description"]["code"], "too_short")
         self.assertEqual(Revision.objects.filter(document=document).count(), 1)
@@ -375,7 +426,7 @@ class DocumentCreationServiceTests(TestCase):
         document, new_id = self._document_for_revision(mongo)
 
         with self.assertRaises(DocumentValidationError) as ctx:
-            service.create_document_revision(document.id, [new_id], "x" * 256)
+            service.create_document_revision(document.id, self.user, [new_id], "x" * 256)
 
         self.assertEqual(ctx.exception.errors["change_description"]["code"], "too_long")
 
@@ -384,7 +435,7 @@ class DocumentCreationServiceTests(TestCase):
         temp_path = Path(self.temp_dir) / f"{new_id}.pdf"
 
         with self.assertRaises(DocumentValidationError):
-            service.create_document_revision(document.id, [new_id], "curto")
+            service.create_document_revision(document.id, self.user, [new_id], "curto")
 
         self.assertTrue(temp_path.exists())
 
@@ -439,6 +490,7 @@ class DocumentCreationServiceTests(TestCase):
     def test_should_reject_duplicate_content_within_a_revision_package(self, mongo):
         self._temp_file()
         document = service.create_document(self._payload())
+        self._approve_initial_revision(document)
         second_id = "22222222-2222-4333-8444-555555555555"
         third_id = "33333333-2222-4333-8444-555555555555"
         duplicate_bytes = b"%PDF-1.4 repeated in this batch"
@@ -447,7 +499,10 @@ class DocumentCreationServiceTests(TestCase):
 
         with self.assertRaises(service.DuplicateRevisionUploadError):
             service.create_document_revision(
-                document.id, [second_id, third_id], "Pacote completo da revisão com os anexos"
+                document.id,
+                self.user,
+                [second_id, third_id],
+                "Pacote completo da revisão com os anexos",
             )
 
     def test_should_increment_the_sequence_for_the_same_prefix(self, mongo):

@@ -35,6 +35,8 @@ from core.services.document_exceptions import (
     DocumentValidationError,
     DuplicateDocumentFileError,
     DuplicateRevisionUploadError,
+    RevisionInProgressError,
+    RevisionOutsideAreaError,
     TempFileNotFoundError,
 )
 from core.services.document_recommendation_service import get_document_recommendations
@@ -168,12 +170,19 @@ def simple_filters(request):
 @csrf_exempt
 @require_POST
 def create_revision_view(request, document_id):
+    user, error_response = _session_user(request)
+    if error_response is not None:
+        return error_response
+
     payload = {}
     try:
         if request.content_type == "multipart/form-data":
             payload = request.POST.dict()
             revision, temp_file_ids = submit_document_revision(
-                document_id, request.FILES.getlist("file"), payload.get("change_description")
+                document_id,
+                user,
+                request.FILES.getlist("file"),
+                payload.get("change_description"),
             )
         else:
             payload = json.loads(request.body or "{}")
@@ -181,7 +190,7 @@ def create_revision_view(request, document_id):
             if temp_file_ids is None:
                 temp_file_ids = payload.get("temp_file_id")
             revision = create_document_revision(
-                document_id, temp_file_ids, payload.get("change_description")
+                document_id, user, temp_file_ids, payload.get("change_description")
             )
         audit_service.log_document_revision_created(request, revision, temp_file_ids)
         return JsonResponse(
@@ -200,6 +209,16 @@ def create_revision_view(request, document_id):
         return JsonResponse({"errors": exc.errors}, status=400)
     except DocumentNotFoundError:
         return JsonResponse({"error": "DocumentNotFound"}, status=404)
+    except RevisionOutsideAreaError:
+        return JsonResponse({"error": "RevisionOutsideArea"}, status=403)
+    except RevisionInProgressError as exc:
+        return JsonResponse(
+            {
+                "error": "RevisionInProgress",
+                "revision": {"id": exc.revision.id, "version": exc.revision.version},
+            },
+            status=409,
+        )
     except TempFileNotFoundError:
         return JsonResponse({"error": "TempFileNotFound"}, status=404)
     except DuplicateDocumentFileError as exc:
