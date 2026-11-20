@@ -158,6 +158,14 @@ class DocumentRevisionSubmissionTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
 
+    def test_should_allow_the_responsible_outside_the_document_areas(self, *mongo):
+        User.objects.filter(pk=self.author.pk).update(area=self.other_area)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Revision.objects.get(pk=response.json()["id"]).author, self.author)
+
     def test_should_hide_a_document_the_user_cannot_see(self, *mongo):
         Document.objects.filter(pk=self.document.pk).update(confidentiality_level="CONFIDENTIAL")
         self._collaborator("stranger@example.com", self.other_area)

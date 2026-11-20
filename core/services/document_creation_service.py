@@ -415,7 +415,7 @@ def _revisable_document(document_id, user) -> Document:
     )
     if document is None or not is_visible(document, user):
         raise DocumentNotFoundError()
-    if not shares_area(document, user):
+    if document.responsible_id != user.pk and not shares_area(document, user):
         raise RevisionOutsideAreaError()
     _ensure_no_pending_revision(document)
     return document
