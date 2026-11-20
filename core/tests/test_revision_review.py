@@ -85,36 +85,35 @@ class RevisionReviewFixtureMixin:
 
 
 class DecideRevisionServiceTests(RevisionReviewFixtureMixin, TestCase):
-    def test_should_make_the_approved_revision_current_and_obsolete_the_previous_one(self):
-        revision, superseded = decide_revision(
-            self.pending.pk, self.manager, {"decision": "APPROVED"}
-        )
+    def test_should_make_the_approved_revision_the_latest_approved_one(self):
+        revision = decide_revision(self.pending.pk, self.manager, {"decision": "APPROVED"})
 
         self.current.refresh_from_db()
         self.document.refresh_from_db()
         self.assertEqual(revision.status, RevisionStatus.APPROVED)
         self.assertEqual(revision.auditor, self.manager)
         self.assertIsNotNone(revision.audited_at)
-        self.assertEqual(superseded.pk, self.current.pk)
-        self.assertEqual(self.current.status, RevisionStatus.OBSOLETE)
+        self.assertEqual(self.current.status, RevisionStatus.APPROVED)
         self.assertEqual(self.document.updated_by, self.manager)
         self.assertEqual(
-            Revision.objects.get(document=self.document, status=RevisionStatus.APPROVED).pk,
+            Revision.objects.filter(document=self.document, status=RevisionStatus.APPROVED)
+            .order_by("-version")
+            .first()
+            .pk,
             self.pending.pk,
         )
 
     def test_should_approve_the_first_revision_when_the_document_has_no_current_one(self):
         self.current.delete()
 
-        revision, superseded = decide_revision(
+        revision = decide_revision(
             self.pending.pk, self.manager, {"decision": "approved", "justification": ""}
         )
 
         self.assertEqual(revision.status, RevisionStatus.APPROVED)
-        self.assertIsNone(superseded)
 
     def test_should_reject_with_justification_and_keep_the_previous_revision_current(self):
-        revision, superseded = decide_revision(
+        revision = decide_revision(
             self.pending.pk,
             self.manager,
             {"decision": "REJECTED", "justification": f"  {JUSTIFICATION}  "},
@@ -123,7 +122,6 @@ class DecideRevisionServiceTests(RevisionReviewFixtureMixin, TestCase):
         self.current.refresh_from_db()
         self.assertEqual(revision.status, RevisionStatus.REJECTED)
         self.assertEqual(revision.auditor_comment, JUSTIFICATION)
-        self.assertIsNone(superseded)
         self.assertEqual(self.current.status, RevisionStatus.APPROVED)
 
     def test_should_refuse_rejection_without_justification(self):
@@ -299,8 +297,6 @@ class RevisionDecisionViewTests(RevisionReviewFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["status"], RevisionStatus.APPROVED)
         self.assertEqual(body["auditor"]["id"], self.manager.pk)
-        self.assertEqual(body["superseded_revision"]["id"], self.current.pk)
-        self.assertEqual(body["superseded_revision"]["status"], RevisionStatus.OBSOLETE)
         self.assertEqual(audit.action, AuditAction.UPDATE)
         self.assertEqual(audit.entity_id, self.pending.pk)
         self.assertEqual(audit.user, self.manager)
@@ -317,7 +313,6 @@ class RevisionDecisionViewTests(RevisionReviewFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], RevisionStatus.REJECTED)
         self.assertEqual(response.json()["auditor_comment"], JUSTIFICATION)
-        self.assertIsNone(response.json()["superseded_revision"])
         self.assertEqual(self.current.status, RevisionStatus.APPROVED)
 
     def test_should_answer_400_for_rejection_without_justification(self):

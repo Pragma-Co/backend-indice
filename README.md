@@ -189,7 +189,7 @@ Main listing of the document library: serves both the direct navigation ("Ver to
 | `tipo` | document type code(s), e.g. `DWG` |
 | `area` | area acronym(s), e.g. `EST` |
 | `discipline` | discipline code(s), e.g. `MAT` |
-| `status` | status of the most recent revision: `PENDING`, `APPROVED`, `REJECTED`, `OBSOLETE` |
+| `status` | status of the most recent revision: `PENDING`, `APPROVED`, `REJECTED` |
 | `tags` | tag name(s), case-insensitive, exact match |
 | `responsible_id` | id of the responsible user |
 | `data` | creation date preset: `last_7_days`, `last_month` or `last_year` |
@@ -499,10 +499,10 @@ Revisions of archived documents are left out of the queue and cannot be decided.
 
 Records the manager's decision on a pending revision. Same permission rules as the queue. Body `{"decision": "APPROVED" | "REJECTED", "justification": "<text>"}`; the justification is required to reject, optional to approve, and when present must have 20 to 1000 characters. It is stored as the revision's `auditor_comment`, together with the manager as `auditor` and `audited_at`.
 
-- **Approval** makes the revision the official one: the previously approved revision of the document becomes `OBSOLETE` and the document's `updated_by` is set to the manager, all in one transaction.
+- **Approval** makes the revision the official one: the document's `updated_by` is set to the manager, all in one transaction.
 - **Rejection** marks the revision `REJECTED` and leaves the current approved revision untouched.
 
-Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at", "superseded_revision"}` (`superseded_revision` is the revision made obsolete, or `null`). Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
+Answers `200 {"id", "document_id", "version", "revision", "status", "auditor", "auditor_comment", "audited_at"}`. Errors: `400 {"error": "InvalidJSON"}` or `{"errors": {"body" | "decision" | "justification": {"code", "message"}}}`; `403 {"error": "CannotReviewOwnRevision"}` when the manager is the author or responsible of the revision; `404 {"error": "RevisionNotFound"}`; `409 {"error": "RevisionAlreadyDecided", "status"}`; `409 {"error": "OutdatedRevision", "current_version"}` when a newer version of the document is already approved. Every decision is written to `audit_log` (`action = UPDATE`, `entity = "revision"`, `record.event = "REVISION_APPROVED" | "REVISION_REJECTED"`).
 
 An approval also notifies the users who saved the document (`DOCUMENT_UPDATED`, see *Notifications*).
 
@@ -684,14 +684,13 @@ Internal alerts shown in the navbar bell. They are created by the backend, in th
 
 | `type` | Trigger | Recipients | `title` (pt-BR) |
 |--------|---------|------------|-----------------|
-| `DOCUMENT_UPDATED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | every active user who saved the document in the personal library and can still see it (see *Document visibility*), except the reviewer | `Nova revisão (REV02) publicada para o documento <title>.` |
-| `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester | `Seu pedido de acesso ao documento <title> foi aprovado.` |
-| `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester | `Seu pedido de acesso ao documento <title> foi recusado.` |
+| `DOCUMENT_UPDATED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | every active collaborator who saved the document in the personal library and can still see it (see *Document visibility*), except the reviewer | `Nova revisão (REV02) publicada para o documento <title>.` |
+| `ACCESS_APPROVED` | `POST /manager/access-requests/<id>/decision` with `APPROVED` | the requester, when a collaborator | `Seu pedido de acesso ao documento <title> foi aprovado.` |
+| `ACCESS_REJECTED` | `POST /manager/access-requests/<id>/decision` with `REJECTED` | the requester, when a collaborator | `Seu pedido de acesso ao documento <title> foi recusado.` |
+| `REVISION_APPROVED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | the revision author, when a collaborator | `Sua revisão (REV02) do documento <title> foi aprovada.` |
+| `REVISION_REJECTED` | `POST /manager/revisions/<id>/decision` with `REJECTED` | the revision author, when a collaborator | `Sua revisão (REV02) do documento <title> foi recusada.` |
 
-| `REVISION_APPROVED` | `POST /manager/revisions/<id>/decision` with `APPROVED` | the revision author | `Sua revisão (REV02) do documento <title> foi aprovada.` |
-| `REVISION_REJECTED` | `POST /manager/revisions/<id>/decision` with `REJECTED` | the revision author | `Sua revisão (REV02) do documento <title> foi recusada.` |
-
-A rejected revision notifies only its author; `DOCUMENT_UPDATED` is sent only on approval. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
+Only collaborators (`AUTHOR` and `VIEWER`) are notified: managers (`AUDITOR` and `ADMIN`, `MANAGER_ROLES` in `core/models/choices.py`) decide the requests themselves and the frontend hides the bell for them, so no notification is created when the saver, author or requester is a manager. A rejected revision notifies only its author; `DOCUMENT_UPDATED` is sent only on approval. The title is stored when the notification is created, so it keeps the wording of that moment. Notifications are removed with their document or recipient. Every route below requires a session (`401 {"error": "AuthenticationRequired"}`) and only reaches the session user's own notifications; the `PATCH` routes need the `X-CSRFToken` header like every other write (`403` without it) and answer `405` for other methods.
 
 Notification object:
 
@@ -734,6 +733,10 @@ Immediate, irreversible account removal requested by the logged-in user (`401` w
 ### `python manage.py delete_user <email>`
 
 Hard delete, run by an operator (not an HTTP endpoint). The row is removed from the database and everything that referenced it is reassigned to another active manager (documents, revisions, access approvals, legal versions, area `manager`); the user's own access requests and legal acceptances are deleted. Audit rows keep the name in `record.actor.name`, with `audit_log.user_id` set to `NULL`. Fails without changes if no other manager exists.
+
+### Exclusion register database (tombstone)
+
+The exclusion register (`excluded_identifier`) lives in a separate PostgreSQL database (`api6_tombstone`, Django alias `tombstone`, configured through `TOMBSTONE_*` in `.env`, routed by `core/db_router.py`), so restoring the application database does not wipe it. After `migrate`, also run `python manage.py migrate --database=tombstone` (the compose `api` service already does); that migration copies the rows of an existing `excluded_identifier` table of the application database. After a restore, `reapply_user_erasures` reads the register from this database.
 
 ## Useful commands
 

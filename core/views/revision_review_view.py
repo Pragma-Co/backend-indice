@@ -65,7 +65,7 @@ def revision_decision_view(request, revision_id):
         return JsonResponse({"error": "InvalidJSON"}, status=400)
 
     try:
-        revision, superseded = decide_revision(revision_id, reviewer, payload)
+        revision = decide_revision(revision_id, reviewer, payload)
     except RevisionReviewValidationError as exc:
         return JsonResponse({"errors": exc.errors}, status=400)
     except RevisionNotFoundError:
@@ -93,7 +93,6 @@ def revision_decision_view(request, revision_id):
             "document_code": revision.document.code,
             "version": revision.version,
             "justification": revision.auditor_comment,
-            "superseded_revision_id": superseded.pk if superseded else None,
         },
     )
-    return JsonResponse(serialize_revision_decision(revision, superseded))
+    return JsonResponse(serialize_revision_decision(revision))

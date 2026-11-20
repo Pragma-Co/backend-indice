@@ -18,7 +18,7 @@ from django.db import transaction
 from core.models import Area
 
 DEFAULT_AREA_ACRONYM = "ADM"
-DEFAULT_AREA_NAME = "Administration"
+DEFAULT_AREA_NAME = "Administração"
 
 
 class Command(BaseCommand):

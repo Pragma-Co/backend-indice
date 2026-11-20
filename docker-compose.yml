@@ -26,6 +26,26 @@ services:
       retries: 10
       start_period: 15s
 
+  postgres-tombstone:
+    image: postgres:17-alpine
+    container_name: api6-postgres-tombstone
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TOMBSTONE_DB:-api6_tombstone}
+      POSTGRES_USER: ${TOMBSTONE_USER:-api6_tombstone}
+      POSTGRES_PASSWORD: ${TOMBSTONE_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - tombstone_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${TOMBSTONE_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   mongodb:
     # 8.2+ required: MongoDB 8.0 cannot start on Linux kernel 6.19+ (SERVER-121912)
     image: mongo:8.2
@@ -94,11 +114,13 @@ services:
     build: .
     container_name: api6-django
     restart: unless-stopped
-    command: sh -c "python manage.py migrate && python manage.py ensure_superuser && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && python manage.py migrate --database=tombstone && python manage.py ensure_superuser && python manage.py runserver 0.0.0.0:8000"
     env_file: .env
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: "5432"
+      TOMBSTONE_HOST: ${TOMBSTONE_HOST:-postgres-tombstone}
+      TOMBSTONE_PORT: "5432"
       MONGO_HOST: ${MONGO_HOST:-mongodb}
       MONGO_PORT: "27017"
       # Development e-mails go to the Mailpit container unless .env points to a real SMTP service
@@ -114,5 +136,6 @@ services:
 
 volumes:
   postgres_data:
+  tombstone_data:
   mongo_data:
   ollama_data:

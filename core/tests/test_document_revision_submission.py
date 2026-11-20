@@ -88,7 +88,6 @@ class DocumentRevisionSubmissionTests(TestCase):
         self.assertEqual(Revision.objects.get(pk=body["id"]).status, RevisionStatus.PENDING)
 
     def test_should_increment_the_version_after_the_latest_revision(self, *mongo):
-        Revision.objects.filter(pk=self.current_revision.pk).update(status=RevisionStatus.OBSOLETE)
         self._audited_revision(2, RevisionStatus.APPROVED)
 
         response = self._post()
