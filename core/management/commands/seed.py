@@ -130,7 +130,6 @@ class Command(BaseCommand):
         """Moment and user key of the latest revision event, for document.updated_*."""
         plan = data.REVISIONS[code]
         if len(plan) == 1 and plan[0][1] == RevisionStatus.PENDING:
-            # Never decided: creation is the only modification the document has had
             return created_at, created_by_key
         events = []
         for version, _s, author, auditor, created, audited, _d, _c in data.REVISIONS[code]:
