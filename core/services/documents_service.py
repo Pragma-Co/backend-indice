@@ -309,6 +309,7 @@ def serialize_document(document):
             "label": revision_label(document.latest_version),
         },
         "status": document.status,
+        "responsible": {"id": document.responsible_id},
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "created_by": {
@@ -335,7 +336,7 @@ def _get_document_or_none(document_id):
             "project", "discipline", "document_type", "responsible", "created_by", "updated_by"
         )
         .prefetch_related(
-            "areas",
+            "areas__manager",
             Prefetch(
                 "revisions",
                 queryset=Revision.objects.select_related("author", "auditor")
@@ -435,6 +436,21 @@ def _serialize_revision(revision, can_read):
     return serialized
 
 
+def _document_managers(document):
+    managers = {}
+    for area in document.areas.all():
+        if area.active and area.manager is not None:
+            managers.setdefault(
+                area.manager_id,
+                {
+                    "id": area.manager_id,
+                    "name": area.manager.name,
+                    "email": area.manager.email,
+                },
+            )
+    return sorted(managers.values(), key=lambda manager: manager["name"])
+
+
 def _serialize_document_detail(document, access_status, can_read, access_request):
     current_revision = _get_current_revision(document)
     serialized = {
@@ -466,6 +482,7 @@ def _serialize_document_detail(document, access_status, can_read, access_request
             "name": document.responsible.name,
             "email": document.responsible.email,
         },
+        "managers": _document_managers(document),
         "created_by": {
             "id": document.created_by_id,
             "name": document.created_by.name if document.created_by else None,

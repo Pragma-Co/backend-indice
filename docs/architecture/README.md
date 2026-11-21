@@ -79,20 +79,23 @@ SVG export: [overview.svg](./overview.svg)
 - The session is a Django session: the backend sets an `HttpOnly` `sessionid` cookie and a `csrftoken` cookie. The frontend fetches the CSRF cookie with `GET /auth/csrf`, opens the session with `POST /auth/login {"email", "password"}` and closes it with `POST /auth/logout`. Every other route except `/health/`, the read-only `/legal-documents` routes and the admin answers `401 AuthenticationRequired` without a session (`LoginRequiredJsonMiddleware`).
 - Django's CSRF protection stays on: every write (`POST`, `PUT`, `DELETE`) carries the `csrftoken` cookie value in the `X-CSRFToken` header, added automatically by the API client (`src/api/client.js`), and `DJANGO_CSRF_TRUSTED_ORIGINS` / `DJANGO_CORS_ALLOWED_ORIGINS` list the frontend origins.
 - Roles live in `app_user.role`: `AUTHOR` and `VIEWER` are collaborators; `AUDITOR` and `ADMIN` are technical managers (they review revisions, decide access requests, archive documents and read the activity feed). `ADMIN` also enters the Django admin. The frontend mirrors this with the `managerOnly` / `collaboratorOnly` route guards and the `public` flag of the login route.
-- Reading a document's content is a separate rule, checked on the server for the detail and for every file: the responsible user, a user with an approved access request, or a manager while the revision is pending.
+- Reading a document's content is a separate rule, checked on the server for the detail and for every file: the responsible user, a user with an active access grant, or whoever the document's secrecy level lets in (everyone, users of the document's areas, or members of an authorized access group, up to the group's level). Managers only read the content of a revision while it is pending review.
 
 **Who calls what.**
 
 | Frontend screen (route) | API endpoints |
 |---|---|
 | Login (`/login`) | `GET /auth/csrf`, `POST /auth/login`, `GET /users/me` |
-| Home and results (`/home`, `/results`) | `GET /documents` (filters, pagination), `GET /documents/simple-filters`, `GET /documents/search` |
-| Documents list and details (`/documents`, `/documents/:id`) | `GET /documents`, `GET /documents/<id>`, `GET /files/<id>/view`, `POST /documents/<id>/request-access` |
-| New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions` (local classifier), `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `POST /documents` |
+| Home and results (`/home`, `/results`) | `GET /documents` (filters, pagination), `GET /documents/simple-filters`, `GET /documents/search`, `POST /documents/search/ai-summary` |
+| Documents list and details (`/documents`, `/documents/:id`) | `GET /documents`, `GET /documents/<id>`, `GET /documents/<id>/recommendations`, `GET /files/<id>/view` (fetched as a blob by the protected viewers; iframe/img access is refused), `POST /documents/<id>/security-events`, `POST /documents/<id>/request-access` |
+| New document (`/documents/upload` → `/metadata` → `/confirmation`) | `POST /documents/upload`, `POST /documents/<temp_file_id>/suggestions` and `/suggestions/stream` (local classifier), `GET /projects/`, `GET /disciplines/`, `GET /areas/`, `GET /documents/types`, `GET /access-groups`, `POST /documents` |
 | New revision (`/documents/:id/new-revision`) | `POST /documents/<id>/revisions` |
+| Search history and personal library | `GET`/`DELETE /users/me/search-history`, `GET /users/me/library`, `POST`/`DELETE /users/me/library/<id>` |
+| Notifications (header bell) | `GET /notifications`, `PATCH /notifications/<id>/read`, `PATCH /notifications/read-all` |
 | Manager panel (`/revisions`) | `GET /manager/pending-revisions`, `POST /manager/revisions/<id>/decision`, `GET /manager/pending-access-requests`, `POST /manager/access-requests/<id>/decision`, `GET /manager/activities`, `GET /manager/decision-history` |
-| Profile / data subject management (`/profile`) | `GET`/`PUT /users/me`, `POST /users/me/request-deletion`, `GET /legal-documents`, `GET /legal-documents/versions/<id>`, `GET`/`POST /users/me/legal-acceptances`, `POST /users/me/legal-acceptances/<id>/revoke`, `POST /auth/logout` |
-| Not called by the frontend yet | `GET /health/`, `/admin/`, `DELETE /documents/<id>`, `GET /documents/archived`, `POST /documents/<id>/restore` (archiving has no screen yet), `POST /documents/search/ai-summary` (search summary) |
+| Collaborators (managers) | `GET /manager/users`, `GET`/`POST /manager/access-groups`, `GET`/`POST /manager/access-groups/<id>/users`, `DELETE /manager/access-groups/<id>/users/<user_id>` |
+| Profile / data subject management (`/profile`) | `GET`/`PUT /users/me`, `POST /users/me/request-deletion`, `GET /legal-documents`, `GET /legal-documents/versions/<id>`, `GET /users/me/legal-pending`, `GET`/`POST /users/me/legal-acceptances`, `POST /users/me/legal-acceptances/<id>/revoke`, `POST /auth/logout` |
+| Not called by the frontend yet | `GET /health/`, `/admin/`, `DELETE /documents/<id>`, `GET /documents/archived`, `POST /documents/<id>/restore` (archiving has no screen yet), `/security/incidents*` and `/security/backups` (data incident response and backups) |
 
 The full contract of every endpoint is documented in the [backend README](../../README.md).
 
@@ -218,6 +221,18 @@ erDiagram
     APP_USER ||--o{ ACCESS_GROUP_MEMBER : "member / added_by"
     DOCUMENT ||--o{ DOCUMENT_ACCESS_GROUP : "authorized groups"
     ACCESS_GROUP ||--o{ DOCUMENT_ACCESS_GROUP : "granted documents"
+    APP_USER ||--o| AREA : "manages"
+    APP_USER ||--o{ SAVED_DOCUMENT : "personal library"
+    DOCUMENT ||--o{ SAVED_DOCUMENT : "saved by"
+    APP_USER ||--o{ NOTIFICATION : "recipient"
+    DOCUMENT ||--o{ NOTIFICATION : "about"
+    APP_USER ||--o{ SEARCH_HISTORY : "searched"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_AFFECTED_USER : "affected users"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_AFFECTED_DOCUMENT : "affected documents"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_ACTION : "actions"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_STATUS_CHANGE : "status history"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_SUBJECT_NOTIFICATION : "data subject notices"
+    APP_USER ||--o{ BACKUP_RUN : "triggered_by"
 
     DOCUMENT {
         string code
@@ -229,11 +244,14 @@ erDiagram
         int version
         string status "PENDING / APPROVED / REJECTED"
         string change_description
+        string auditor_comment
     }
     FILE {
         string original_name
         string sha256
         string storage_path
+        uuid file_group "same file across versions"
+        bool revision_changed
     }
     DOCUMENT_CONTENT {
         text content
@@ -258,6 +276,21 @@ erDiagram
         string scope "AREA / PROJECT"
         bool active
     }
+    NOTIFICATION {
+        string type
+        string title
+        datetime read_at
+    }
+    DATA_INCIDENT {
+        string type
+        string severity
+        string status
+    }
+    BACKUP_RUN {
+        string target
+        string status
+        bool encrypted
+    }
 ```
 
 SVG export: [data-model.svg](./data-model.svg)
@@ -278,41 +311,45 @@ Notes on the data layer:
 | Full-text search | PostgreSQL `document_content.search_vector` (GIN index, configuration `portuguese_unaccent`: Portuguese stemming without accents) plus a metadata vector built per query | `GET /documents/search`: ranked results, highlighted snippets; the content and the thematic tags only count for users who can read the document. |
 | Catalogs | PostgreSQL (`project`, `discipline`, `document_type`, `area`, `tag`) | Form options, simple filters and the project → discipline dependency. |
 | Metadata suggestions | Local classifier (TF-IDF + PyTorch, `classifier/`) over the text kept in MongoDB | Pre-fills discipline, document type and area in the form; an aid to classification, not a search source; its outcome is recorded in the audit trail. |
-| Search summaries | Ollama (local LLM) over the highlighted snippets of a search | `POST /documents/search/ai-summary` returns a short summary of what the results say about the query; not called by the frontend yet. |
+| Search summaries | Ollama (local LLM) over the highlighted snippets of a search | `POST /documents/search/ai-summary` returns a short summary of what the results say about the query. |
 
 ## 6. Module map <a id="module-map"></a>
 
-**Backend (`backend/core/`)**, organized by layer: `views/` (one module per resource, HTTP only), `services/` (business rules, one topic per module), `serializers/` (model ↔ JSON), `models/` (entities grouped by subject: organization, catalog, document, revision, access, legal, audit, search), `management/` (`seed`, `ensure_superuser`, `index_documents`, `delete_user`), `migrations/` (0001 creates the schema, 0002 the database triggers) and `tests/`. Routes are registered in `api6/urls.py`. The classifier is a separate package at the repository root (`classifier/`: vectorize, train, predict) with its trained artifacts in `classifier_artifacts/`.
+**Backend (`backend/core/`)**, organized by layer: `views/` (one module per resource, HTTP only), `services/` (business rules, one topic per module), `serializers/` (model ↔ JSON), `models/` (entities grouped by subject: organization, catalog, document, revision, access, access group, legal, audit, search, library, notification, incident, backup), `management/` (`seed`, `ensure_superuser`, `index_documents`, `delete_user`, `reapply_user_erasures`, `send_incident_notifications`, `backup_snapshot`, `backup_decrypt`), `migrations/` (0001 creates the schema, 0002 the database triggers) and `tests/`. Routes are registered in `api6/urls.py`. The classifier is a separate package at the repository root (`classifier/`: vectorize, train, predict) with its trained artifacts in `classifier_artifacts/`.
 
 ```mermaid
 flowchart TB
     subgraph Routes["api6/urls.py"]
-        R1["/auth/* · /users/me/*"]
+        R1["/auth/* · /users/* · /notifications/*"]
         R2["/documents/* · /files/*"]
-        R3["/manager/*"]
+        R3["/manager/* · /access-groups"]
         R4["/legal-documents/* · /projects/ · /areas/ · /disciplines/"]
+        R5["/security/*"]
     end
     subgraph ViewsLayer["core/views"]
-        V1["user_view · auth_view"]
+        V1["user_view · auth_view · personal_library_view · search_history_view · notification_view"]
         V2["documents_view · upload_view · file_view · document_ai_view"]
-        V3["revision_review_view · access_request_view · manager_activity_view"]
+        V3["revision_review_view · access_request_view · manager_activity_view · decision_history_view · access_group_view"]
         V4["legal_consent_view · catalog_view"]
+        V5["data_incident_view"]
     end
     subgraph ServicesLayer["core/services"]
-        S1["auth · user_anonymization · excluded_identifier · legal_consent"]
-        S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file"]
-        S3["documents (listing) · document_search · document_index · document_archive"]
-        S4["revision_review · access_request · manager_activity · audit"]
+        S1["auth · user · user_anonymization · excluded_identifier · legal_consent · personal_library · search_history · notification"]
+        S2["temp_upload · document_text · document_ai · document_search_summary · document_creation · document_code · file · file_validation"]
+        S3["documents (listing) · document_search · document_index · document_archive · document_recommendation · document_visibility · document_permission · access_group"]
+        S4["revision_review · access_request · manager_activity · decision_history · access_group_management · audit"]
+        S5["data_incident · incident_subject_notification · backup"]
     end
     subgraph ModelsLayer["core/models · core/mongo"]
-        M1["PostgreSQL: organization · catalog ·<br/>document · revision · access"]
-        M2["PostgreSQL: legal · audit · search ·<br/>excluded_identifier<br/>MongoDB: temp_uploads · document_vectors"]
+        M1["PostgreSQL: organization · catalog ·<br/>document · revision · access · access_group"]
+        M2["PostgreSQL: legal · audit · search · search_history · library ·<br/>notification · incident · backup · excluded_identifier<br/>MongoDB: temp_uploads · document_vectors"]
         ML["classifier/ + classifier_artifacts/<br/>TF-IDF vectorizer · PyTorch model"]
     end
     R1 --> V1 --> S1
     R2 --> V2 --> S2
     R3 --> V3 --> S4
     R4 --> V4 --> S1
+    R5 --> V5 --> S5
     V2 --> S3
     S1 --> M2
     S2 --> M1
@@ -321,11 +358,12 @@ flowchart TB
     S3 --> M2
     S4 --> M1
     S4 --> M2
+    S5 --> M2
 ```
 
 SVG export: [backend-modules.svg](./backend-modules.svg)
 
-**Frontend (`frontend/src/`)**: `views/` (login, home, document, manager, user-management), `components/` (common, layout, document-upload), `api/` (one module per backend resource: `auth`, `users`, `documents`, `manager`, `legal`, `projects`, `disciplines`, `areas`, on top of `client.js`), `stores/` (Pinia: `authStore`, `documentFormStore`, `uploadStore`, `searchStore`, `notificationStore`), `router/` (routes and guards) and `tests/`.
+**Frontend (`frontend/src/`)**: `views/` (login, home, document, manager, user-management), `components/` (common, layout, document-upload), `api/` (one module per backend resource: `auth`, `users`, `documents`, `manager`, `legal`, `projects`, `disciplines`, `areas`, `accessGroups`, `notifications`, `recommendations`, `searchHistory`, on top of `client.js`), `stores/` (Pinia: `authStore`, `documentFormStore`, `uploadStore`, `searchStore`, `notificationStore`, `legalConsentStore`), `router/` (routes and guards) and `tests/`.
 
 ## 7. Delivery and CI <a id="delivery"></a>
 
