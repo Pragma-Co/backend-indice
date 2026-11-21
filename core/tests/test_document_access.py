@@ -239,6 +239,29 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         self.assertNotIn("files", body["revision"])
         self.assertNotIn("change_description", body["revision"])
 
+    def test_should_list_the_managers_of_the_active_document_areas(self):
+        Area.objects.filter(acronym="EST").update(manager=self.manager)
+        former_manager = User.objects.create_user(
+            email="former@example.com", password="pw", name="Former", area=self.granted.area
+        )
+        self.document.areas.add(
+            Area.objects.create(
+                acronym="OLD", name="Área extinta", active=False, manager=former_manager
+            )
+        )
+
+        response = self._detail(self.stranger)
+
+        self.assertEqual(
+            response.json()["managers"],
+            [{"id": self.manager.id, "name": "Manager", "email": "manager@example.com"}],
+        )
+
+    def test_should_answer_an_empty_managers_list_when_no_area_has_a_manager(self):
+        response = self._detail(self.owner)
+
+        self.assertEqual(response.json()["managers"], [])
+
     def test_should_still_expose_the_authors_to_a_user_without_access(self):
         response = self._detail(self.stranger)
 
