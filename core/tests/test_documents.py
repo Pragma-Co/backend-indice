@@ -210,6 +210,7 @@ class DocumentsSearchAndPaginationTests(TestCase):
         self.assertEqual(item["revision"], {"version": 2, "label": "REV02"})
         self.assertEqual(item["status"], "PENDING")
         self.assertIn("updated_at", item)
+        self.assertEqual(item["responsible"], {"id": self.user.id})
         self.assertEqual(item["created_by"], {"id": self.user.id, "name": "Ana"})
         self.assertEqual(item["updated_by"], {"id": self.user.id, "name": "Ana"})
 

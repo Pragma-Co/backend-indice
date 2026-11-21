@@ -306,6 +306,7 @@ class DocumentRecommendationViewTests(DocumentRecommendationFixtureMixin, TestCa
                     "areas",
                     "revision",
                     "status",
+                    "responsible",
                     "created_at",
                     "updated_at",
                     "created_by",

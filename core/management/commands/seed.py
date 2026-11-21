@@ -46,6 +46,11 @@ from core.models import (
     User,
 )
 
+DEFAULT_AUDITOR_COMMENTS = {
+    RevisionStatus.APPROVED: "Revisão analisada e aprovada, sem pendências técnicas.",
+    RevisionStatus.REJECTED: "Revisão recusada: ajustes necessários antes de nova submissão.",
+}
+
 
 class Command(BaseCommand):
     help = "Load a demonstration dataset for an aerostructures manufacturer."
@@ -121,8 +126,11 @@ class Command(BaseCommand):
     def _revision_audited_at(self, code, version, days):
         return self._ago(days, code, version, "audited")
 
-    def _last_activity(self, code):
+    def _last_activity(self, code, created_at, created_by_key):
         """Moment and user key of the latest revision event, for document.updated_*."""
+        plan = data.REVISIONS[code]
+        if len(plan) == 1 and plan[0][1] == RevisionStatus.PENDING:
+            return created_at, created_by_key
         events = []
         for version, _s, author, auditor, created, audited, _d, _c in data.REVISIONS[code]:
             events.append((self._revision_created_at(code, version, created), author))
@@ -244,7 +252,8 @@ class Command(BaseCommand):
             if not area_acronyms:
                 raise CommandError(f"{code}: a document needs at least one area.")
 
-            updated_at, updated_by_key = self._last_activity(code)
+            created_at = self._document_created_at(code, created_days_ago)
+            updated_at, updated_by_key = self._last_activity(code, created_at, created_by_key)
             document, created = Document.objects.get_or_create(
                 code=code,
                 defaults={
@@ -257,7 +266,7 @@ class Command(BaseCommand):
                     "responsible": users[responsible_key],
                     "created_by": users[created_by_key],
                     "updated_by": users[updated_by_key],
-                    "created_at": self._document_created_at(code, created_days_ago),
+                    "created_at": created_at,
                     "updated_at": updated_at,
                 },
             )
@@ -297,6 +306,8 @@ class Command(BaseCommand):
                 )
                 # A revision is issued when it leaves the pending state
                 issue_date = audited_at.date() if status == RevisionStatus.APPROVED else None
+                if not auditor_comment and status != RevisionStatus.PENDING:
+                    auditor_comment = DEFAULT_AUDITOR_COMMENTS[status]
                 revision, created = Revision.objects.get_or_create(
                     document=document,
                     version=version,
@@ -312,6 +323,9 @@ class Command(BaseCommand):
                     },
                 )
                 self._count("revision", created)
+                if not created and not revision.auditor_comment and auditor_comment:
+                    revision.auditor_comment = auditor_comment
+                    revision.save(update_fields=["auditor_comment"])
                 revisions[(code, version)] = revision
         return revisions
 

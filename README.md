@@ -219,6 +219,7 @@ Response `200`, ordered by most recent first:
       "revision": { "version": 1, "label": "REV01" },
       "status": "PENDING",
       "updated_at": "2026-09-18T21:30:04.000000+00:00",
+      "responsible": { "id": 1 },
       "created_by": { "id": 1, "name": "João Silva" },
       "updated_by": { "id": null, "name": null },
       "is_favorite": false
@@ -229,7 +230,7 @@ Response `200`, ordered by most recent first:
 
 `is_favorite` is `true` when the session user saved the document in their personal library (see `GET /users/me/library`); it is always `false` for anonymous requests. `GET /documents/search` returns it too.
 
-`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
+`revision` and `status` describe the most recent revision (highest version) and are `null` for a document that has none. `responsible` carries only the id, enough for the table and the search cards to apply the revision rule of `POST /documents/<id>/revisions` to the document responsible. `count`, `total_pages` and `current_page` always describe the documents that satisfy every active filter, so the table can paginate without losing them. A `page` beyond the last one answers `200` with an empty `results`. Invalid parameters answer `400` with `{"errors": {"<param>": {"code", "message"}}}`: `invalid` for a non-positive `page`, `page_size` or `responsible_id` or a malformed date, `invalid_choice` for an unknown `data` preset or `status`, and `invalid_range` when the end date is earlier than the start date. A filter that matches nothing answers `200` with `count: 0`.
 
 Archived documents (see `DELETE /documents/<id>`) never appear in the listing nor in `count`, and neither do documents the viewer cannot see (see *Document visibility*).
 
@@ -282,6 +283,7 @@ Every filter and pagination parameter of `GET /documents` (`tipo`, `area`, `disc
       "revision": { "version": 1, "label": "REV01" },
       "status": "APPROVED",
       "updated_at": "2026-10-20T14:02:11.000000+00:00",
+      "responsible": { "id": 3 },
       "created_by": { "id": 3, "name": "Caio Bertoni" },
       "updated_by": { "id": null, "name": null },
       "is_favorite": false,
@@ -530,9 +532,9 @@ Every decision also notifies the requester (`ACCESS_APPROVED` or `ACCESS_REJECTE
 
 ### `GET /documents/<id>`
 
-Detail of one document. The viewer is the session user (`?user_id=<id>` is still accepted as a fallback while `DJANGO_DEBUG` is on). A document the viewer cannot see (see *Document visibility*) answers `404 {"error": "DocumentNotFound"}`, exactly like an unknown one. The response always carries the public metadata: `id`, `code`, `title`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
+Detail of one document. The viewer is the session user (`?user_id=<id>` is still accepted as a fallback while `DJANGO_DEBUG` is on). A document the viewer cannot see (see *Document visibility*) answers `404 {"error": "DocumentNotFound"}`, exactly like an unknown one. The response always carries the public metadata: `id`, `code`, `title`, `description`, `project`, `discipline`, `type`, `confidentiality_level`, `areas`, `responsible`, `managers` (the managers of the active document areas, `id`, `name`, `email`, ordered by name, without duplicates), `revision` and `versions` (id, version, status, issue date, author, auditor, auditor comment, audit date, creation date), `created_at`, `updated_at`, `access_status` (`APPROVED`, `IN_REVIEW` or `PENDING`) and `access_request`.
 
-Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED` and not expired) also receives: `description`, and inside `revision` and each entry of `versions` the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
+Only a viewer who **can read the document** (its responsible, or a user whose `DocumentAccess` is `APPROVED` and not expired) also receives, inside `revision` and each entry of `versions`, the `change_description` and the `files` list (`id`, `original_name`, `extension`, `mime_type`, `size_bytes`, `sha256`, `view_url`). Any other viewer gets the response without those keys, so nothing that only makes sense to a reader leaves the server.
 
 `access_request` is the viewer's own `DocumentAccess` row for the document, `{"id", "status", "access_type", "expires_on", "created_at"}`, or `null` when there is none. The frontend uses it to keep showing "Solicitação enviada" after a reload and to hide the button after a `REJECTED` decision. `404 {"error": "DocumentNotFound"}` for an unknown document.
 
@@ -572,6 +574,7 @@ Response `200`, always with the four collections (an empty one has `count: 0` an
           "revision": { "version": 1, "label": "REV01" },
           "status": "APPROVED",
           "updated_at": "2026-10-20T14:02:11.000000+00:00",
+          "responsible": { "id": 3 },
           "created_by": { "id": 3, "name": "Caio Bertoni" },
           "updated_by": { "id": null, "name": null },
           "score": 8.0,
@@ -656,6 +659,7 @@ Personal library: the list of documents saved by the logged-in user. Requires a 
       "revision": { "version": 1, "label": "REV01" },
       "status": "APPROVED",
       "updated_at": "2026-10-20T14:02:11.000000+00:00",
+      "responsible": { "id": 3 },
       "created_by": { "id": 3, "name": "Caio Bertoni" },
       "updated_by": { "id": null, "name": null },
       "is_favorite": true,

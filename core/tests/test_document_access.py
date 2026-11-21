@@ -215,13 +215,52 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         self.assertEqual(body["title"], "Desenho da caverna 14")
         self.assertEqual(body["responsible"]["id"], self.owner.id)
         self.assertEqual(body["revision"]["status"], "APPROVED")
-        self.assertNotIn("description", body)
         self.assertNotIn("files", body["revision"])
         self.assertNotIn("change_description", body["revision"])
         for version in body["versions"]:
             self.assertNotIn("files", version)
             self.assertNotIn("change_description", version)
         self.assertIsNone(body["access_request"])
+
+    def test_should_show_the_description_and_the_decision_reason_to_a_user_without_access(self):
+        Revision.objects.filter(document=self.document).update(
+            auditor_comment="Aprovado após conferência dimensional"
+        )
+
+        response = self._detail(self.stranger)
+
+        body = response.json()
+        self.assertEqual(body["access_status"], "PENDING")
+        self.assertEqual(body["description"], "Conjunto soldado da caverna 14")
+        self.assertEqual(
+            body["revision"]["auditor_comment"], "Aprovado após conferência dimensional"
+        )
+        self.assertEqual(body["revision"]["auditor"]["id"], self.manager.id)
+        self.assertNotIn("files", body["revision"])
+        self.assertNotIn("change_description", body["revision"])
+
+    def test_should_list_the_managers_of_the_active_document_areas(self):
+        Area.objects.filter(acronym="EST").update(manager=self.manager)
+        former_manager = User.objects.create_user(
+            email="former@example.com", password="pw", name="Former", area=self.granted.area
+        )
+        self.document.areas.add(
+            Area.objects.create(
+                acronym="OLD", name="Área extinta", active=False, manager=former_manager
+            )
+        )
+
+        response = self._detail(self.stranger)
+
+        self.assertEqual(
+            response.json()["managers"],
+            [{"id": self.manager.id, "name": "Manager", "email": "manager@example.com"}],
+        )
+
+    def test_should_answer_an_empty_managers_list_when_no_area_has_a_manager(self):
+        response = self._detail(self.owner)
+
+        self.assertEqual(response.json()["managers"], [])
 
     def test_should_still_expose_the_authors_to_a_user_without_access(self):
         response = self._detail(self.stranger)
@@ -255,7 +294,7 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         response = self._detail(self.stranger)
 
         self.assertEqual(response.json()["access_request"]["status"], "REJECTED")
-        self.assertNotIn("description", response.json())
+        self.assertEqual(response.json()["description"], "Conjunto soldado da caverna 14")
 
     @override_settings(DEBUG=True)
     def test_should_refuse_a_query_user_id_without_a_session(self):
