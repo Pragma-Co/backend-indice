@@ -29,6 +29,18 @@ erDiagram
     APP_USER ||--o{ ACCESS_GROUP_MEMBER : "member / added_by"
     DOCUMENT ||--o{ DOCUMENT_ACCESS_GROUP : "authorized groups"
     ACCESS_GROUP ||--o{ DOCUMENT_ACCESS_GROUP : "granted documents"
+    APP_USER ||--o| AREA : "manages"
+    APP_USER ||--o{ SAVED_DOCUMENT : "personal library"
+    DOCUMENT ||--o{ SAVED_DOCUMENT : "saved by"
+    APP_USER ||--o{ NOTIFICATION : "recipient"
+    DOCUMENT ||--o{ NOTIFICATION : "about"
+    APP_USER ||--o{ SEARCH_HISTORY : "searched"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_AFFECTED_USER : "affected users"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_AFFECTED_DOCUMENT : "affected documents"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_ACTION : "actions"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_STATUS_CHANGE : "status history"
+    DATA_INCIDENT ||--o{ DATA_INCIDENT_SUBJECT_NOTIFICATION : "data subject notices"
+    APP_USER ||--o{ BACKUP_RUN : "triggered_by"
 
     DOCUMENT {
         string code
@@ -40,11 +52,14 @@ erDiagram
         int version
         string status "PENDING / APPROVED / REJECTED"
         string change_description
+        string auditor_comment
     }
     FILE {
         string original_name
         string sha256
         string storage_path
+        uuid file_group "same file across versions"
+        bool revision_changed
     }
     DOCUMENT_CONTENT {
         text content
@@ -68,4 +83,19 @@ erDiagram
         string name
         string scope "AREA / PROJECT"
         bool active
+    }
+    NOTIFICATION {
+        string type
+        string title
+        datetime read_at
+    }
+    DATA_INCIDENT {
+        string type
+        string severity
+        string status
+    }
+    BACKUP_RUN {
+        string target
+        string status
+        bool encrypted
     }
