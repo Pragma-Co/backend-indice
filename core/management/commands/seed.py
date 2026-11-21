@@ -46,7 +46,6 @@ from core.models import (
     User,
 )
 
-
 DEFAULT_AUDITOR_COMMENTS = {
     RevisionStatus.APPROVED: "Revisão analisada e aprovada, sem pendências técnicas.",
     RevisionStatus.REJECTED: "Revisão recusada: ajustes necessários antes de nova submissão.",
