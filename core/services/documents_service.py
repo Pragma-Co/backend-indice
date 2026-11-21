@@ -309,6 +309,7 @@ def serialize_document(document):
             "label": revision_label(document.latest_version),
         },
         "status": document.status,
+        "responsible": {"id": document.responsible_id},
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "created_by": {
