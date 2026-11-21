@@ -497,11 +497,10 @@ def _serialize_document_detail(document, access_status, can_read, access_request
         ],
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
+        "description": document.description or "",
         "access_status": access_status,
         "access_request": access_request,
     }
-    if can_read:
-        serialized["description"] = document.description or ""
     return serialized
 
 

@@ -127,7 +127,8 @@ class AccessRequestCycleTests(TestCase):
 
         self.assertEqual(detail["access_status"], "PENDING")
         self.assertEqual(detail["access_request"]["status"], "PENDING")
-        self.assertNotIn("description", detail)
+        self.assertEqual(detail["description"], "Análise de tensões da caverna 14")
+        self.assertNotIn("files", detail["revision"])
         self.assertEqual(file_response.status_code, 403)
 
     def test_should_show_the_request_in_the_manager_queue_and_detail(self):
@@ -183,7 +184,8 @@ class AccessRequestCycleTests(TestCase):
         self.assertEqual(decision.status_code, 200)
         self.assertEqual(detail["access_status"], "PENDING")
         self.assertEqual(detail["access_request"]["status"], "REJECTED")
-        self.assertNotIn("description", detail)
+        self.assertEqual(detail["description"], "Análise de tensões da caverna 14")
+        self.assertNotIn("files", detail["revision"])
         self.assertEqual(self._view_file().status_code, 403)
         self.assertEqual(self._queue_ids(), [])
 

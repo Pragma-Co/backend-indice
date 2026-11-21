@@ -215,13 +215,29 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         self.assertEqual(body["title"], "Desenho da caverna 14")
         self.assertEqual(body["responsible"]["id"], self.owner.id)
         self.assertEqual(body["revision"]["status"], "APPROVED")
-        self.assertNotIn("description", body)
         self.assertNotIn("files", body["revision"])
         self.assertNotIn("change_description", body["revision"])
         for version in body["versions"]:
             self.assertNotIn("files", version)
             self.assertNotIn("change_description", version)
         self.assertIsNone(body["access_request"])
+
+    def test_should_show_the_description_and_the_decision_reason_to_a_user_without_access(self):
+        Revision.objects.filter(document=self.document).update(
+            auditor_comment="Aprovado após conferência dimensional"
+        )
+
+        response = self._detail(self.stranger)
+
+        body = response.json()
+        self.assertEqual(body["access_status"], "PENDING")
+        self.assertEqual(body["description"], "Conjunto soldado da caverna 14")
+        self.assertEqual(
+            body["revision"]["auditor_comment"], "Aprovado após conferência dimensional"
+        )
+        self.assertEqual(body["revision"]["auditor"]["id"], self.manager.id)
+        self.assertNotIn("files", body["revision"])
+        self.assertNotIn("change_description", body["revision"])
 
     def test_should_still_expose_the_authors_to_a_user_without_access(self):
         response = self._detail(self.stranger)
@@ -255,7 +271,7 @@ class DocumentDetailAccessTests(DocumentAccessTestCase):
         response = self._detail(self.stranger)
 
         self.assertEqual(response.json()["access_request"]["status"], "REJECTED")
-        self.assertNotIn("description", response.json())
+        self.assertEqual(response.json()["description"], "Conjunto soldado da caverna 14")
 
     @override_settings(DEBUG=True)
     def test_should_refuse_a_query_user_id_without_a_session(self):
