@@ -98,6 +98,8 @@ def store_uploaded_file(uploaded_file, force_new_revision=False):
         "extension": file_type.extension,
         "sha256": file_hash,
         "extracted_text": extracted_text,
+        "title_excerpt": ingestion.get("title_excerpt", ""),
+        "content_excerpt": ingestion.get("content_excerpt", ""),
     }
 
     try:

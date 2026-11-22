@@ -18,15 +18,26 @@ from core.services.user_anonymization_service import (
     NoReplacementManagerError,
     anonymize_user,
 )
+from core.services.user_service import list_active_users
 
 
 def _unauthorized():
-    return JsonResponse({"error": "Authentication required."}, status=401)
+    return JsonResponse({"error": "AuthenticationRequired"}, status=401)
 
 
 def _active_user(request):
     user = request.user
     return user if user.is_authenticated and user.is_active else None
+
+
+@require_http_methods(["GET"])
+def users_collection(request):
+    if _active_user(request) is None:
+        return _unauthorized()
+    return JsonResponse(
+        [{"id": user.pk, "name": user.name, "email": user.email} for user in list_active_users()],
+        safe=False,
+    )
 
 
 @require_http_methods(["GET", "PUT"])

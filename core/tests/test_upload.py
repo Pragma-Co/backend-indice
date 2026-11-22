@@ -151,7 +151,13 @@ class StoreUploadedFileTests(TestCase):
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     @mock.patch(
         "core.services.temp_upload_service.ingest_text",
-        return_value={"text": "texto extraido", "extraction": "SUCCESS", "detail": None},
+        return_value={
+            "text": "texto extraido",
+            "extraction": "SUCCESS",
+            "detail": None,
+            "title_excerpt": "Primeira página",
+            "content_excerpt": "Conteúdo após o sumário",
+        },
     )
     def test_given_valid_pdf_when_stored_then_extracts_text_for_ai_upfront(
         self, mock_extract, mock_mongo
@@ -165,6 +171,8 @@ class StoreUploadedFileTests(TestCase):
             0
         ][0]
         self.assertEqual(inserted_metadata["extracted_text"], "texto extraido")
+        self.assertEqual(inserted_metadata["title_excerpt"], "Primeira página")
+        self.assertEqual(inserted_metadata["content_excerpt"], "Conteúdo após o sumário")
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_given_pdf_extraction_fails_when_stored_then_response_is_not_blocked(self, mock_mongo):
@@ -202,6 +210,12 @@ class UploadDocumentViewTests(TestCase):
         self.client = Client()
         self.temp_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.temp_dir, ignore_errors=True)
+        area = Area.objects.create(acronym="AR1", name="Area Teste 1")
+        self.client.force_login(
+            User.objects.create_user(
+                email="autor1@example.com", password="secret", name="Autor Teste 1", area=area
+            )
+        )
 
     @mock.patch("core.services.temp_upload_service.get_mongo_db")
     def test_given_valid_pdf_when_posted_then_returns_201_with_expected_shape(self, mock_mongo):
@@ -320,6 +334,7 @@ class UploadDocumentViewDeduplicationTests(TestCase):
         user = User.objects.create_user(
             email="autor2@example.com", password="secret", name="Autor Teste 2", area=area
         )
+        self.client.force_login(user)
         project = Project.objects.create(code="PRJ-2", name="Projeto Teste 2")
         discipline = Discipline.objects.create(code="DISC2", name="Disciplina Teste 2")
         document_type = DocumentType.objects.create(code="DT2", name="Tipo Teste 2")
@@ -370,6 +385,7 @@ class DuplicateUploadTemporaryFileTests(TestCase):
         user = User.objects.create_user(
             email="autor3@example.com", password="secret", name="Autor Teste 3", area=area
         )
+        self.client.force_login(user)
         project = Project.objects.create(code="PRJ-3", name="Projeto Teste 3")
         discipline = Discipline.objects.create(code="DISC3", name="Disciplina Teste 3")
         document_type = DocumentType.objects.create(code="DT3", name="Tipo Teste 3")

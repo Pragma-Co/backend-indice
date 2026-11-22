@@ -7,17 +7,20 @@ from django.views.decorators.http import require_GET, require_POST
 from core.models import AuditAction
 from core.serializers.access_request_serializer import (
     serialize_access_decision,
+    serialize_access_request_detail,
     serialize_pending_access_page,
 )
 from core.services import audit_service
 from core.services.access_request_exceptions import (
     AccessRequestAlreadyDecidedError,
+    AccessRequestExpiredError,
     AccessRequestNotFoundError,
     AccessRequestValidationError,
     OwnAccessRequestReviewError,
 )
 from core.services.access_request_service import (
     decide_access_request,
+    get_access_request_detail,
     is_access_approver,
     list_pending_access_requests,
 )
@@ -51,6 +54,21 @@ def pending_access_requests_view(request):
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
+@require_GET
+def access_request_detail_view(request, access_id):
+    approver, error_response = _approver_or_error(request)
+    if error_response is not None:
+        return error_response
+    try:
+        access = get_access_request_detail(access_id, approver)
+        return JsonResponse(serialize_access_request_detail(access))
+    except AccessRequestNotFoundError:
+        return JsonResponse({"error": "AccessRequestNotFound"}, status=404)
+    except Exception as exc:
+        logger.exception("Failed to load access request detail")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
 @require_POST
 def access_request_decision_view(request, access_id):
     approver, error_response = _approver_or_error(request)
@@ -73,6 +91,11 @@ def access_request_decision_view(request, access_id):
         return JsonResponse(
             {"error": "AccessRequestAlreadyDecided", "status": exc.status}, status=409
         )
+    except AccessRequestExpiredError as exc:
+        return JsonResponse(
+            {"error": "AccessRequestExpired", "expires_on": exc.expires_on.isoformat()},
+            status=409,
+        )
     except Exception as exc:
         logger.exception("Failed to record access request decision")
         return JsonResponse({"error": type(exc).__name__}, status=500)
@@ -87,6 +110,7 @@ def access_request_decision_view(request, access_id):
             "document_id": access.document_id,
             "document_code": access.document.code,
             "requester_id": access.user_id,
+            "opinion": access.decision_opinion,
         },
     )
     return JsonResponse(serialize_access_decision(access))

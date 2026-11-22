@@ -47,6 +47,7 @@ class CreateDocumentViewTests(TestCase):
         self.discipline = Discipline.objects.create(code="EST", name="Estruturas")
         self.document_type = DocumentType.objects.create(code="DWG", name="Desenho")
         self.url = reverse("document-list")
+        self.client.force_login(self.user)
 
     def _temp_file(self, extension="pdf", content=PDF_BYTES):
         path = Path(self.temp_dir) / f"{TEMP_FILE_ID}.{extension}"
@@ -197,6 +198,7 @@ class CreateDocumentViewTests(TestCase):
 
     def test_should_keep_get_working_and_reject_other_methods(self, mongo):
         client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
 
         get_response = client.get(self.url)
         put_response = client.put(self.url)
@@ -209,6 +211,7 @@ class CreateDocumentViewTests(TestCase):
     def test_should_accept_post_with_csrf_checks_enforced(self, mongo):
         self._temp_file()
         client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
 
         response = self._post(self._payload(), client=client)
 

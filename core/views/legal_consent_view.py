@@ -26,6 +26,7 @@ from core.services.legal_consent_service import (
     current_legal_version,
     legal_documents,
     legal_version,
+    pending_legal_documents,
     record_acceptance,
     revoke_acceptance,
     user_acceptances,
@@ -68,6 +69,18 @@ def legal_documents_view(request):
         return JsonResponse({"error": type(exc).__name__}, status=500)
 
 
+@require_GET
+def pending_legal_terms_view(request):
+    user = request.user
+    if not (user.is_authenticated and user.is_active):
+        return JsonResponse({"error": "AuthenticationRequired"}, status=401)
+    try:
+        return JsonResponse(serialize_legal_documents(pending_legal_documents(user)))
+    except Exception as exc:
+        logger.exception("Failed to list pending legal terms")
+        return JsonResponse({"error": type(exc).__name__}, status=500)
+
+
 @require_http_methods(["GET", "POST"])
 def legal_acceptances_view(request):
     user = request.user
@@ -102,7 +115,9 @@ def _create_acceptance(request, user):
                 ENTITY_LEGAL_ACCEPTANCE,
                 acceptance.pk,
                 {
-                    "event": "LEGAL_TERMS_ACCEPTED",
+                    "event": (
+                        "LEGAL_TERMS_ACCEPTED" if acceptance.accepted else "LEGAL_TERMS_DECLINED"
+                    ),
                     "document": acceptance.version.document.slug,
                     "version": acceptance.version.version,
                     "declined_clauses": [

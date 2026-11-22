@@ -17,6 +17,7 @@ from core.models import (
     User,
 )
 from core.services.excluded_identifier_service import is_identifier_excluded
+from core.services.search_history_service import list_search_history, record_search
 from core.services.user_anonymization_service import (
     ANONYMOUS_NAME,
     NoReplacementManagerError,
@@ -104,6 +105,15 @@ class UserAnonymizationTests(TestCase):
         self.assertTrue(is_anonymized(self.author))
         self.assertTrue(is_identifier_excluded(self.original_email))
 
+    def test_soft_delete_removes_search_history(self):
+        record_search(self.author, "private search")
+        record_search(self.manager, "manager search")
+
+        self._anonymize()
+
+        self.assertEqual(list_search_history(self.author), [])
+        self.assertEqual(list_search_history(self.manager), ["manager search"])
+
     def test_soft_delete_keeps_the_archive_and_authorship(self):
         self._anonymize()
 
@@ -117,6 +127,19 @@ class UserAnonymizationTests(TestCase):
 
         self.assertFalse(DocumentAccess.objects.filter(status=AccessStatus.PENDING).exists())
         self.assertEqual(summary["removed"], {"document_access(pending)": 1})
+
+    def test_soft_delete_clears_text_on_decided_requests(self):
+        self.access.status = AccessStatus.REJECTED
+        self.access.decision_opinion = "Parecer sobre o solicitante"
+        self.access.approver = self.manager
+        self.access.decided_at = timezone.now()
+        self.access.save(update_fields=["status", "decision_opinion", "approver", "decided_at"])
+
+        self._anonymize()
+
+        self.access.refresh_from_db()
+        self.assertEqual(self.access.justification, "")
+        self.assertEqual(self.access.decision_opinion, "")
 
     def test_soft_delete_hands_manager_work_to_another_manager(self):
         other = User.objects.create_user(

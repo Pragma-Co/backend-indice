@@ -2,7 +2,8 @@ from datetime import date, datetime, time, timedelta
 
 from django.core.cache import cache
 from django.core.paginator import Paginator
-from django.db.models import OuterRef, Prefetch, Q, Subquery
+from django.db import transaction
+from django.db.models import BooleanField, Exists, OuterRef, Prefetch, Q, Subquery, Value
 from django.utils import timezone
 
 from core.models import (
@@ -12,11 +13,18 @@ from core.models import (
     DocumentAccess,
     DocumentType,
     Revision,
+    SavedDocument,
     User,
 )
 from core.models.choices import AccessStatus, RevisionStatus
 from core.serializers.document_serializer import revision_label
+from core.services.access_request_exceptions import AccessRequestAlreadyPendingError
+from core.services.access_request_service import (
+    active_grant_filter,
+    validate_access_request_payload,
+)
 from core.services.document_exceptions import DocumentQueryError
+from core.services.document_visibility_service import is_visible, visible_documents
 from core.services.documents_exceptions import (
     AlreadyHasAccessError,
     DocumentNotFoundError,
@@ -24,7 +32,7 @@ from core.services.documents_exceptions import (
     UserNotFoundError,
 )
 
-SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters:v2"
+SIMPLE_FILTERS_CACHE_KEY = "documents:simple-filters:v3"
 SIMPLE_FILTERS_CACHE_TIMEOUT = 300
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -39,7 +47,6 @@ STATUS_FILTERS = [
     {"value": RevisionStatus.PENDING.value, "label": "Em revisão"},
     {"value": RevisionStatus.APPROVED.value, "label": "Vigente"},
     {"value": RevisionStatus.REJECTED.value, "label": "Rejeitado"},
-    {"value": RevisionStatus.OBSOLETE.value, "label": "Obsoleto"},
 ]
 
 
@@ -52,14 +59,12 @@ DATE_RANGES = {
 
 def build_simple_filters():
     return {
-        "areas": list(
-            Area.objects.filter(active=True).order_by("acronym").values("acronym", "name")
-        ),
+        "areas": list(Area.objects.filter(active=True).order_by("name").values("acronym", "name")),
         "types": list(
-            DocumentType.objects.filter(active=True).order_by("code").values("code", "name")
+            DocumentType.objects.filter(active=True).order_by("name").values("code", "name")
         ),
         "disciplines": list(
-            Discipline.objects.filter(active=True).order_by("code").values("code", "name")
+            Discipline.objects.filter(active=True).order_by("name").values("code", "name")
         ),
         "statuses": STATUS_FILTERS,
         "dates": DATE_FILTERS,
@@ -195,20 +200,31 @@ def _start_of_day(day):
     return timezone.make_aware(datetime.combine(day, time.min))
 
 
-def filter_documents(query, archived=False):
+def filter_documents(query, archived=False, user=None):
     latest_revision = Revision.objects.filter(document=OuterRef("pk")).order_by("-version")
+    favorite = (
+        SavedDocument.objects.filter(user=user, document=OuterRef("pk"))
+        if user is not None
+        else None
+    )
     queryset = (
         Document.objects.filter(document_type__active=True, archived_at__isnull=not archived)
         .filter(Q(areas__active=True) | Q(areas__isnull=True))
         .annotate(
             status=Subquery(latest_revision.values("status")[:1]),
             latest_version=Subquery(latest_revision.values("version")[:1]),
+            is_favorite=(
+                Exists(favorite)
+                if favorite is not None
+                else Value(False, output_field=BooleanField())
+            ),
         )
         .select_related("document_type", "discipline", "project", "created_by", "updated_by")
         .prefetch_related("areas", "tags")
         .order_by("-updated_at", "-id")
         .distinct()
     )
+    queryset = visible_documents(queryset, user)
 
     criteria = Q()
     if query["search_term"]:
@@ -249,9 +265,9 @@ def filter_documents(query, archived=False):
     return queryset
 
 
-def get_documents(params):
+def get_documents(params, user=None):
     query = parse_document_query(params)
-    return paginate_documents(filter_documents(query), query, serialize_document)
+    return paginate_documents(filter_documents(query, user=user), query, serialize_document)
 
 
 def paginate_documents(queryset, query, serialize):
@@ -293,6 +309,8 @@ def serialize_document(document):
             "label": revision_label(document.latest_version),
         },
         "status": document.status,
+        "responsible": {"id": document.responsible_id},
+        "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
         "created_by": {
             "id": document.created_by_id,
@@ -302,6 +320,7 @@ def serialize_document(document):
             "id": document.updated_by_id,
             "name": document.updated_by.name if document.updated_by else None,
         },
+        "is_favorite": getattr(document, "is_favorite", False),
     }
 
 
@@ -317,7 +336,7 @@ def _get_document_or_none(document_id):
             "project", "discipline", "document_type", "responsible", "created_by", "updated_by"
         )
         .prefetch_related(
-            "areas",
+            "areas__manager",
             Prefetch(
                 "revisions",
                 queryset=Revision.objects.select_related("author", "auditor")
@@ -342,7 +361,7 @@ def _compute_access_status(document, user):
         return ACCESS_APPROVED
 
     has_grant = DocumentAccess.objects.filter(
-        document=document, user=user, status=AccessStatus.APPROVED
+        active_grant_filter(), document=document, user=user
     ).exists()
     if has_grant:
         return ACCESS_APPROVED
@@ -377,6 +396,8 @@ def _latest_access_request(document, user):
     return {
         "id": access.id,
         "status": access.status,
+        "access_type": access.access_type,
+        "expires_on": access.expires_on.isoformat() if access.expires_on else None,
         "created_at": requested.isoformat() if requested else None,
     }
 
@@ -415,6 +436,21 @@ def _serialize_revision(revision, can_read):
     return serialized
 
 
+def _document_managers(document):
+    managers = {}
+    for area in document.areas.all():
+        if area.active and area.manager is not None:
+            managers.setdefault(
+                area.manager_id,
+                {
+                    "id": area.manager_id,
+                    "name": area.manager.name,
+                    "email": area.manager.email,
+                },
+            )
+    return sorted(managers.values(), key=lambda manager: manager["name"])
+
+
 def _serialize_document_detail(document, access_status, can_read, access_request):
     current_revision = _get_current_revision(document)
     serialized = {
@@ -446,6 +482,7 @@ def _serialize_document_detail(document, access_status, can_read, access_request
             "name": document.responsible.name,
             "email": document.responsible.email,
         },
+        "managers": _document_managers(document),
         "created_by": {
             "id": document.created_by_id,
             "name": document.created_by.name if document.created_by else None,
@@ -460,11 +497,10 @@ def _serialize_document_detail(document, access_status, can_read, access_request
         ],
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
+        "description": document.description or "",
         "access_status": access_status,
         "access_request": access_request,
     }
-    if can_read:
-        serialized["description"] = document.description or ""
     return serialized
 
 
@@ -476,6 +512,8 @@ def get_document_detail(document_id, user_id=None):
     user = None
     if user_id:
         user = User.objects.filter(pk=user_id).first()
+    if not is_visible(document, user):
+        raise DocumentNotFoundError()
 
     access_status = _compute_access_status(document, user)
     can_read = access_status == ACCESS_APPROVED
@@ -484,27 +522,53 @@ def get_document_detail(document_id, user_id=None):
     )
 
 
-def request_document_access(document_id, user_id, justification=""):
+def _reopen_access_request(access, cleaned):
+    access.status = AccessStatus.PENDING
+    access.justification = cleaned["justification"]
+    access.decision_opinion = ""
+    access.access_type = cleaned["access_type"]
+    access.expires_on = cleaned["expires_on"]
+    access.requested_at = timezone.now()
+    access.approver = None
+    access.decided_at = None
+    access.save(
+        update_fields=[
+            "status",
+            "justification",
+            "decision_opinion",
+            "access_type",
+            "expires_on",
+            "requested_at",
+            "approver",
+            "decided_at",
+        ]
+    )
+
+
+def request_document_access(document_id, user, payload):
     document = _get_document_or_none(document_id)
     if document is None:
         raise DocumentNotFoundError()
 
-    user = resolve_user(user_id)
+    cleaned = validate_access_request_payload(payload)
     if can_view_document(document, user):
         raise AlreadyHasAccessError()
 
-    access, created = DocumentAccess.objects.get_or_create(
-        document=document,
-        user=user,
-        defaults={
-            "status": AccessStatus.PENDING,
-            "justification": justification,
-            "requested_at": timezone.now(),
-        },
-    )
-
-    return {
-        "id": access.id,
-        "status": access.status,
-        "created": created,
-    }
+    with transaction.atomic():
+        access, created = DocumentAccess.objects.select_for_update().get_or_create(
+            document=document,
+            user=user,
+            defaults={
+                **cleaned,
+                "status": AccessStatus.PENDING,
+                "requested_at": timezone.now(),
+            },
+        )
+        if created:
+            return access
+        if access.status == AccessStatus.PENDING:
+            raise AccessRequestAlreadyPendingError(access)
+        if DocumentAccess.objects.filter(active_grant_filter(), pk=access.pk).exists():
+            raise AlreadyHasAccessError()
+        _reopen_access_request(access, cleaned)
+    return access

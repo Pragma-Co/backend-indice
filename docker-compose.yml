@@ -26,6 +26,26 @@ services:
       retries: 10
       start_period: 15s
 
+  postgres-tombstone:
+    image: postgres:17-alpine
+    container_name: api6-postgres-tombstone
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TOMBSTONE_DB:-api6_tombstone}
+      POSTGRES_USER: ${TOMBSTONE_USER:-api6_tombstone}
+      POSTGRES_PASSWORD: ${TOMBSTONE_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - tombstone_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${TOMBSTONE_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   mongodb:
     # 8.2+ required: MongoDB 8.0 cannot start on Linux kernel 6.19+ (SERVER-121912)
     image: mongo:8.2
@@ -58,7 +78,6 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     ports:
-      # Localhost only; the API reaches it through the Docker network (http://ollama:11434)
       - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -68,7 +87,6 @@ services:
       start_period: 10s
 
   ollama-pull:
-    # One-shot job: downloads the model into the ollama_data volume (no-op once present)
     image: ollama/ollama
     container_name: api6-ollama-pull
     restart: "no"
@@ -79,34 +97,45 @@ services:
       ollama:
         condition: service_healthy
 
+  mailpit:
+    image: axllent/mailpit:v1.33
+    container_name: api6-mailpit
+    restart: unless-stopped
+    ports:
+      # Web UI with the captured e-mails, localhost only; SMTP (1025) stays inside the Docker network
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: .
     container_name: api6-django
     restart: unless-stopped
-    command: sh -c "python manage.py migrate && python manage.py ensure_superuser && python manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python manage.py migrate && python manage.py migrate --database=tombstone && python manage.py ensure_superuser && python manage.py runserver 0.0.0.0:8000"
     env_file: .env
     environment:
-      # Inside the Docker network the databases are reached by service name on
-      # their fixed internal ports; host-side overrides from .env must not apply here
-      POSTGRES_HOST: postgres
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: "5432"
-      MONGO_HOST: mongodb
+      TOMBSTONE_HOST: ${TOMBSTONE_HOST:-postgres-tombstone}
+      TOMBSTONE_PORT: "5432"
+      MONGO_HOST: ${MONGO_HOST:-mongodb}
       MONGO_PORT: "27017"
-      OLLAMA_BASE_URL: http://ollama:11434
+      # Development e-mails go to the Mailpit container unless .env points to a real SMTP service
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
     volumes:
       - .:/app
     ports:
       # Localhost only, like the databases; host port configurable via API_PORT in .env
       - "127.0.0.1:${API_PORT:-8000}:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
 
 volumes:
   postgres_data:
+  tombstone_data:
   mongo_data:
   ollama_data:

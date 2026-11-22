@@ -75,6 +75,31 @@ def legal_documents() -> list[tuple[LegalDocument, LegalDocumentVersion]]:
     )
 
 
+def _pending_version_ids(user):
+    current = {}
+    published = _published_versions().order_by("document_id", "-version")
+    for document_id, version_id in published.values_list("document_id", "pk"):
+        current.setdefault(document_id, version_id)
+    accepted = set(
+        UserLegalAcceptance.objects.filter(
+            user=user,
+            version_id__in=current.values(),
+            accepted=True,
+            revoked_at__isnull=True,
+        ).values_list("version_id", flat=True)
+    )
+    return [version_id for version_id in current.values() if version_id not in accepted]
+
+
+def has_pending_legal_terms(user) -> bool:
+    return bool(_pending_version_ids(user))
+
+
+def pending_legal_documents(user) -> list[tuple[LegalDocument, LegalDocumentVersion]]:
+    pending = set(_pending_version_ids(user))
+    return [item for item in legal_documents() if item[1].pk in pending]
+
+
 def user_acceptances(user):
     return (
         UserLegalAcceptance.objects.filter(user=user)
@@ -163,21 +188,6 @@ def _validate_decisions_against_clauses(clauses, decisions):
                 )
             }
         )
-    declined_required = sorted(
-        clause_id
-        for clause_id, clause in clauses.items()
-        if clause.is_required and not decisions[clause_id]
-    )
-    if declined_required:
-        raise LegalConsentValidationError(
-            {
-                "consents": _error(
-                    "required_clause_declined",
-                    "Required clauses must be accepted.",
-                    clause_ids=declined_required,
-                )
-            }
-        )
 
 
 def record_acceptance(user, payload, *, ip_address=None, user_agent="") -> UserLegalAcceptance:
@@ -194,7 +204,7 @@ def record_acceptance(user, payload, *, ip_address=None, user_agent="") -> UserL
         if version is None:
             raise LegalVersionNotFoundError()
         if UserLegalAcceptance.objects.filter(
-            user=user, version=version, revoked_at__isnull=True
+            user=user, version=version, accepted=True, revoked_at__isnull=True
         ).exists():
             raise LegalVersionAlreadyAcceptedError()
         current_version_id = (
@@ -209,12 +219,16 @@ def record_acceptance(user, payload, *, ip_address=None, user_agent="") -> UserL
 
         clauses = {clause.pk: clause for clause in version.clauses.all()}
         _validate_decisions_against_clauses(clauses, decisions)
+        accepted = all(
+            decisions[clause_id] for clause_id, clause in clauses.items() if clause.is_required
+        )
 
         try:
             with transaction.atomic():
                 acceptance = UserLegalAcceptance.objects.create(
                     user=user,
                     version=version,
+                    accepted=accepted,
                     ip_address=ip_address,
                     user_agent=(user_agent or "")[:USER_AGENT_MAX_LENGTH],
                 )
@@ -222,11 +236,12 @@ def record_acceptance(user, payload, *, ip_address=None, user_agent="") -> UserL
             raise LegalVersionAlreadyAcceptedError() from exc
 
         UserClauseConsent.objects.bulk_create(
-            UserClauseConsent(acceptance=acceptance, clause_id=clause_id, accepted=accepted)
-            for clause_id, accepted in decisions.items()
+            UserClauseConsent(acceptance=acceptance, clause_id=clause_id, accepted=decision)
+            for clause_id, decision in decisions.items()
         )
-        user.terms_accepted_at = acceptance.accepted_at
-        user.save(update_fields=["terms_accepted_at"])
+        if acceptance.accepted:
+            user.terms_accepted_at = acceptance.accepted_at
+            user.save(update_fields=["terms_accepted_at"])
 
     return user_acceptances(user).get(pk=acceptance.pk)
 
@@ -235,7 +250,7 @@ def revoke_acceptance(user, acceptance_id) -> UserLegalAcceptance:
     with transaction.atomic():
         acceptance = (
             UserLegalAcceptance.objects.select_for_update()
-            .filter(pk=acceptance_id, user=user)
+            .filter(pk=acceptance_id, user=user, accepted=True)
             .first()
         )
         if acceptance is None:
@@ -246,7 +261,7 @@ def revoke_acceptance(user, acceptance_id) -> UserLegalAcceptance:
         acceptance.revoked_at = timezone.now()
         acceptance.save(update_fields=["revoked_at"])
         user.terms_accepted_at = (
-            UserLegalAcceptance.objects.filter(user=user, revoked_at__isnull=True)
+            UserLegalAcceptance.objects.filter(user=user, accepted=True, revoked_at__isnull=True)
             .order_by("-accepted_at")
             .values_list("accepted_at", flat=True)
             .first()

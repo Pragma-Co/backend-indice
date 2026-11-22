@@ -24,7 +24,6 @@ from django.db.models import (
 from django.db.models.functions import Coalesce, Concat
 
 from core.models import Document, DocumentAccess, DocumentTag
-from core.models.choices import AccessStatus
 from core.models.search import ENGLISH_SEARCH_CONFIG, SEARCH_CONFIG
 from core.serializers.document_search_serializer import (
     FRAGMENT_SEPARATOR,
@@ -33,6 +32,7 @@ from core.serializers.document_search_serializer import (
     TAG_SEPARATOR,
     serialize_search_highlights,
 )
+from core.services.access_request_service import active_grant_filter
 from core.services.document_exceptions import DocumentQueryError
 from core.services.document_index_service import thematic_tag_names
 from core.services.documents_service import (
@@ -113,7 +113,7 @@ def _can_read(user):
     if user is None:
         return Value(False, output_field=BooleanField())
     approved_access = DocumentAccess.objects.filter(
-        document=OuterRef("pk"), user=user, status=AccessStatus.APPROVED
+        active_grant_filter(), document=OuterRef("pk"), user=user
     )
     return Case(
         When(responsible_id=user.id, then=Value(True)),
@@ -243,7 +243,9 @@ def search_documents(params, user=None):
     search_query = build_search_query(query["terms"])
     english_query = build_search_query(query["terms"], ENGLISH_SEARCH_CONFIG)
     content_query = search_query | english_query
-    queryset = apply_full_text_search(filter_documents(query), search_query, content_query, user)
+    queryset = apply_full_text_search(
+        filter_documents(query, user=user), search_query, content_query, user
+    )
     page = paginate_documents(queryset, query, _serialize_result)
 
     document_ids = [result["id"] for result in page["results"]]

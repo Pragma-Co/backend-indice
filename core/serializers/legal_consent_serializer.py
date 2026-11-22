@@ -61,6 +61,7 @@ def serialize_acceptance(acceptance: UserLegalAcceptance) -> dict:
     version = acceptance.version
     return {
         "id": acceptance.id,
+        "accepted": acceptance.accepted,
         "accepted_at": _isoformat(acceptance.accepted_at),
         "revoked_at": _isoformat(acceptance.revoked_at),
         "document": _serialize_document(version.document),
